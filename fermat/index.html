@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FERMAT</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#aabbcc; }
+canvas { display:block; }
+#stats {
+  position:fixed; top:10px; right:10px; width:320px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  padding:14px; font-size:11px; line-height:1.6;
+  pointer-events:auto; z-index:10; max-height:90vh; overflow-y:auto;
+}
+#stats h2 { color:#0af; font-size:13px; margin-bottom:8px; letter-spacing:2px; }
+#stats .prime { color:#0f8; }
+#stats .composite { color:#f44; }
+#stats .highlight { color:#ff0; }
+#stats .section { margin-top:10px; border-top:1px solid rgba(0,170,255,.1); padding-top:8px; }
+#tooltip {
+  position:fixed; display:none; background:rgba(6,6,16,.95);
+  border:1px solid rgba(0,170,255,.3); padding:10px; font-size:11px;
+  font-family:'Courier New',monospace; color:#aabbcc; pointer-events:none;
+  z-index:20; max-width:350px;
+}
+#polygon-overlay {
+  position:fixed; display:none; top:0; left:0; right:0; bottom:0;
+  background:rgba(6,6,16,.85); z-index:15;
+  justify-content:center; align-items:center;
+}
+#polygon-overlay canvas { border:1px solid rgba(0,170,255,.2); }
+#polygon-overlay .close-btn {
+  position:absolute; top:20px; right:30px; color:#0af; font-size:24px;
+  cursor:pointer; font-family:'Courier New',monospace;
+}
+#polygon-overlay .label {
+  position:absolute; bottom:60px; text-align:center; width:100%;
+  color:#aabbcc; font-size:13px; font-family:'Courier New',monospace;
+}
+#instructions {
+  position:fixed; bottom:38px; left:10px; font-size:9px; color:#445;
+  font-family:'Courier New',monospace; letter-spacing:1px; z-index:5;
+}
+</style>
+</head>
+<body>
+<canvas id="main"></canvas>
+
+<div id="stats">
+  <h2>// SHIELD-FERMAT</h2>
+  <div>Fermat Numbers: F<sub>n</sub> = 2<sup>2<sup>n</sup></sup> + 1</div>
+  <div class="section">
+    <div><span class="prime">F₀ = 3 ............ PRIME</span></div>
+    <div><span class="prime">F₁ = 5 ............ PRIME</span></div>
+    <div><span class="prime">F₂ = 17 ........... PRIME</span></div>
+    <div><span class="prime">F₃ = 257 .......... PRIME</span></div>
+    <div><span class="prime">F₄ = 65537 ........ PRIME</span></div>
+    <div><span class="composite">F₅ = 4294967297 ... COMPOSITE</span></div>
+  </div>
+  <div class="section">
+    <div style="color:#f44">Euler (1732) discovered:</div>
+    <div style="color:#f88">F₅ = 641 × 6700417</div>
+    <div style="color:#667;font-size:10px;margin-top:4px">
+      No other Fermat primes have been<br>found. It remains unknown if any<br>exist beyond F₄.
+    </div>
+  </div>
+  <div class="section">
+    <div style="color:#0af">Constructible Polygons:</div>
+    <div style="color:#889;font-size:10px">
+      A regular n-gon is constructible<br>
+      with compass & straightedge iff<br>
+      n = 2<sup>k</sup> × (distinct Fermat primes)
+    </div>
+    <div style="margin-top:6px;font-size:10px;color:#778">
+      Click tower levels or polygon<br>numbers below to draw them.
+    </div>
+    <div style="margin-top:6px;font-size:10px" id="poly-list"></div>
+  </div>
+  <div class="section">
+    <div class="highlight">★ 17 is a Fermat prime (F₂)</div>
+    <div class="highlight">★ 17 is a Shield prime</div>
+    <div style="color:#889;font-size:10px;margin-top:4px">
+      Gauss proved the 17-gon constructible<br>
+      at age 19 (1796) — his proudest<br>
+      mathematical achievement.
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="polygon-overlay">
+  <span class="close-btn" onclick="closePolygon()">×</span>
+  <canvas id="polycanvas" width="500" height="500"></canvas>
+  <div class="label" id="poly-label"></div>
+</div>
+
+<div id="instructions">
+  SCROLL: zoom | DRAG: pan | HOVER: info | CLICK: constructible polygon
+</div>
+
+<script>
+const canvas = document.getElementById('main');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Fermat numbers data
+const fermatData = [
+  { n:0, exp:'2⁰', value:3, prime:true, factors:null, label:'F₀ = 3' },
+  { n:1, exp:'2¹', value:5, prime:true, factors:null, label:'F₁ = 5' },
+  { n:2, exp:'2²', value:17, prime:true, factors:null, label:'F₂ = 17' },
+  { n:3, exp:'2³', value:257, prime:true, factors:null, label:'F₃ = 257' },
+  { n:4, exp:'2⁴', value:65537, prime:true, factors:null, label:'F₄ = 65537' },
+  { n:5, exp:'2⁵', value:4294967297, prime:false, factors:'641 × 6700417', label:'F₅ = 4294967297' },
+  { n:6, exp:'2⁶', value:null, prime:false, factors:'composite (274177 × ...)', label:'F₆ ~ 1.8×10¹⁹' },
+];
+
+// Constructible polygon numbers (up to ~20 for display)
+const constructible = [3,4,5,6,8,10,12,15,16,17,20,24,32,34,40,48,51,60,64,68,80,85,96];
+
+// Camera
+let camX = 0, camY = 0, zoom = 1;
+let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
+
+// Animation state
+let animTime = 0;
+let buildProgress = 0; // 0-7, each integer reveals a level
+const LEVEL_DURATION = 1.2; // seconds per level
+
+// Tower geometry (screen coords before camera)
+const towerBaseX = 0;
+const towerBaseY = 200;
+const levelHeight = 100;
+const levelWidth = 280;
+
+// Hitboxes for hover/click
+let levelBoxes = [];
+
+function worldToScreen(wx, wy) {
+  return [(wx - camX) * zoom + W/2, (wy - camY) * zoom + H/2];
+}
+function screenToWorld(sx, sy) {
+  return [(sx - W/2) / zoom + camX, (sy - W/2) / zoom + camY]; // intentional: using W/2 for both was a bug
+}
+function screenToWorldCorrect(sx, sy) {
+  return [(sx - W/2) / zoom + camX, (sy - H/2) / zoom + camY];
+}
+
+// Draw tower
+function drawTower(t) {
+  const levelsVisible = Math.min(Math.floor(buildProgress), 7);
+  const partialLevel = buildProgress - Math.floor(buildProgress);
+  levelBoxes = [];
+
+  for (let i = 0; i <= Math.min(levelsVisible, fermatData.length - 1); i++) {
+    const fd = fermatData[i];
+    const alpha = (i === levelsVisible && i < fermatData.length) ? partialLevel : 1;
+    if (alpha < 0.01) continue;
+
+    const wx = towerBaseX;
+    const wy = towerBaseY - i * levelHeight;
+    const halfW = levelWidth / 2 - i * 10;
+    const halfH = levelHeight / 2 - 10;
+
+    const [sx, sy] = worldToScreen(wx, wy);
+    const sw = halfW * 2 * zoom;
+    const sh = halfH * 2 * zoom;
+
+    // Glow
+    const glowColor = fd.prime ? 'rgba(0,255,120,' : 'rgba(255,60,60,';
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2 + i);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Glow background
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw * 0.8);
+    grad.addColorStop(0, glowColor + (0.15 * pulse) + ')');
+    grad.addColorStop(1, glowColor + '0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sx - sw, sy - sh * 2, sw * 2, sh * 4);
+
+    // Block
+    const borderColor = fd.prime ? `rgba(0,255,120,${0.4 + 0.3 * pulse})` : `rgba(255,60,60,${0.4 + 0.3 * pulse})`;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - sw/2, sy - sh/2, sw, sh);
+
+    ctx.fillStyle = fd.prime ? 'rgba(0,40,20,0.6)' : 'rgba(40,10,10,0.6)';
+    ctx.fillRect(sx - sw/2, sy - sh/2, sw, sh);
+
+    // Crack lines for composites
+    if (!fd.prime) {
+      ctx.strokeStyle = `rgba(255,60,60,${0.3 + 0.2 * pulse})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const crackSeed = i * 137;
+      for (let c = 0; c < 5; c++) {
+        const cx1 = sx - sw/2 + Math.sin(crackSeed + c) * sw * 0.3 + sw * 0.5;
+        const cy1 = sy - sh/2;
+        const cx2 = cx1 + Math.cos(crackSeed + c * 2.3) * 20;
+        const cy2 = sy + sh/2;
+        ctx.moveTo(cx1, cy1);
+        ctx.lineTo(cx2, cy2);
+      }
+      ctx.stroke();
+    }
+
+    // Exponent label: 2^(2^n)
+    ctx.fillStyle = '#0af';
+    ctx.font = `${Math.max(10, 14 * zoom)}px 'Courier New'`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`2^(${fd.exp})`, sx - sw/2 + 8 * zoom, sy - 4 * zoom);
+
+    // Value
+    ctx.fillStyle = fd.prime ? '#0f8' : '#f44';
+    ctx.font = `${Math.max(9, 11 * zoom)}px 'Courier New'`;
+    const valText = fd.value !== null ? fd.value.toLocaleString() : fd.label.split('= ')[1];
+    ctx.fillText(valText, sx - sw/2 + 8 * zoom, sy + 14 * zoom);
+
+    // Status
+    ctx.fillStyle = fd.prime ? '#0f8' : '#f44';
+    ctx.textAlign = 'right';
+    ctx.font = `bold ${Math.max(9, 11 * zoom)}px 'Courier New'`;
+    ctx.fillText(fd.prime ? 'PRIME' : 'COMPOSITE', sx + sw/2 - 8 * zoom, sy - 4 * zoom);
+
+    if (!fd.prime && fd.factors) {
+      ctx.fillStyle = '#f88';
+      ctx.font = `${Math.max(8, 10 * zoom)}px 'Courier New'`;
+      ctx.fillText(fd.factors, sx + sw/2 - 8 * zoom, sy + 14 * zoom);
+    }
+
+    // Label
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#667';
+    ctx.font = `${Math.max(8, 10 * zoom)}px 'Courier New'`;
+    ctx.fillText(`F${fd.n}`, sx, sy + sh/2 + 14 * zoom);
+
+    // Special highlight for F2=17
+    if (fd.n === 2) {
+      ctx.fillStyle = `rgba(255,255,0,${0.15 + 0.1 * pulse})`;
+      ctx.fillRect(sx - sw/2, sy - sh/2, sw, sh);
+      ctx.fillStyle = '#ff0';
+      ctx.font = `${Math.max(7, 9 * zoom)}px 'Courier New'`;
+      ctx.textAlign = 'center';
+      ctx.fillText('★ SHIELD PRIME', sx, sy + sh/2 + 26 * zoom);
+    }
+
+    ctx.restore();
+
+    // Store hitbox (screen coords)
+    levelBoxes.push({
+      x: sx - sw/2, y: sy - sh/2, w: sw, h: sh,
+      data: fd, index: i
+    });
+
+    // Connecting line to next level
+    if (i < levelsVisible && i < fermatData.length - 1) {
+      const [nx, ny] = worldToScreen(towerBaseX, towerBaseY - (i + 1) * levelHeight);
+      ctx.strokeStyle = 'rgba(0,170,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - sh/2);
+      ctx.lineTo(nx, ny + halfH * zoom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+// Draw constructible polygon indicators along the bottom-left
+let polyBoxes = [];
+function drawPolyIndicators(t) {
+  polyBoxes = [];
+  const startX = 40;
+  const startY = H - 70;
+  const spacing = 52;
+  const maxShow = Math.min(constructible.length, Math.floor((W - 360) / spacing));
+
+  ctx.fillStyle = '#0af';
+  ctx.font = "11px 'Courier New'";
+  ctx.textAlign = 'left';
+  ctx.fillText('CONSTRUCTIBLE n-GONS (click):', startX, startY - 20);
+
+  for (let i = 0; i < maxShow; i++) {
+    const n = constructible[i];
+    const cx = startX + i * spacing + 20;
+    const cy = startY;
+    const r = 16;
+
+    // Is it a Fermat prime itself?
+    const isFermat = [3,5,17,257,65537].includes(n);
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2 + i * 0.5);
+
+    // Draw mini polygon
+    ctx.beginPath();
+    for (let v = 0; v < n && v < 50; v++) {
+      const angle = -Math.PI/2 + (2 * Math.PI * v) / Math.min(n, 50);
+      const px = cx + r * Math.cos(angle);
+      const py = cy + r * Math.sin(angle);
+      if (v === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = isFermat ? `rgba(0,255,120,${0.5 + 0.3 * pulse})` : 'rgba(0,170,255,0.4)';
+    ctx.lineWidth = n === 17 ? 2 : 1;
+    ctx.stroke();
+
+    if (n === 17) {
+      ctx.fillStyle = `rgba(255,255,0,${0.08 + 0.05 * pulse})`;
+      ctx.fill();
+    }
+
+    // Label
+    ctx.fillStyle = isFermat ? '#0f8' : '#0af';
+    ctx.font = "10px 'Courier New'";
+    ctx.textAlign = 'center';
+    ctx.fillText(n + '', cx, cy + r + 14);
+
+    polyBoxes.push({ x: cx - r - 4, y: cy - r - 4, w: (r + 4) * 2, h: (r + 4) * 2 + 18, n: n });
+  }
+}
+
+// Stars background
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random() * 3000 - 1500,
+    y: Math.random() * 2000 - 1000,
+    r: Math.random() * 1.5 + 0.3,
+    b: Math.random()
+  });
+}
+
+function drawStars(t) {
+  for (const s of stars) {
+    const [sx, sy] = worldToScreen(s.x, s.y);
+    if (sx < -10 || sx > W + 10 || sy < -10 || sy > H + 10) continue;
+    const bright = 0.3 + 0.3 * Math.sin(t * 0.5 + s.b * 10);
+    ctx.fillStyle = `rgba(100,130,200,${bright})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.r * zoom, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Title
+function drawTitle(t) {
+  const [tx, ty] = worldToScreen(towerBaseX, towerBaseY + 120);
+  ctx.textAlign = 'center';
+  const pulse = 0.7 + 0.3 * Math.sin(t);
+  ctx.fillStyle = `rgba(0,170,255,${pulse})`;
+  ctx.font = `bold ${Math.max(14, 22 * zoom)}px 'Courier New'`;
+  ctx.fillText('TOWER OF FERMAT', tx, ty);
+  ctx.fillStyle = `rgba(102,119,136,${0.5 + 0.2 * Math.sin(t * 0.7)})`;
+  ctx.font = `${Math.max(9, 12 * zoom)}px 'Courier New'`;
+  ctx.fillText('F_n = 2^(2^n) + 1', tx, ty + 20 * zoom);
+  ctx.fillText('Each level doubles the exponent', tx, ty + 36 * zoom);
+}
+
+// Formula visualization
+function drawFormula(t) {
+  const [fx, fy] = worldToScreen(towerBaseX - 250, towerBaseY - 200);
+  if (fx > W + 100 || fx < -400) return;
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = '#0af';
+  ctx.font = `${Math.max(9, 11 * zoom)}px 'Courier New'`;
+  ctx.textAlign = 'left';
+  const lines = [
+    'Tower of Powers:',
+    '',
+    'F₀: 2^(2⁰)+1 = 2^1+1 = 3',
+    'F₁: 2^(2¹)+1 = 2^2+1 = 5',
+    'F₂: 2^(2²)+1 = 2^4+1 = 17',
+    'F₃: 2^(2³)+1 = 2^8+1 = 257',
+    'F₄: 2^(2⁴)+1 = 2^16+1 = 65537',
+    'F₅: 2^(2⁵)+1 = 2^32+1 = 4294967297',
+    '',
+    'Exponents: 1,2,4,8,16,32,...',
+    'Each doubles the previous!'
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    const reveal = Math.max(0, Math.min(1, buildProgress - i * 0.3));
+    ctx.globalAlpha = 0.6 * reveal;
+    ctx.fillText(lines[i], fx, fy + i * 16 * zoom);
+  }
+  ctx.restore();
+}
+
+// Main loop
+let lastTime = 0;
+function frame(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+  animTime += dt;
+
+  // Build animation
+  if (buildProgress < 7) {
+    buildProgress += dt / LEVEL_DURATION;
+    if (buildProgress > 7) buildProgress = 7;
+  }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars(animTime);
+  drawTitle(animTime);
+  drawFormula(animTime);
+  drawTower(animTime);
+  drawPolyIndicators(animTime);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Mouse events
+canvas.addEventListener('mousedown', e => {
+  // Check polygon indicators first
+  for (const pb of polyBoxes) {
+    if (e.clientX >= pb.x && e.clientX <= pb.x + pb.w &&
+        e.clientY >= pb.y && e.clientY <= pb.y + pb.h) {
+      showPolygon(pb.n);
+      return;
+    }
+  }
+  // Check tower levels
+  for (const lb of levelBoxes) {
+    if (e.clientX >= lb.x && e.clientX <= lb.x + lb.w &&
+        e.clientY >= lb.y && e.clientY <= lb.y + lb.h) {
+      if (lb.data.prime && lb.data.value) {
+        showPolygon(lb.data.value <= 65537 ? lb.data.value : 3);
+      }
+      return;
+    }
+  }
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  camStartX = camX;
+  camStartY = camY;
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (dragging) {
+    camX = camStartX - (e.clientX - dragStartX) / zoom;
+    camY = camStartY - (e.clientY - dragStartY) / zoom;
+    return;
+  }
+  // Tooltip
+  let found = false;
+  for (const lb of levelBoxes) {
+    if (e.clientX >= lb.x && e.clientX <= lb.x + lb.w &&
+        e.clientY >= lb.y && e.clientY <= lb.y + lb.h) {
+      const fd = lb.data;
+      let html = `<div style="color:#0af;font-size:13px;margin-bottom:4px">F<sub>${fd.n}</sub> = 2<sup>2<sup>${fd.n}</sup></sup> + 1</div>`;
+      const valStr = fd.value !== null ? fd.value.toLocaleString() : '~1.8×10¹⁹';
+      html += `<div>Value: ${valStr}</div>`;
+      html += `<div style="color:${fd.prime ? '#0f8' : '#f44'}">${fd.prime ? '✓ PRIME' : '✗ COMPOSITE'}</div>`;
+      if (fd.factors) html += `<div style="color:#f88">= ${fd.factors}</div>`;
+      if (fd.n === 2) html += `<div style="color:#ff0;margin-top:4px">★ Shield Prime & Fermat Prime</div>`;
+      if (fd.prime && fd.value) {
+        html += `<div style="color:#889;margin-top:4px;font-size:10px">Click to see ${fd.value}-gon</div>`;
+      }
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 15) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    for (const pb of polyBoxes) {
+      if (e.clientX >= pb.x && e.clientX <= pb.x + pb.w &&
+          e.clientY >= pb.y && e.clientY <= pb.y + pb.h) {
+        let html = `<div style="color:#0af">Regular ${pb.n}-gon</div>`;
+        html += `<div style="color:#0f8">Constructible ✓</div>`;
+        // Factor into 2^k * Fermat primes
+        let n = pb.n;
+        let twos = 0;
+        while (n % 2 === 0) { twos++; n /= 2; }
+        let parts = [];
+        if (twos > 0) parts.push('2' + (twos > 1 ? '^' + twos : ''));
+        const fps = [3, 5, 17, 257, 65537];
+        for (const fp of fps) {
+          if (n % fp === 0) { parts.push(fp); n /= fp; }
+        }
+        if (parts.length) html += `<div style="color:#889;font-size:10px">${pb.n} = ${parts.join(' × ')}</div>`;
+        html += `<div style="color:#667;font-size:10px;margin-top:3px">Click to draw</div>`;
+        tooltip.innerHTML = html;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 15) + 'px';
+        tooltip.style.top = (e.clientY - 10) + 'px';
+        found = true;
+        break;
+      }
+    }
+  }
+  if (!found) tooltip.style.display = 'none';
+});
+
+canvas.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('mouseleave', () => { dragging = false; tooltip.style.display = 'none'; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+  const oldZoom = zoom;
+  zoom = Math.max(0.3, Math.min(5, zoom * zoomFactor));
+  // Zoom toward mouse position
+  const mx = e.clientX, my = e.clientY;
+  camX += (mx - W/2) * (1/oldZoom - 1/zoom);
+  camY += (my - H/2) * (1/oldZoom - 1/zoom);
+}, { passive: false });
+
+// Polygon overlay
+function showPolygon(n) {
+  if (n > 200) {
+    // Too many sides to draw meaningfully, show circle approximation
+    n = Math.min(n, 200);
+  }
+  const overlay = document.getElementById('polygon-overlay');
+  overlay.style.display = 'flex';
+  const pc = document.getElementById('polycanvas');
+  const pctx = pc.getContext('2d');
+  const size = Math.min(500, Math.min(window.innerWidth - 40, window.innerHeight - 120));
+  pc.width = size;
+  pc.height = size;
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size * 0.38;
+
+  pctx.fillStyle = '#060610';
+  pctx.fillRect(0, 0, size, size);
+
+  // Grid circles
+  pctx.strokeStyle = 'rgba(0,170,255,0.08)';
+  pctx.lineWidth = 1;
+  for (let gr = r * 0.25; gr <= r * 1.1; gr += r * 0.25) {
+    pctx.beginPath();
+    pctx.arc(cx, cy, gr, 0, Math.PI * 2);
+    pctx.stroke();
+  }
+
+  // Draw polygon
+  const isFermat = [3, 5, 17, 257].includes(n);
+  const strokeColor = isFermat ? '#0f8' : '#0af';
+
+  // Vertices
+  const verts = [];
+  for (let i = 0; i < n; i++) {
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    verts.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
+  }
+
+  // Fill
+  pctx.beginPath();
+  for (let i = 0; i < verts.length; i++) {
+    if (i === 0) pctx.moveTo(verts[i][0], verts[i][1]);
+    else pctx.lineTo(verts[i][0], verts[i][1]);
+  }
+  pctx.closePath();
+  pctx.fillStyle = isFermat ? 'rgba(0,255,120,0.05)' : 'rgba(0,170,255,0.05)';
+  pctx.fill();
+  pctx.strokeStyle = strokeColor;
+  pctx.lineWidth = 2;
+  pctx.stroke();
+
+  // Vertex dots
+  for (let i = 0; i < verts.length; i++) {
+    pctx.beginPath();
+    pctx.arc(verts[i][0], verts[i][1], n <= 20 ? 4 : 2, 0, Math.PI * 2);
+    pctx.fillStyle = strokeColor;
+    pctx.fill();
+  }
+
+  // Diagonals from vertex 0 (only for small n)
+  if (n <= 20) {
+    pctx.strokeStyle = 'rgba(0,170,255,0.12)';
+    pctx.lineWidth = 0.5;
+    for (let i = 2; i < n - 1; i++) {
+      pctx.beginPath();
+      pctx.moveTo(verts[0][0], verts[0][1]);
+      pctx.lineTo(verts[i][0], verts[i][1]);
+      pctx.stroke();
+    }
+  }
+
+  // Center dot
+  pctx.beginPath();
+  pctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  pctx.fillStyle = '#0af';
+  pctx.fill();
+
+  // Center cross
+  pctx.strokeStyle = 'rgba(0,170,255,0.2)';
+  pctx.lineWidth = 1;
+  pctx.beginPath();
+  pctx.moveTo(cx - 10, cy); pctx.lineTo(cx + 10, cy);
+  pctx.moveTo(cx, cy - 10); pctx.lineTo(cx, cy + 10);
+  pctx.stroke();
+
+  // Label
+  const label = document.getElementById('poly-label');
+  let text = `Regular ${n}-gon — Constructible with compass & straightedge`;
+  if (n === 17) text += ' | F₂ = 17 — FERMAT PRIME & SHIELD PRIME — Gauss, 1796';
+  else if (isFermat) text += ` | ${n} is a Fermat prime`;
+  label.textContent = text;
+}
+
+function closePolygon() {
+  document.getElementById('polygon-overlay').style.display = 'none';
+}
+document.getElementById('polygon-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('polygon-overlay')) closePolygon();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePolygon();
+});
+
+// Populate polygon list in stats
+const polyListEl = document.getElementById('poly-list');
+const polyGroups = [
+  { label: 'Fermat primes:', nums: [3, 5, 17, 257] },
+  { label: 'Powers of 2:', nums: [4, 8, 16, 32, 64] },
+  { label: 'Products:', nums: [6, 10, 12, 15, 20, 24, 34, 40, 48, 51, 60, 68, 80, 85, 96] }
+];
+for (const g of polyGroups) {
+  const d = document.createElement('div');
+  d.style.marginTop = '3px';
+  d.innerHTML = `<span style="color:#667">${g.label}</span> `;
+  for (const n of g.nums) {
+    const s = document.createElement('span');
+    s.textContent = n;
+    s.style.color = [3,5,17,257,65537].includes(n) ? '#0f8' : '#0af';
+    s.style.cursor = 'pointer';
+    s.style.marginRight = '6px';
+    s.addEventListener('click', () => showPolygon(n));
+    d.appendChild(s);
+  }
+  polyListEl.appendChild(d);
+}
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M₇ = 2⁷ - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2×3×5×7×11×13×17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
