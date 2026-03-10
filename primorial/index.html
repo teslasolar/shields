@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PRIMORIAL</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; color:#aab; font-family:'Courier New',monospace; overflow:hidden; }
+canvas { display:block; cursor:grab; }
+canvas:active { cursor:grabbing; }
+
+#stats {
+  position:fixed; top:10px; right:10px; width:260px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  border-radius:6px; padding:14px; font-size:11px; z-index:10;
+  max-height:calc(100vh - 80px); overflow-y:auto;
+}
+#stats h2 { font-size:13px; color:#0af; margin-bottom:10px; letter-spacing:2px; }
+.stat-row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04); }
+.stat-row.highlight { color:#ffd700; font-weight:bold; background:rgba(255,215,0,.06); padding:4px 3px; border-radius:3px; }
+.stat-label { color:#668; }
+.stat-val { color:#aac; }
+.prime-tag { font-size:9px; padding:1px 4px; border-radius:3px; margin-left:4px; }
+.prime-yes { background:rgba(0,255,100,.15); color:#0f8; }
+.prime-no { background:rgba(255,50,50,.1); color:#644; }
+.section-title { color:#08a; font-size:10px; margin:10px 0 5px; letter-spacing:1px; }
+
+#tooltip {
+  position:fixed; display:none; pointer-events:none;
+  background:rgba(6,6,16,.95); border:1px solid rgba(0,170,255,.3);
+  border-radius:5px; padding:10px 14px; font-size:11px; z-index:20;
+  max-width:300px; line-height:1.6;
+}
+#tooltip .tt-title { color:#0af; font-size:12px; margin-bottom:4px; }
+#tooltip .tt-val { color:#ffd700; font-size:14px; }
+#tooltip .tt-factors { color:#8af; margin-top:4px; }
+#tooltip .tt-pcheck { margin-top:4px; font-size:10px; }
+
+#detail {
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  display:none; background:rgba(6,6,16,.97); border:1px solid rgba(0,170,255,.3);
+  border-radius:8px; padding:24px 30px; font-size:12px; z-index:30;
+  min-width:300px; text-align:center;
+}
+#detail h3 { color:#0af; font-size:15px; margin-bottom:12px; }
+#detail .close-btn {
+  position:absolute; top:8px; right:12px; cursor:pointer;
+  color:#668; font-size:16px;
+}
+#detail .close-btn:hover { color:#fff; }
+#detail .breakdown { text-align:left; margin-top:10px; line-height:2; }
+#detail .factor-chip {
+  display:inline-block; padding:2px 8px; border-radius:10px;
+  margin:2px; font-size:12px; font-weight:bold;
+}
+
+#title-bar {
+  position:fixed; top:10px; left:10px; z-index:10;
+}
+#title-bar h1 { font-size:16px; letter-spacing:4px; color:#0af; }
+#title-bar .sub { font-size:9px; color:#446; letter-spacing:1px; margin-top:2px; }
+</style>
+</head>
+<body>
+
+<div id="title-bar">
+  <h1>SHIELD-PRIMORIAL</h1>
+  <div class="sub">p# = PRODUCT OF ALL PRIMES &le; p</div>
+</div>
+
+<div id="stats"></div>
+<div id="tooltip"></div>
+<div id="detail"></div>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const detail = document.getElementById('detail');
+const statsPanel = document.getElementById('stats');
+
+// --- Data ---
+const primes = [2, 3, 5, 7, 11, 13, 17];
+const primorials = [];
+let running = 1;
+for (const p of primes) {
+  running *= p;
+  primorials.push({ prime: p, value: running, factors: primes.slice(0, primes.indexOf(p) + 1) });
+}
+// primorials: [{prime:2,value:2,...},{prime:3,value:6,...},...,{prime:17,value:510510,...}]
+
+const primeColors = {
+  2:  '#ff3366',
+  3:  '#ff8800',
+  5:  '#ffdd00',
+  7:  '#00ff88',
+  11: '#00aaff',
+  13: '#7744ff',
+  17: '#ffd700'
+};
+
+// Check if number is prime (small numbers)
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+// Primorial primes: p# +/- 1 that are prime
+const primorialPrimes = [];
+for (const p of primorials) {
+  const plus1 = isPrime(p.value + 1);
+  const minus1 = isPrime(p.value - 1);
+  p.plus1Prime = plus1;
+  p.minus1Prime = minus1;
+  if (plus1) primorialPrimes.push(p.value + 1 + ' = ' + p.prime + '#+1');
+  if (minus1) primorialPrimes.push(p.value - 1 + ' = ' + p.prime + '#-1');
+}
+
+// --- Canvas state ---
+let W, H;
+let camX = 0, camY = 0, zoom = 1;
+let dragging = false, dragX = 0, dragY = 0;
+let startTime = performance.now();
+let animPhase = 0; // 0..7, each ring builds in
+const RING_BUILD_DURATION = 1200; // ms per ring
+const TOTAL_BUILD = RING_BUILD_DURATION * primes.length;
+let hoveredRing = -1;
+let celebrationTime = -1;
+let particles = [];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- Ring geometry ---
+const baseRadius = 40;
+const ringWidth = 38;
+function ringInner(i) { return baseRadius + i * ringWidth; }
+function ringOuter(i) { return baseRadius + (i + 1) * ringWidth; }
+
+// --- Interaction ---
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragX = e.clientX; dragY = e.clientY;
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragging) {
+    camX += (e.clientX - dragX) / zoom;
+    camY += (e.clientY - dragY) / zoom;
+    dragX = e.clientX; dragY = e.clientY;
+  }
+  // Hover detection
+  const mx = (e.clientX - W / 2) / zoom - camX;
+  const my = (e.clientY - H / 2) / zoom - camY;
+  const dist = Math.sqrt(mx * mx + my * my);
+  hoveredRing = -1;
+  for (let i = primorials.length - 1; i >= 0; i--) {
+    if (dist >= ringInner(i) && dist <= ringOuter(i)) {
+      hoveredRing = i;
+      break;
+    }
+  }
+  if (hoveredRing >= 0) {
+    const p = primorials[hoveredRing];
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 15) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    tooltip.innerHTML = `
+      <div class="tt-title">${p.prime}# — Primorial</div>
+      <div class="tt-val">${p.value.toLocaleString()}</div>
+      <div class="tt-factors">= ${p.factors.join(' × ')}</div>
+      <div class="tt-pcheck">
+        ${p.prime}#+1 = ${(p.value+1).toLocaleString()} → ${p.plus1Prime ? '<span style="color:#0f8">PRIME</span>' : '<span style="color:#644">not prime</span>'}
+        <br>${p.prime}#−1 = ${(p.value-1).toLocaleString()} → ${p.minus1Prime ? '<span style="color:#0f8">PRIME</span>' : '<span style="color:#644">not prime</span>'}
+      </div>`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+canvas.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('mouseleave', () => { dragging = false; tooltip.style.display = 'none'; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  zoom = Math.max(0.2, Math.min(5, zoom * factor));
+}, { passive: false });
+
+canvas.addEventListener('click', e => {
+  if (hoveredRing < 0) { detail.style.display = 'none'; return; }
+  const p = primorials[hoveredRing];
+  let chips = '';
+  for (const f of p.factors) {
+    chips += `<span class="factor-chip" style="background:${primeColors[f]}33;color:${primeColors[f]}">${f}</span>`;
+    if (f !== p.factors[p.factors.length - 1]) chips += ' <span style="color:#446">&times;</span> ';
+  }
+  detail.innerHTML = `
+    <span class="close-btn" onclick="this.parentNode.style.display='none'">&times;</span>
+    <h3>${p.prime}# = ${p.value.toLocaleString()}</h3>
+    <div class="breakdown">
+      <div style="margin-bottom:8px;color:#668;font-size:10px">FACTORIZATION BREAKDOWN</div>
+      <div>${chips}</div>
+      <div style="margin-top:12px;color:#668;font-size:10px">STEP-BY-STEP</div>
+      <div style="text-align:left;margin-top:4px;color:#8af;font-size:11px;line-height:2">
+        ${buildSteps(p)}
+      </div>
+      <div style="margin-top:12px;color:#668;font-size:10px">PRIMORIAL PRIMES CHECK</div>
+      <div style="margin-top:4px;font-size:11px">
+        ${p.value.toLocaleString()} + 1 = ${(p.value+1).toLocaleString()} ${p.plus1Prime ? '<span style="color:#0f8">&#10003; PRIME</span>' : '<span style="color:#644">&#10007; composite</span>'}
+      </div>
+      <div style="font-size:11px">
+        ${p.value.toLocaleString()} − 1 = ${(p.value-1).toLocaleString()} ${p.minus1Prime ? '<span style="color:#0f8">&#10003; PRIME</span>' : '<span style="color:#644">&#10007; composite</span>'}
+      </div>
+    </div>`;
+  detail.style.display = 'block';
+});
+
+function buildSteps(p) {
+  let html = '';
+  let val = 1;
+  for (const f of p.factors) {
+    const prev = val;
+    val *= f;
+    html += `<div>${prev} &times; <span style="color:${primeColors[f]}">${f}</span> = <span style="color:#fff">${val.toLocaleString()}</span></div>`;
+  }
+  return html;
+}
+
+// --- Stats panel ---
+function buildStats() {
+  let html = '<h2>PRIMORIALS</h2>';
+  html += '<div class="section-title">p# VALUES</div>';
+  for (const p of primorials) {
+    const isLast = p.value === 510510;
+    html += `<div class="stat-row${isLast ? ' highlight' : ''}">
+      <span class="stat-label">${p.prime}#</span>
+      <span class="stat-val" style="color:${primeColors[p.prime]}">${p.value.toLocaleString()}</span>
+    </div>`;
+  }
+  html += '<div class="section-title">PRIMORIAL PRIMES (p#&pm;1)</div>';
+  for (const p of primorials) {
+    if (p.plus1Prime) {
+      html += `<div class="stat-row"><span class="stat-label">${p.prime}#+1</span><span class="stat-val">${(p.value+1).toLocaleString()}<span class="prime-tag prime-yes">PRIME</span></span></div>`;
+    }
+    if (p.minus1Prime) {
+      html += `<div class="stat-row"><span class="stat-label">${p.prime}#−1</span><span class="stat-val">${(p.value-1).toLocaleString()}<span class="prime-tag prime-yes">PRIME</span></span></div>`;
+    }
+  }
+  html += `<div class="stat-row" style="margin-top:8px"><span class="stat-label">Primorial primes found</span><span class="stat-val" style="color:#0f8">${primorialPrimes.length}</span></div>`;
+  html += '<div class="section-title" style="margin-top:12px">510,510 IDENTITY</div>';
+  html += '<div class="stat-row highlight"><span class="stat-label">17#</span><span class="stat-val">510,510</span></div>';
+  html += '<div class="stat-row"><span class="stat-label">Factors</span><span class="stat-val" style="font-size:10px">2&times;3&times;5&times;7&times;11&times;13&times;17</span></div>';
+  html += '<div class="stat-row"><span class="stat-label">7th primorial</span><span class="stat-val" style="color:#ffd700">&#9733;</span></div>';
+  statsPanel.innerHTML = html;
+}
+buildStats();
+
+// --- Particles for celebration ---
+function spawnParticles(cx, cy, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      color: ['#ffd700', '#ff8800', '#ffdd00', '#fff', '#0af'][Math.floor(Math.random() * 5)],
+      size: 1 + Math.random() * 2
+    });
+  }
+}
+
+// --- Render ---
+function draw() {
+  const now = performance.now();
+  const elapsed = now - startTime;
+  const t = elapsed / 1000;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background subtle grid
+  ctx.save();
+  ctx.globalAlpha = 0.03;
+  ctx.strokeStyle = '#0af';
+  const gSize = 60;
+  for (let x = 0; x < W; x += gSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += gSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(camX, camY);
+
+  // How many rings are built
+  const buildProgress = Math.min(elapsed / RING_BUILD_DURATION, primes.length);
+  const fullRings = Math.floor(buildProgress);
+  const partialRing = buildProgress - fullRings;
+
+  // Draw rings
+  for (let i = 0; i < Math.min(fullRings + 1, primes.length); i++) {
+    const p = primorials[i];
+    const inner = ringInner(i);
+    const outer = ringOuter(i);
+    const progress = i < fullRings ? 1 : partialRing;
+    const color = primeColors[p.prime];
+    const isLast = i === primes.length - 1;
+    const isHovered = i === hoveredRing;
+
+    // Ring expansion animation
+    const animOuter = inner + (outer - inner) * easeOutCubic(progress);
+
+    // Pulse
+    const pulse = Math.sin(t * 2 + i * 0.7) * 0.1 + 0.9;
+
+    // Ring fill
+    ctx.beginPath();
+    ctx.arc(0, 0, animOuter, 0, Math.PI * 2);
+    ctx.arc(0, 0, inner, 0, Math.PI * 2, true);
+    ctx.closePath();
+
+    const alpha = isHovered ? 0.35 : 0.15 * pulse;
+    ctx.fillStyle = hexToRGBA(color, alpha);
+    ctx.fill();
+
+    // Ring stroke
+    ctx.strokeStyle = hexToRGBA(color, isHovered ? 0.9 : 0.5 * pulse);
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.stroke();
+
+    // Divisor marks on ring - show prime subdivisions
+    if (progress > 0.5) {
+      const divisions = p.prime;
+      const markAlpha = (progress - 0.5) * 2;
+      ctx.save();
+      ctx.globalAlpha = markAlpha * 0.4;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 0.5;
+      for (let d = 0; d < divisions; d++) {
+        const angle = (d / divisions) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+        ctx.lineTo(Math.cos(angle) * animOuter, Math.sin(angle) * animOuter);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Label on ring
+    if (progress > 0.7) {
+      const labelR = (inner + animOuter) / 2;
+      const labelAlpha = (progress - 0.7) / 0.3;
+      ctx.save();
+      ctx.globalAlpha = labelAlpha;
+      ctx.font = 'bold 11px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Prime factor label at top
+      ctx.fillStyle = color;
+      ctx.fillText('×' + p.prime, 0, -labelR);
+
+      // Value label at bottom
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px "Courier New", monospace';
+      ctx.fillText(p.value.toLocaleString(), 0, labelR);
+
+      // Primorial notation on right
+      ctx.fillStyle = '#668';
+      ctx.font = '9px "Courier New", monospace';
+      ctx.fillText(p.prime + '#', labelR, 0);
+
+      ctx.restore();
+    }
+
+    // Gold flash for final ring
+    if (isLast && progress >= 1 && celebrationTime < 0) {
+      celebrationTime = now;
+      spawnParticles(0, 0, 80);
+    }
+    if (isLast && celebrationTime > 0) {
+      const celElapsed = (now - celebrationTime) / 1000;
+      if (celElapsed < 3) {
+        const flash = Math.sin(celElapsed * 8) * 0.5 + 0.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, animOuter + 4, 0, Math.PI * 2);
+        ctx.arc(0, 0, inner, 0, Math.PI * 2, true);
+        ctx.closePath();
+        ctx.fillStyle = hexToRGBA('#ffd700', flash * 0.2);
+        ctx.fill();
+        ctx.strokeStyle = hexToRGBA('#ffd700', flash * 0.8);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      // Ongoing subtle glow
+      const glow = Math.sin(t * 1.5) * 0.15 + 0.15;
+      ctx.beginPath();
+      ctx.arc(0, 0, animOuter + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = hexToRGBA('#ffd700', glow);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  // Center text
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, elapsed / 1000);
+  ctx.fillStyle = '#0af';
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('p#', 0, -8);
+  ctx.fillStyle = '#446';
+  ctx.font = '8px "Courier New", monospace';
+  ctx.fillText('PRIMORIAL', 0, 8);
+  ctx.restore();
+
+  // Concentric pulse rings
+  const pulseCount = 3;
+  for (let i = 0; i < pulseCount; i++) {
+    const phase = (t * 0.3 + i / pulseCount) % 1;
+    const maxR = ringOuter(primes.length - 1) + 60;
+    const r = phase * maxR;
+    const alpha = (1 - phase) * 0.1;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRGBA('#0af', alpha);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    p.life -= 0.008;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRGBA(p.color, p.life * 0.8);
+    ctx.fill();
+  }
+
+  // Build-in animation labels: show multiplication sequence
+  if (buildProgress < primes.length) {
+    const currentIdx = Math.min(fullRings, primes.length - 1);
+    const p = primorials[currentIdx];
+    const prev = currentIdx > 0 ? primorials[currentIdx - 1].value : 1;
+    const labelY = ringOuter(primes.length - 1) + 50;
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = primeColors[p.prime];
+    ctx.fillText(prev.toLocaleString() + ' × ' + p.prime + ' = ' + p.value.toLocaleString(), 0, labelY);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  requestAnimationFrame(draw);
+}
+
+function easeOutCubic(x) {
+  return 1 - Math.pow(1 - x, 3);
+}
+
+function hexToRGBA(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

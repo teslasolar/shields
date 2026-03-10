@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-CHEN — Chen Prime Visualization</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas { display: block; cursor: grab; }
+canvas:active { cursor: grabbing; }
+#statsPanel {
+  position: fixed; top: 14px; right: 14px; z-index: 90;
+  background: rgba(6,6,16,0.92); border: 1px solid rgba(100,180,255,0.15);
+  border-radius: 6px; padding: 14px 18px; font-size: 12px;
+  min-width: 260px; backdrop-filter: blur(6px);
+  line-height: 1.8; pointer-events: auto;
+}
+#statsPanel .label { color: #607090; }
+#statsPanel .value { color: #a0c0e0; }
+#statsPanel .gold { color: #ffd700; }
+#statsPanel .silver { color: #b0b8c8; }
+#statsPanel .theorem { color: #506878; font-size: 10px; margin-top: 8px; line-height: 1.5; border-top: 1px solid rgba(100,180,255,0.1); padding-top: 8px; }
+#tooltip {
+  position: fixed; z-index: 100; display: none;
+  background: rgba(6,6,16,0.95); border: 1px solid rgba(100,180,255,0.3);
+  border-radius: 5px; padding: 10px 14px; font-size: 12px;
+  pointer-events: none; backdrop-filter: blur(8px);
+  line-height: 1.7; max-width: 280px;
+}
+#tooltip .tp { color: #ffd700; font-size: 14px; }
+#tooltip .ts { color: #b0b8c8; }
+#tooltip .tf { color: #7090a0; }
+#tooltip .tt { font-size: 10px; color: #506070; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div id="statsPanel"></div>
+<div id="tooltip"></div>
+<canvas id="c"></canvas>
+
+<script>
+// --- Math utilities ---
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6)
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  return true;
+}
+
+function primeFactors(n) {
+  const f = [];
+  let d = 2;
+  while (d * d <= n) {
+    while (n % d === 0) { f.push(d); n /= d; }
+    d++;
+  }
+  if (n > 1) f.push(n);
+  return f;
+}
+
+function isSemiprime(n) {
+  const f = primeFactors(n);
+  return f.length === 2;
+}
+
+// --- Build data ---
+const allPrimes = [];
+for (let i = 2; i <= 500; i++) if (isPrime(i)) allPrimes.push(i);
+
+const nodes = [];
+for (const p of allPrimes) {
+  const pp2 = p + 2;
+  const factors = primeFactors(pp2);
+  const twin = isPrime(pp2);
+  const semi = isSemiprime(pp2);
+  const chen = twin || semi;
+  nodes.push({
+    p, pp2, factors, twin, semi, chen,
+    label: twin ? 'twin' : (semi ? 'semiprime' : 'non-chen')
+  });
+}
+
+const chenNodes = nodes.filter(n => n.chen);
+const twinCount = chenNodes.filter(n => n.twin).length;
+const semiCount = chenNodes.filter(n => n.semi).length;
+
+// --- Canvas setup ---
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- View state ---
+let camX = -100, camY = 0, zoom = 1;
+let dragging = false, dragStartX = 0, dragStartY = 0, dragCamX = 0, dragCamY = 0;
+let highlightType = null; // 'twin' or 'semiprime' or null
+let hoveredNode = null;
+let animProgress = 0; // 0..1 build-in animation
+const animDuration = 4000; // ms
+let animStart = null;
+let time = 0;
+
+// --- Layout ---
+const nodeSpacing = 70;
+const baseY = 0;
+
+function nodeX(i) { return i * nodeSpacing; }
+function nodeY() { return baseY; }
+
+// --- Transform ---
+function toScreen(x, y) {
+  return [(x - camX) * zoom + W / 2, (y - camY) * zoom + H / 2];
+}
+function toWorld(sx, sy) {
+  return [(sx - W / 2) / zoom + camX, (sy - H / 2) / zoom + camY];
+}
+
+// --- Events ---
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragCamX = camX; dragCamY = camY;
+});
+window.addEventListener('mousemove', e => {
+  if (dragging) {
+    camX = dragCamX - (e.clientX - dragStartX) / zoom;
+    camY = dragCamY - (e.clientY - dragStartY) / zoom;
+  }
+  // Hover detection
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  hoveredNode = null;
+  for (let i = 0; i < nodes.length; i++) {
+    const revealIdx = Math.floor(animProgress * nodes.length);
+    if (i > revealIdx) break;
+    const nx = nodeX(i), ny = nodeY();
+    const dx = wx - nx, dy = wy - ny;
+    const r = nodes[i].chen ? 8 : 4;
+    if (dx * dx + dy * dy < (r + 4) * (r + 4)) {
+      hoveredNode = nodes[i];
+      hoveredNode._screenX = e.clientX;
+      hoveredNode._screenY = e.clientY;
+      break;
+    }
+  }
+  updateTooltip();
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  zoom = Math.max(0.15, Math.min(5, zoom * factor));
+  // Keep world point under cursor
+  camX = wx - (e.clientX - W / 2) / zoom;
+  camY = wy - (e.clientY - H / 2) / zoom;
+}, { passive: false });
+
+canvas.addEventListener('click', e => {
+  if (hoveredNode && hoveredNode.chen) {
+    const t = hoveredNode.twin ? 'twin' : 'semiprime';
+    highlightType = (highlightType === t) ? null : t;
+  } else {
+    highlightType = null;
+  }
+});
+
+// --- Tooltip ---
+const tooltip = document.getElementById('tooltip');
+function updateTooltip() {
+  if (!hoveredNode) { tooltip.style.display = 'none'; return; }
+  const n = hoveredNode;
+  const factStr = n.factors.join(' × ');
+  const classStr = n.twin ? '<span class="tp">TWIN PRIME</span>' :
+    (n.semi ? '<span class="ts">SEMIPRIME PARTNER</span>' :
+    '<span class="tf">NON-CHEN</span>');
+  tooltip.innerHTML =
+    `<div class="tp">p = ${n.p}</div>` +
+    `<div class="ts">p + 2 = ${n.pp2}</div>` +
+    `<div class="tf">${n.pp2} = ${factStr}</div>` +
+    `<div>${classStr}</div>` +
+    (n.chen ? `<div class="tt">Click to highlight all ${n.twin ? 'twin' : 'semiprime'} Chen primes</div>` : '');
+  let tx = n._screenX + 16, ty = n._screenY - 20;
+  if (tx + 280 > W) tx = n._screenX - 290;
+  if (ty < 10) ty = 10;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+  tooltip.style.display = 'block';
+}
+
+// --- Stats panel ---
+function updateStats() {
+  const sp = document.getElementById('statsPanel');
+  sp.innerHTML =
+    `<div style="color:#ffd700;font-size:14px;letter-spacing:2px;margin-bottom:6px">SHIELD-CHEN</div>` +
+    `<div><span class="label">Primes ≤ 500:</span> <span class="value">${allPrimes.length}</span></div>` +
+    `<div><span class="label">Chen primes:</span> <span class="value">${chenNodes.length}</span></div>` +
+    `<div><span class="label">Twin subset:</span> <span class="gold">${twinCount}</span></div>` +
+    `<div><span class="label">Semiprime subset:</span> <span class="silver">${semiCount}</span></div>` +
+    `<div class="theorem">Chen's Theorem (1966): There are infinitely many primes p such that p + 2 is either prime or semiprime. Proven by Chen Jingrun using sieve methods.</div>`;
+}
+updateStats();
+
+// --- Draw ---
+function drawArc(x1, y1, x2, y2, height, color, alpha, wavePhase, progress) {
+  if (progress <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const mx = (x1 + x2) / 2;
+  const wave = Math.sin(wavePhase) * 3 * zoom;
+  const cp1x = x1 + (x2 - x1) * 0.3;
+  const cp2x = x1 + (x2 - x1) * 0.7;
+  const cpy = y1 - height * zoom + wave;
+
+  // Partial draw via dash
+  const totalLen = Math.abs(x2 - x1) * 2;
+  const drawLen = totalLen * Math.min(1, progress);
+  ctx.setLineDash([drawLen, totalLen]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(mx, cpy, x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function draw(ts) {
+  if (!animStart) animStart = ts;
+  const elapsed = ts - animStart;
+  animProgress = Math.min(1, elapsed / animDuration);
+  time = ts * 0.001;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background subtle grid
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = '#4488aa';
+  ctx.lineWidth = 1;
+  const gridSize = 100 * zoom;
+  const gox = (-camX * zoom + W / 2) % gridSize;
+  const goy = (-camY * zoom + H / 2) % gridSize;
+  for (let x = gox; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = goy; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Timeline base line
+  const revealIdx = Math.floor(animProgress * nodes.length);
+  if (revealIdx > 0) {
+    const [lx0, ly0] = toScreen(nodeX(0), baseY);
+    const [lx1, ly1] = toScreen(nodeX(revealIdx), baseY);
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#3366aa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(lx0, ly0);
+    ctx.lineTo(lx1, ly1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw arcs first (behind nodes)
+  for (let i = 0; i < nodes.length && i <= revealIdx; i++) {
+    const n = nodes[i];
+    if (!n.chen) continue;
+
+    const [sx, sy] = toScreen(nodeX(i), nodeY());
+    // Skip if off screen
+    if (sx < -200 || sx > W + 200) continue;
+
+    const arcProgress = Math.max(0, Math.min(1, (animProgress * nodes.length - i) / 3));
+    const wavePhase = time * 1.5 + i * 0.7;
+
+    const dimmed = highlightType && n.label !== highlightType;
+    const baseAlpha = dimmed ? 0.12 : 0.6;
+
+    if (n.twin) {
+      // Golden arc upward
+      const arcH = 40 + (n.p % 30);
+      const [ax1, ay1] = toScreen(nodeX(i) - 15, nodeY());
+      const [ax2, ay2] = toScreen(nodeX(i) + 15, nodeY());
+      drawArc(ax1, ay1, ax2, ay2, arcH, '#ffd700', baseAlpha, wavePhase, arcProgress);
+    } else {
+      // Silver arc with factor indication
+      const arcH = 30 + (n.p % 20);
+      const [ax1, ay1] = toScreen(nodeX(i) - 18, nodeY());
+      const [ax2, ay2] = toScreen(nodeX(i) + 18, nodeY());
+      drawArc(ax1, ay1, ax2, ay2, arcH, '#8899bb', baseAlpha * 0.8, wavePhase, arcProgress);
+
+      // Factor labels above arc
+      if (arcProgress > 0.5 && zoom > 0.4 && !dimmed) {
+        const [mx, my] = toScreen(nodeX(i), nodeY() - arcH - 8);
+        ctx.save();
+        ctx.globalAlpha = (arcProgress - 0.5) * 2 * 0.5;
+        ctx.fillStyle = '#8899bb';
+        ctx.font = `${Math.max(7, 9 * zoom)}px 'Courier New', monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${n.factors[0]}×${n.factors[1]}`, mx, my);
+        ctx.restore();
+      }
+    }
+  }
+
+  // Draw nodes
+  for (let i = 0; i < nodes.length && i <= revealIdx; i++) {
+    const n = nodes[i];
+    const [sx, sy] = toScreen(nodeX(i), nodeY());
+
+    // Skip if off screen
+    if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) continue;
+
+    const nodeProgress = Math.max(0, Math.min(1, (animProgress * nodes.length - i) / 2));
+    if (nodeProgress <= 0) continue;
+
+    const dimmedHL = highlightType && n.chen && n.label !== highlightType;
+    const isHovered = hoveredNode === n;
+
+    if (!n.chen) {
+      // Non-Chen: dim dot
+      ctx.save();
+      ctx.globalAlpha = 0.15 * nodeProgress;
+      ctx.fillStyle = '#334455';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 3 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Tiny label
+      if (zoom > 0.6) {
+        ctx.save();
+        ctx.globalAlpha = 0.12 * nodeProgress;
+        ctx.fillStyle = '#445566';
+        ctx.font = `${Math.max(6, 8 * zoom)}px 'Courier New', monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(n.p, sx, sy + 16 * zoom);
+        ctx.restore();
+      }
+      continue;
+    }
+
+    const r = (isHovered ? 9 : 7) * zoom;
+    const baseColor = n.twin ? '#ffd700' : '#a0b0cc';
+    const glowColor = n.twin ? 'rgba(255,215,0,' : 'rgba(160,176,204,';
+    const alpha = dimmedHL ? 0.2 : 1;
+
+    // Glow
+    ctx.save();
+    ctx.globalAlpha = (isHovered ? 0.4 : 0.2) * nodeProgress * alpha;
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3);
+    grad.addColorStop(0, glowColor + '0.6)');
+    grad.addColorStop(1, glowColor + '0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Node circle
+    ctx.save();
+    ctx.globalAlpha = nodeProgress * alpha;
+    ctx.fillStyle = baseColor;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner dot
+    ctx.fillStyle = '#060610';
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Ring on hover
+    if (isHovered) {
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = baseColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r + 4 * zoom, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Label
+    if (zoom > 0.35) {
+      ctx.save();
+      ctx.globalAlpha = 0.7 * nodeProgress * alpha;
+      ctx.fillStyle = baseColor;
+      ctx.font = `${Math.max(7, 10 * zoom)}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(n.p, sx, sy + (r + 12 * zoom));
+      ctx.restore();
+    }
+
+    // p+2 label above
+    if (zoom > 0.7 && !dimmedHL) {
+      ctx.save();
+      ctx.globalAlpha = 0.35 * nodeProgress;
+      ctx.fillStyle = '#6688aa';
+      ctx.font = `${Math.max(6, 8 * zoom)}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`+2=${n.pp2}`, sx, sy - (r + 8 * zoom));
+      ctx.restore();
+    }
+  }
+
+  // Highlight type indicator
+  if (highlightType) {
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = highlightType === 'twin' ? '#ffd700' : '#a0b0cc';
+    ctx.font = "12px 'Courier New', monospace";
+    ctx.textAlign = 'left';
+    ctx.fillText(`Highlighting: ${highlightType.toUpperCase()} Chen primes (click to clear)`, 14, H - 50);
+    ctx.restore();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M₇ = 2⁷ - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2×3×5×7×11×13×17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script src="../shared/nav.js"></script>
+</body>
+</html>
