@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SIEVE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#e0e0e0;font-family:'Courier New',monospace;overflow-x:hidden;user-select:none}
+canvas{display:block;position:fixed;top:0;left:0;z-index:0}
+
+#ui{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+
+#controls{
+  position:fixed;top:32px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:12px;
+  background:rgba(6,6,16,0.88);border:1px solid rgba(255,200,60,0.15);
+  border-radius:8px;padding:8px 18px;font-size:11px;letter-spacing:1px;
+  pointer-events:auto;z-index:20;backdrop-filter:blur(6px);
+}
+#controls button{
+  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);
+  color:#ccc;font-family:'Courier New',monospace;font-size:11px;
+  padding:4px 12px;border-radius:4px;cursor:pointer;letter-spacing:1px;
+}
+#controls button:hover{background:rgba(255,255,255,0.15);color:#fff}
+#controls label{color:#888;font-size:10px}
+#speed-slider{width:80px;accent-color:#0af}
+
+#stats{
+  position:fixed;top:76px;left:50%;transform:translateX(-50%);
+  text-align:center;font-size:12px;letter-spacing:2px;color:#888;
+  pointer-events:none;z-index:20;
+  text-shadow:0 0 6px rgba(0,170,255,0.3);
+}
+
+#formula-flash{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:28px;letter-spacing:6px;color:#fc0;
+  text-shadow:0 0 30px rgba(255,200,60,0.6),0 0 60px rgba(255,200,60,0.3);
+  opacity:0;pointer-events:none;z-index:30;white-space:nowrap;
+  transition:opacity 0.5s;
+}
+
+#prime-panel{
+  position:fixed;top:96px;right:12px;width:180px;
+  max-height:calc(100vh - 150px);overflow-y:auto;
+  background:rgba(6,6,16,0.88);border:1px solid rgba(255,200,60,0.12);
+  border-radius:8px;padding:10px;font-size:10px;
+  pointer-events:auto;z-index:20;backdrop-filter:blur(6px);
+}
+#prime-panel::-webkit-scrollbar{width:4px}
+#prime-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+.panel-title{
+  font-size:12px;letter-spacing:3px;color:#fc0;margin-bottom:8px;
+  text-shadow:0 0 10px rgba(255,200,60,0.4);text-align:center;
+}
+#prime-list{line-height:1.6}
+.prime-entry{display:inline-block;margin:0 3px 2px 0;padding:1px 4px;border-radius:3px;background:rgba(255,255,255,0.04)}
+
+#tooltip{
+  position:fixed;display:none;
+  background:rgba(6,6,16,0.95);border:1px solid rgba(255,200,60,0.3);
+  border-radius:6px;padding:8px 12px;font-size:11px;
+  pointer-events:none;z-index:50;white-space:nowrap;
+  box-shadow:0 0 20px rgba(0,0,0,0.5);
+}
+
+#toggle-mode{
+  position:fixed;top:76px;left:12px;
+  background:rgba(6,6,16,0.88);border:1px solid rgba(255,200,60,0.12);
+  border-radius:6px;padding:6px 10px;font-size:10px;
+  color:#888;cursor:pointer;pointer-events:auto;z-index:20;
+  font-family:'Courier New',monospace;letter-spacing:1px;
+  backdrop-filter:blur(6px);
+}
+#toggle-mode:hover{color:#ccc;border-color:rgba(255,200,60,0.3)}
+
+#footer{
+  position:fixed;bottom:0;left:0;right:0;text-align:center;
+  padding:8px;font-size:11px;letter-spacing:4px;color:#555;
+  background:linear-gradient(0deg,rgba(6,6,16,0.9) 0%,transparent 100%);
+  pointer-events:none;z-index:20;
+}
+</style>
+</head>
+<body>
+
+<nav id="shield-nav" style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(6,6,16,.92);border-bottom:1px solid rgba(0,170,255,.15);font-family:'Courier New',monospace;font-size:9px;letter-spacing:2px;backdrop-filter:blur(8px)">
+<a href="../" style="color:#0af;text-decoration:none;margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/" style="color:#604;text-decoration:none">ORB</a>
+<a href="../cascade/" style="color:#fa0;text-decoration:none">CASCADE</a>
+<a href="../breath/" style="color:#a4f;text-decoration:none">BREATH</a>
+<a href="../flat/" style="color:#0f8;text-decoration:none">FLAT</a>
+<a href="../tree/" style="color:#4a4;text-decoration:none">TREE</a>
+<a href="../drug/" style="color:#f44;text-decoration:none">DRUG</a>
+<a href="../network/" style="color:#fc0;text-decoration:none">NETWORK</a>
+<a href="../number/" style="color:#0ad;text-decoration:none">NUMBER</a>
+<a href="../spiral/" style="color:#a4f;text-decoration:none">SPIRAL</a>
+<a href="../sieve/" style="color:#fff;text-decoration:none;text-shadow:0 0 6px rgba(255,255,255,0.5)">SIEVE</a>
+<a href="../twin/" style="color:#4a4;text-decoration:none">TWIN</a>
+<a href="../perfect/" style="color:#f44;text-decoration:none">PERFECT</a>
+</nav>
+
+<canvas id="c"></canvas>
+
+<div id="controls">
+  <button id="btn-play">PAUSE</button>
+  <button id="btn-step">STEP</button>
+  <button id="btn-reset">RESET</button>
+  <label>SPEED</label>
+  <input type="range" id="speed-slider" min="1" max="100" value="40">
+</div>
+
+<div id="stats"></div>
+
+<div id="formula-flash">510,510 = 2 &times; 3 &times; 5 &times; 7 &times; 11 &times; 13 &times; 17</div>
+
+<button id="toggle-mode">COLOR BY FACTOR</button>
+
+<div id="prime-panel">
+  <div class="panel-title">PRIMES FOUND</div>
+  <div id="prime-list"></div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="footer">510,510 = 2 &times; 3 &times; 5 &times; 7 &times; 11 &times; 13 &times; 17</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// Shield primes and their ring colors
+const SHIELD_PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_COLORS = ['#660044', '#00aadd', '#ffaa00', '#ff4444', '#44aa44', '#aa44ff', '#ffffff'];
+const CYCLE_COLORS = [...RING_COLORS]; // cycling for primes beyond 17
+const GOLD = '#ffd700';
+const MERSENNE = 127;
+const MAX_N = 510;
+
+// State
+let cells = []; // {n, alive, spf, eliminated, color, flash, glowPhase}
+let primeOrder = []; // primes found in order
+let sieveQueue = []; // {type:'found'|'eliminate', prime, target}
+let queueIndex = 0;
+let running = true;
+let speed = 40;
+let compositeCount = 0;
+let primeCount = 0;
+let shieldPrimesFound = 0;
+let sieveComplete = false;
+let formulaShown = false;
+let colorByFactor = false;
+let clickedCell = null;
+let hoveredCell = null;
+
+// Layout
+let cols, rows, cellW, cellH, gridX, gridY;
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  computeLayout();
+}
+
+function computeLayout() {
+  const W = canvas.width;
+  const H = canvas.height;
+  const panelRight = 200;
+  const availW = W - panelRight - 24;
+  const availH = H - 140;
+
+  // Try to fit nicely
+  cols = Math.floor(Math.sqrt(MAX_N * (availW / availH)));
+  if (cols < 10) cols = 10;
+  if (cols > 34) cols = 34;
+  rows = Math.ceil(MAX_N / cols);
+
+  cellW = Math.floor(availW / cols);
+  cellH = Math.floor(availH / rows);
+  const sz = Math.min(cellW, cellH, 36);
+  cellW = sz;
+  cellH = sz;
+
+  gridX = Math.floor((availW - cols * cellW) / 2) + 12;
+  gridY = 100;
+}
+
+function initSieve() {
+  cells = [];
+  for (let n = 1; n <= MAX_N; n++) {
+    cells.push({
+      n: n,
+      alive: n >= 2,
+      spf: n >= 2 ? 0 : 1, // smallest prime factor, 0 = unknown yet
+      eliminated: false,
+      color: '#ffffff',
+      flash: 0,
+      glowPhase: Math.random() * Math.PI * 2,
+      eliminatedBy: null
+    });
+  }
+  primeOrder = [];
+  sieveQueue = [];
+  queueIndex = 0;
+  compositeCount = 0;
+  primeCount = 0;
+  shieldPrimesFound = 0;
+  sieveComplete = false;
+  formulaShown = false;
+  clickedCell = null;
+
+  // Build the sieve queue
+  const sieveArr = new Array(MAX_N + 1).fill(true);
+  sieveArr[0] = sieveArr[1] = false;
+  for (let p = 2; p <= MAX_N; p++) {
+    if (sieveArr[p]) {
+      const idx = primeOrder.length;
+      const colorIdx = idx < RING_COLORS.length ? idx : (idx % CYCLE_COLORS.length);
+      const col = idx < RING_COLORS.length ? RING_COLORS[idx] : CYCLE_COLORS[colorIdx];
+      sieveQueue.push({ type: 'found', prime: p, color: col, shieldIdx: idx });
+      primeOrder.push(p);
+      for (let m = p * p; m <= MAX_N; m += p) {
+        if (sieveArr[m]) {
+          sieveQueue.push({ type: 'eliminate', prime: p, target: m, color: col });
+          sieveArr[m] = false;
+        }
+      }
+    }
+  }
+
+  // Reset UI
+  document.getElementById('prime-list').innerHTML = '';
+  document.getElementById('formula-flash').style.opacity = '0';
+  document.getElementById('btn-play').textContent = running ? 'PAUSE' : 'PLAY';
+  updateStats();
+}
+
+function getCell(n) {
+  return cells[n - 1];
+}
+
+function getCellPos(n) {
+  const idx = n - 1;
+  const row = Math.floor(idx / cols);
+  const col = idx % cols;
+  return { x: gridX + col * cellW, y: gridY + row * cellH };
+}
+
+// Factorization
+function factorize(n) {
+  if (n <= 1) return [];
+  const factors = [];
+  let d = 2;
+  let tmp = n;
+  while (d * d <= tmp) {
+    while (tmp % d === 0) {
+      factors.push(d);
+      tmp = Math.floor(tmp / d);
+    }
+    d++;
+  }
+  if (tmp > 1) factors.push(tmp);
+  return factors;
+}
+
+function smallestPrimeFactor(n) {
+  if (n <= 1) return 1;
+  for (let d = 2; d * d <= n; d++) {
+    if (n % d === 0) return d;
+  }
+  return n;
+}
+
+// Color helpers
+function hexToRgb(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  return {
+    r: parseInt(h.substring(0, 2), 16),
+    g: parseInt(h.substring(2, 4), 16),
+    b: parseInt(h.substring(4, 6), 16)
+  };
+}
+
+function getColorForPrime(p) {
+  const idx = SHIELD_PRIMES.indexOf(p);
+  if (idx >= 0) return RING_COLORS[idx];
+  // Find position in primeOrder
+  const oi = primeOrder.indexOf(p);
+  if (oi >= 0) return CYCLE_COLORS[oi % CYCLE_COLORS.length];
+  return '#888';
+}
+
+// Animation
+let lastStepTime = 0;
+let animTime = 0;
+
+function stepSieve() {
+  if (queueIndex >= sieveQueue.length) {
+    if (!sieveComplete) {
+      sieveComplete = true;
+      // Count final primes
+      primeCount = 0;
+      for (let i = 0; i < cells.length; i++) {
+        if (cells[i].alive && cells[i].n >= 2) primeCount++;
+      }
+      updateStats();
+    }
+    return;
+  }
+
+  const action = sieveQueue[queueIndex];
+  queueIndex++;
+
+  if (action.type === 'found') {
+    const cell = getCell(action.prime);
+    cell.color = action.color;
+    cell.flash = 1.0;
+    cell.spf = action.prime;
+    cell.eliminatedBy = null;
+
+    // Track shield primes
+    if (SHIELD_PRIMES.includes(action.prime)) {
+      shieldPrimesFound++;
+      if (shieldPrimesFound === 7 && !formulaShown) {
+        formulaShown = true;
+        showFormula();
+      }
+    }
+
+    // Add to panel
+    addPrimeToPanel(action.prime, action.color, action.shieldIdx);
+
+    // Recount
+    primeCount = 0;
+    compositeCount = 0;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].n >= 2) {
+        if (!cells[i].alive) compositeCount++;
+        else primeCount++;
+      }
+    }
+    updateStats();
+  } else if (action.type === 'eliminate') {
+    const cell = getCell(action.target);
+    cell.alive = false;
+    cell.eliminated = true;
+    cell.color = action.color;
+    cell.flash = 0.6;
+    cell.eliminatedBy = action.prime;
+    if (cell.spf === 0) cell.spf = action.prime;
+
+    compositeCount++;
+    primeCount = 0;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].n >= 2 && cells[i].alive) primeCount++;
+    }
+    updateStats();
+  }
+}
+
+function showFormula() {
+  const el = document.getElementById('formula-flash');
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 4000);
+}
+
+function addPrimeToPanel(prime, color, shieldIdx) {
+  const list = document.getElementById('prime-list');
+  const span = document.createElement('span');
+  span.className = 'prime-entry';
+  span.style.color = color;
+  if (prime === MERSENNE) {
+    span.style.color = GOLD;
+    span.style.textShadow = '0 0 8px ' + GOLD;
+    span.style.fontWeight = 'bold';
+  }
+  if (shieldIdx < 7) {
+    span.style.borderBottom = '1px solid ' + color;
+  }
+  span.textContent = prime;
+  list.appendChild(span);
+}
+
+function updateStats() {
+  const el = document.getElementById('stats');
+  el.textContent = compositeCount + ' composites eliminated \u00b7 ' + primeCount + ' primes remaining';
+}
+
+// Rendering
+function draw(now) {
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const t = now * 0.001;
+
+  // Draw cells
+  const pad = 2;
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    const pos = getCellPos(cell.n);
+    const x = pos.x + pad;
+    const y = pos.y + pad;
+    const w = cellW - pad * 2;
+    const h = cellH - pad * 2;
+
+    // Decay flash
+    if (cell.flash > 0) cell.flash *= 0.94;
+    if (cell.flash < 0.01) cell.flash = 0;
+
+    let bgR, bgG, bgB, bgA;
+
+    if (cell.n === 1) {
+      // 1 is neither prime nor composite
+      bgR = 30; bgG = 30; bgB = 40; bgA = 0.5;
+    } else if (cell.alive) {
+      // Still alive
+      if (cell.color !== '#ffffff' || cell.spf > 0) {
+        const rgb = hexToRgb(cell.color);
+        if (sieveComplete) {
+          // Pulse glow
+          const glow = 0.6 + 0.4 * Math.sin(t * 2.5 + cell.glowPhase);
+          bgR = Math.floor(rgb.r * glow);
+          bgG = Math.floor(rgb.g * glow);
+          bgB = Math.floor(rgb.b * glow);
+          bgA = 0.9;
+
+          // Special gold for 127
+          if (cell.n === MERSENNE) {
+            const gc = hexToRgb(GOLD);
+            const g2 = 0.7 + 0.3 * Math.sin(t * 3 + cell.glowPhase);
+            bgR = Math.floor(gc.r * g2);
+            bgG = Math.floor(gc.g * g2);
+            bgB = Math.floor(gc.b * g2);
+          }
+        } else {
+          bgR = rgb.r; bgG = rgb.g; bgB = rgb.b;
+          bgA = 0.8 + cell.flash * 0.2;
+        }
+      } else {
+        bgR = 200; bgG = 200; bgB = 210;
+        bgA = 0.7;
+      }
+    } else {
+      // Eliminated
+      if (colorByFactor) {
+        const spfColor = getColorForPrime(cell.spf || cell.eliminatedBy || 2);
+        const rgb = hexToRgb(spfColor);
+        bgR = Math.floor(rgb.r * 0.15);
+        bgG = Math.floor(rgb.g * 0.15);
+        bgB = Math.floor(rgb.b * 0.15);
+        bgA = 0.6;
+      } else {
+        const rgb = hexToRgb(cell.color);
+        bgR = Math.floor(rgb.r * 0.1);
+        bgG = Math.floor(rgb.g * 0.1);
+        bgB = Math.floor(rgb.b * 0.1);
+        bgA = 0.4 + cell.flash * 0.5;
+      }
+    }
+
+    // Flash overlay
+    if (cell.flash > 0.05) {
+      const rgb = hexToRgb(cell.color);
+      bgR = Math.min(255, bgR + Math.floor(rgb.r * cell.flash * 0.8));
+      bgG = Math.min(255, bgG + Math.floor(rgb.g * cell.flash * 0.8));
+      bgB = Math.min(255, bgB + Math.floor(rgb.b * cell.flash * 0.8));
+    }
+
+    ctx.fillStyle = 'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + bgA + ')';
+    ctx.fillRect(x, y, w, h);
+
+    // Border for primes when sieve is done
+    if (sieveComplete && cell.alive && cell.n >= 2) {
+      ctx.strokeStyle = cell.n === MERSENNE ? GOLD : cell.color;
+      ctx.lineWidth = cell.n === MERSENNE ? 2 : 1;
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 2 + cell.glowPhase);
+      ctx.strokeRect(x, y, w, h);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+    }
+
+    // Highlight hovered
+    if (hoveredCell === cell.n || clickedCell === cell.n) {
+      ctx.strokeStyle = '#fc0';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+      ctx.lineWidth = 1;
+    }
+
+    // Number text
+    if (!colorByFactor || cell.alive) {
+      const fontSize = cellW < 20 ? 7 : cellW < 28 ? 9 : 11;
+      ctx.font = fontSize + 'px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      if (cell.n === 1) {
+        ctx.fillStyle = 'rgba(100,100,110,0.5)';
+      } else if (cell.alive) {
+        ctx.fillStyle = sieveComplete && cell.n === MERSENNE ? GOLD : (cell.flash > 0.1 ? '#fff' : 'rgba(255,255,255,0.9)');
+      } else {
+        ctx.fillStyle = 'rgba(150,150,160,0.2)';
+      }
+      ctx.fillText(cell.n, x + w / 2, y + h / 2);
+    }
+  }
+
+  // Shield prime badges at the bottom of found shield primes
+  for (let si = 0; si < SHIELD_PRIMES.length; si++) {
+    const sp = SHIELD_PRIMES[si];
+    const cell = getCell(sp);
+    if (cell.flash > 0 || cell.color !== '#ffffff') {
+      const pos = getCellPos(sp);
+      const cx = pos.x + cellW / 2;
+      const cy = pos.y - 4;
+      ctx.fillStyle = RING_COLORS[si];
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// Interaction
+let mouseX = 0, mouseY = 0;
+
+function getCellAtPos(mx, my) {
+  for (let i = 0; i < cells.length; i++) {
+    const pos = getCellPos(cells[i].n);
+    if (mx >= pos.x && mx < pos.x + cellW && my >= pos.y && my < pos.y + cellH) {
+      return cells[i].n;
+    }
+  }
+  return null;
+}
+
+canvas.addEventListener('mousemove', function(e) {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  const n = getCellAtPos(mouseX, mouseY);
+  hoveredCell = n;
+
+  const tooltip = document.getElementById('tooltip');
+  if (n && n >= 2) {
+    const cell = getCell(n);
+    let text = '' + n;
+    if (cell.alive && (cell.spf === n || sieveComplete)) {
+      text += ' (PRIME)';
+      if (n === MERSENNE) text += ' \u2605 Mersenne';
+      if (SHIELD_PRIMES.includes(n)) text += ' \u25c6 Shield';
+    } else if (cell.eliminated) {
+      text += ' \u2190 smallest factor: ' + smallestPrimeFactor(n);
+    }
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (mouseX + 14) + 'px';
+    tooltip.style.top = (mouseY - 10) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('click', function(e) {
+  const n = getCellAtPos(e.clientX, e.clientY);
+  if (n && n >= 2) {
+    clickedCell = clickedCell === n ? null : n;
+    const tooltip = document.getElementById('tooltip');
+    if (clickedCell) {
+      const factors = factorize(n);
+      const cell = getCell(n);
+      let text = n + ' = ';
+      if (factors.length === 1) {
+        text += 'prime';
+        if (n === MERSENNE) text += ' (2\u2077-1 Mersenne)';
+      } else {
+        text += factors.join(' \u00d7 ');
+      }
+      tooltip.textContent = text;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  }
+});
+
+// Controls
+document.getElementById('btn-play').addEventListener('click', function() {
+  running = !running;
+  this.textContent = running ? 'PAUSE' : 'PLAY';
+});
+
+document.getElementById('btn-step').addEventListener('click', function() {
+  running = false;
+  document.getElementById('btn-play').textContent = 'PLAY';
+  stepSieve();
+});
+
+document.getElementById('btn-reset').addEventListener('click', function() {
+  running = true;
+  initSieve();
+});
+
+document.getElementById('speed-slider').addEventListener('input', function() {
+  speed = parseInt(this.value);
+});
+
+document.getElementById('toggle-mode').addEventListener('click', function() {
+  colorByFactor = !colorByFactor;
+  this.textContent = colorByFactor ? 'SHOW NUMBERS' : 'COLOR BY FACTOR';
+
+  // Assign spf for all composites if toggling
+  if (colorByFactor) {
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].n >= 2 && !cells[i].alive && cells[i].spf === 0) {
+        cells[i].spf = smallestPrimeFactor(cells[i].n);
+      }
+    }
+  }
+});
+
+// Main loop
+let accumulator = 0;
+
+function loop(now) {
+  if (!lastStepTime) lastStepTime = now;
+  const dt = Math.min(now - lastStepTime, 100);
+  lastStepTime = now;
+
+  if (running && !sieveComplete) {
+    // Speed: at 1 = very slow, at 100 = very fast
+    const interval = Math.max(5, 500 - speed * 4.9);
+    accumulator += dt;
+    while (accumulator >= interval && running) {
+      accumulator -= interval;
+      stepSieve();
+    }
+  }
+
+  draw(now);
+  requestAnimationFrame(loop);
+}
+
+// Init
+window.addEventListener('resize', resize);
+resize();
+initSieve();
+
+// Pre-compute smallest prime factor for all cells for hover
+for (let i = 0; i < cells.length; i++) {
+  if (cells[i].n >= 2) {
+    cells[i]._trueSPF = smallestPrimeFactor(cells[i].n);
+  }
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

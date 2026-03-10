@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-TWIN — Twin Prime Visualization</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(6,6,16,0.92);
+  border-bottom: 1px solid rgba(100,180,255,0.15);
+  padding: 8px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-size: 11px;
+  backdrop-filter: blur(6px);
+}
+nav a {
+  color: #6a8caf; text-decoration: none; padding: 3px 7px;
+  border: 1px solid rgba(100,140,200,0.15); border-radius: 3px;
+  transition: all 0.2s;
+}
+nav a:hover { color: #ffd700; border-color: rgba(255,215,0,0.4); background: rgba(255,215,0,0.06); }
+nav a.active { color: #ffd700; border-color: rgba(255,215,0,0.5); background: rgba(255,215,0,0.1); }
+nav .title { color: #ffd700; font-weight: bold; font-size: 13px; margin-right: 10px; letter-spacing: 2px; }
+#statsPanel {
+  position: fixed; top: 50px; right: 14px; z-index: 90;
+  background: rgba(6,6,16,0.88); border: 1px solid rgba(100,180,255,0.15);
+  border-radius: 6px; padding: 14px 18px; font-size: 12px;
+  min-width: 230px; backdrop-filter: blur(6px);
+  line-height: 1.7;
+}
+#statsPanel .label { color: #607090; }
+#statsPanel .value { color: #a0c0e0; }
+#statsPanel .gold { color: #ffd700; }
+#statsPanel .cyan { color: #00e5ff; }
+#controls {
+  position: fixed; bottom: 50px; left: 14px; z-index: 90;
+  background: rgba(6,6,16,0.88); border: 1px solid rgba(100,180,255,0.15);
+  border-radius: 6px; padding: 10px 14px; font-size: 11px;
+  backdrop-filter: blur(6px);
+}
+#controls button {
+  background: rgba(100,140,200,0.12); border: 1px solid rgba(100,140,200,0.25);
+  color: #a0c0e0; padding: 5px 12px; border-radius: 3px; cursor: pointer;
+  font-family: 'Courier New', monospace; font-size: 11px; margin: 2px;
+  transition: all 0.2s;
+}
+#controls button:hover { border-color: #ffd700; color: #ffd700; }
+#controls button.active { border-color: #ffd700; color: #ffd700; background: rgba(255,215,0,0.1); }
+footer {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(6,6,16,0.92);
+  border-top: 1px solid rgba(100,180,255,0.15);
+  padding: 6px 16px; text-align: center;
+  font-size: 11px; color: #405060;
+  backdrop-filter: blur(6px);
+}
+footer span { color: #ffd700; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="title">SHIELD-TWIN</span>
+  <a href="..">GALLERY</a>
+  <a href="../orb">ORB</a>
+  <a href="../cascade">CASCADE</a>
+  <a href="../breath">BREATH</a>
+  <a href="../flat">FLAT</a>
+  <a href="../tree">TREE</a>
+  <a href="../drug">DRUG</a>
+  <a href="../network">NETWORK</a>
+  <a href="../number">NUMBER</a>
+  <a href="../spiral">SPIRAL</a>
+  <a href="../sieve">SIEVE</a>
+  <a class="active" href="../twin">TWIN</a>
+  <a href="../perfect">PERFECT</a>
+</nav>
+
+<div id="statsPanel">
+  <div><span class="label">Twin pairs found: </span><span class="gold" id="statCount">0</span></div>
+  <div><span class="label">Largest visible: </span><span class="value" id="statLargest">—</span></div>
+  <div><span class="label">Brun's constant: </span><span class="cyan" id="statBrun">≈ 1.9021605...</span></div>
+  <div style="margin-top:6px; border-top:1px solid rgba(100,180,255,0.1); padding-top:6px;">
+    <span class="label">Shield twins:</span><br>
+    <span class="gold">&nbsp; (5, 7)</span> <span class="label">— double shield</span><br>
+    <span class="gold">&nbsp; (11, 13)</span> <span class="label">— double shield</span>
+  </div>
+  <div style="margin-top:6px; border-top:1px solid rgba(100,180,255,0.1); padding-top:6px;">
+    <span class="label">View range: </span><span class="value" id="statRange">1 — 1000</span>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="btnNumberLine" class="active" onclick="setView('numberline')">Number Line</button>
+  <button id="btnConstellation" onclick="setView('constellation')">Constellation</button>
+  <div style="margin-top:6px; color:#506070; font-size:10px;">
+    Scroll to zoom · Drag to pan · Click pair to highlight
+  </div>
+</div>
+
+<footer>
+  <span>510,510</span> = 2 × 3 × 5 × 7 × 11 × 13 × 17
+</footer>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// --- Primes and Twin Primes ---
+const SHIELD_PRIMES = new Set([2, 3, 5, 7, 11, 13, 17]);
+const MERSENNE_127 = 127;
+const MAX_N = 1200;
+
+function sieve(n) {
+  const s = new Uint8Array(n + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= n; i++) {
+    if (!s[i]) for (let j = i * i; j <= n; j += i) s[j] = 1;
+  }
+  const primes = [];
+  for (let i = 2; i <= n; i++) if (!s[i]) primes.push(i);
+  return primes;
+}
+
+const primes = sieve(MAX_N);
+const primeSet = new Set(primes);
+
+// twin pairs
+const twinPairs = [];
+for (let i = 0; i < primes.length - 1; i++) {
+  if (primes[i + 1] - primes[i] === 2) {
+    twinPairs.push([primes[i], primes[i + 1]]);
+  }
+}
+const twinSet = new Set();
+twinPairs.forEach(([a, b]) => { twinSet.add(a); twinSet.add(b); });
+
+// double shield twin pairs: both members are shield primes
+const doubleShieldPairs = twinPairs.filter(([a, b]) => SHIELD_PRIMES.has(a) && SHIELD_PRIMES.has(b));
+
+// prime gaps
+const primeGaps = [];
+for (let i = 1; i < primes.length; i++) {
+  primeGaps.push(primes[i] - primes[i - 1]);
+}
+
+// gap histogram
+const gapHist = {};
+primeGaps.forEach(g => { gapHist[g] = (gapHist[g] || 0) + 1; });
+
+// shield ring colors
+const shieldColors = {
+  2: '#ff3030', 3: '#ff8800', 5: '#ffd700', 7: '#30ff30',
+  11: '#00ccff', 13: '#6060ff', 17: '#cc44ff'
+};
+
+// --- State ---
+let viewMode = 'numberline'; // or 'constellation'
+let offsetX = 0;
+let zoom = 1.0;
+let animTime = 0;
+let animPhase = 0; // how many twin pairs revealed
+let revealSpeed = 0.4; // pairs per second at start
+let dragging = false;
+let dragStartX = 0;
+let dragOffsetX = 0;
+let hoveredPair = null;
+let selectedPair = null;
+let W, H;
+
+// constellation state
+let starPositions = null;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function setView(mode) {
+  viewMode = mode;
+  document.getElementById('btnNumberLine').className = mode === 'numberline' ? 'active' : '';
+  document.getElementById('btnConstellation').className = mode === 'constellation' ? 'active' : '';
+  if (mode === 'constellation') generateStarPositions();
+}
+
+// --- Constellation positions ---
+function generateStarPositions() {
+  starPositions = {};
+  const rng = mulberry32(42);
+  twinPairs.forEach(([a, b], i) => {
+    const margin = 120;
+    const cx = margin + rng() * (W - margin * 2);
+    const cy = margin + rng() * (H - margin * 2 - 80);
+    starPositions[a] = { x: cx - 12 - rng() * 8, y: cy + (rng() - 0.5) * 20 };
+    starPositions[b] = { x: cx + 12 + rng() * 8, y: cy + (rng() - 0.5) * 20 };
+  });
+}
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// --- Input ---
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const mouseX = e.clientX;
+  if (viewMode === 'numberline') {
+    const worldBefore = screenToWorld(mouseX);
+    zoom = Math.max(0.15, Math.min(8, zoom * zoomFactor));
+    const worldAfter = screenToWorld(mouseX);
+    offsetX += (worldAfter - worldBefore) * getScale();
+  } else {
+    zoom = Math.max(0.3, Math.min(4, zoom * zoomFactor));
+  }
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragOffsetX = offsetX;
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragging) {
+    offsetX = dragOffsetX + (e.clientX - dragStartX);
+  }
+});
+canvas.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('mouseleave', () => { dragging = false; });
+
+canvas.addEventListener('click', e => {
+  if (viewMode === 'numberline') {
+    const wx = screenToWorld(e.clientX);
+    let best = null, bestDist = 30 / getScale();
+    twinPairs.forEach(([a, b]) => {
+      const mid = (a + b) / 2;
+      const d = Math.abs(wx - mid);
+      if (d < bestDist) { bestDist = d; best = [a, b]; }
+    });
+    selectedPair = best;
+  }
+});
+
+function getScale() { return (W / 200) * zoom; }
+function worldToScreen(n) { return 100 + (n - 1) * getScale() + offsetX; }
+function screenToWorld(sx) { return (sx - 100 - offsetX) / getScale() + 1; }
+
+// --- Drawing helpers ---
+function glow(color, blur) {
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+}
+function noGlow() {
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+}
+
+function drawArc(x1, x2, y, height, color, alpha, lineWidth) {
+  const cx = (x1 + x2) / 2;
+  const rx = (x2 - x1) / 2;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  glow(color, 8);
+  ctx.beginPath();
+  ctx.ellipse(cx, y, rx, height, 0, Math.PI, 0);
+  ctx.stroke();
+  noGlow();
+  ctx.restore();
+}
+
+// --- Number Line View ---
+function drawNumberLine(t) {
+  const scale = getScale();
+  const lineY = H * 0.42;
+  const visLeft = screenToWorld(0);
+  const visRight = screenToWorld(W);
+  const visMin = Math.max(1, Math.floor(visLeft));
+  const visMax = Math.min(MAX_N, Math.ceil(visRight));
+
+  // update stats
+  const visibleTwins = twinPairs.filter(([a, b], i) => i < animPhase && a >= visMin && b <= visMax);
+  document.getElementById('statCount').textContent = Math.min(Math.floor(animPhase), twinPairs.length);
+  if (visibleTwins.length > 0) {
+    const last = visibleTwins[visibleTwins.length - 1];
+    document.getElementById('statLargest').textContent = `(${last[0]}, ${last[1]})`;
+  }
+  document.getElementById('statRange').textContent = `${Math.max(1, Math.round(visLeft))} — ${Math.min(MAX_N, Math.round(visRight))}`;
+
+  // number line
+  ctx.strokeStyle = 'rgba(60,80,120,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, lineY);
+  ctx.lineTo(W, lineY);
+  ctx.stroke();
+
+  // tick marks and numbers
+  const tickStep = scale > 15 ? 1 : scale > 6 ? 5 : scale > 2 ? 10 : 50;
+  ctx.fillStyle = 'rgba(80,100,130,0.5)';
+  ctx.font = `${Math.min(11, Math.max(8, scale * 0.8))}px 'Courier New', monospace`;
+  ctx.textAlign = 'center';
+  for (let n = Math.max(1, Math.floor(visMin / tickStep) * tickStep); n <= visMax; n += tickStep) {
+    const sx = worldToScreen(n);
+    if (sx < -20 || sx > W + 20) continue;
+    ctx.fillStyle = 'rgba(60,80,110,0.3)';
+    ctx.fillRect(sx, lineY - 3, 1, 6);
+    if (scale > 3 || n % (tickStep * 2) === 0) {
+      ctx.fillStyle = 'rgba(80,100,140,0.5)';
+      ctx.fillText(n, sx, lineY + 16);
+    }
+  }
+
+  // twin prime arcs (animate in)
+  twinPairs.forEach(([a, b], i) => {
+    if (i >= animPhase) return;
+    const sx1 = worldToScreen(a);
+    const sx2 = worldToScreen(b);
+    if (sx2 < -50 || sx1 > W + 50) return;
+
+    const revealFrac = Math.min(1, animPhase - i);
+    const isDoubleShield = SHIELD_PRIMES.has(a) && SHIELD_PRIMES.has(b);
+    const isSelected = selectedPair && selectedPair[0] === a && selectedPair[1] === b;
+
+    let arcColor = '#ffd700';
+    let arcAlpha = 0.35 * revealFrac;
+    let arcHeight = 25 + (b - a) * 0.3;
+    let arcWidth = 1.5;
+
+    if (isDoubleShield) {
+      arcColor = '#ff8800';
+      arcAlpha = 0.7 * revealFrac;
+      arcHeight = 35;
+      arcWidth = 2.5;
+    }
+    if (isSelected) {
+      arcAlpha = 0.9;
+      arcWidth = 3;
+      arcHeight += 10;
+    }
+
+    // animate arc drawing
+    if (revealFrac < 1) {
+      ctx.save();
+      const cx = (sx1 + sx2) / 2;
+      const rx = (sx2 - sx1) / 2;
+      ctx.globalAlpha = arcAlpha;
+      ctx.strokeStyle = arcColor;
+      ctx.lineWidth = arcWidth;
+      glow(arcColor, isDoubleShield ? 14 : 8);
+      ctx.beginPath();
+      ctx.ellipse(cx, lineY, rx, arcHeight, 0, Math.PI, Math.PI - Math.PI * revealFrac, true);
+      ctx.stroke();
+      noGlow();
+      ctx.restore();
+    } else {
+      drawArc(sx1, sx2, lineY, arcHeight, arcColor, arcAlpha, arcWidth);
+    }
+
+    // double shield special marker
+    if (isDoubleShield && revealFrac > 0.8) {
+      const cx = (sx1 + sx2) / 2;
+      ctx.save();
+      ctx.globalAlpha = 0.6 * revealFrac;
+      ctx.fillStyle = '#ff8800';
+      ctx.font = "bold 10px 'Courier New', monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText('SHIELD TWIN', cx, lineY - arcHeight - 8);
+      ctx.restore();
+    }
+  });
+
+  // draw prime dots
+  for (let i = 0; i < primes.length; i++) {
+    const p = primes[i];
+    if (p < visMin - 5 || p > visMax + 5) continue;
+    const sx = worldToScreen(p);
+    if (sx < -20 || sx > W + 20) continue;
+
+    const isTwin = twinSet.has(p);
+    const isShield = SHIELD_PRIMES.has(p);
+    const isMersenne = p === MERSENNE_127;
+
+    // check if this twin is revealed
+    let twinRevealed = false;
+    if (isTwin) {
+      for (let j = 0; j < twinPairs.length && j < animPhase; j++) {
+        if (twinPairs[j][0] === p || twinPairs[j][1] === p) { twinRevealed = true; break; }
+      }
+    }
+
+    const dotY = lineY - 20;
+    let radius = 2.5;
+    let color = '#00e5ff';
+    let glowSize = 0;
+
+    if (isTwin && twinRevealed) {
+      radius = 4.5;
+      color = '#ffd700';
+      glowSize = 10;
+    }
+    if (isShield) {
+      radius = isTwin ? 5.5 : 4;
+      glowSize = 14;
+    }
+    if (isMersenne) {
+      radius = 6;
+      glowSize = 18;
+    }
+
+    ctx.save();
+
+    // shield halo
+    if (isShield) {
+      const haloColor = shieldColors[p];
+      glow(haloColor, 20);
+      ctx.beginPath();
+      ctx.arc(sx, dotY, radius + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = haloColor;
+      ctx.globalAlpha = 0.4 + 0.15 * Math.sin(t * 2 + p);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      noGlow();
+    }
+
+    // Mersenne ring
+    if (isMersenne) {
+      glow('#ff44ff', 16);
+      ctx.beginPath();
+      ctx.arc(sx, dotY, radius + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff44ff';
+      ctx.globalAlpha = 0.5 + 0.2 * Math.sin(t * 3);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      noGlow();
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = '#ff44ff';
+      ctx.font = "9px 'Courier New', monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText('M₇', sx, dotY - radius - 12);
+    }
+
+    // dot
+    ctx.globalAlpha = 1;
+    if (glowSize > 0) glow(color, glowSize);
+    ctx.beginPath();
+    ctx.arc(sx, dotY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    noGlow();
+
+    // label if zoomed in enough
+    if (scale > 8) {
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = isTwin && twinRevealed ? '#ffd700' : isShield ? shieldColors[p] : '#608090';
+      ctx.font = `${Math.min(11, scale * 0.6)}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(p, sx, dotY - radius - 5);
+    }
+
+    ctx.restore();
+  }
+
+  // --- Gap histogram below number line ---
+  drawGapHistogram(lineY + 40, visMin, visMax);
+
+  // --- Twin density visualization ---
+  drawDensityGraph(lineY + 140, visMin, visMax);
+}
+
+function drawGapHistogram(topY, visMin, visMax) {
+  const barAreaH = 70;
+  const gaps = Object.keys(gapHist).map(Number).sort((a, b) => a - b);
+  const maxCount = Math.max(...Object.values(gapHist));
+
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = '#304050';
+  ctx.font = "10px 'Courier New', monospace";
+  ctx.textAlign = 'center';
+  ctx.fillText('Prime Gap Distribution', W / 2, topY);
+  ctx.globalAlpha = 0.4;
+
+  const barW = Math.min(30, (W - 200) / gaps.length);
+  const startX = (W - barW * gaps.length) / 2;
+
+  gaps.forEach((gap, i) => {
+    const count = gapHist[gap];
+    const h = (count / maxCount) * barAreaH;
+    const x = startX + i * barW;
+    const y = topY + 10 + barAreaH - h;
+
+    ctx.fillStyle = gap === 2 ? 'rgba(255,215,0,0.5)' : 'rgba(0,180,255,0.25)';
+    ctx.fillRect(x + 1, y, barW - 2, h);
+
+    if (barW > 14) {
+      ctx.fillStyle = gap === 2 ? '#ffd700' : '#507090';
+      ctx.font = "8px 'Courier New', monospace";
+      ctx.fillText(gap, x + barW / 2, topY + 10 + barAreaH + 10);
+    }
+  });
+
+  // label gap=2 bar
+  const idx2 = gaps.indexOf(2);
+  if (idx2 >= 0) {
+    const x2 = startX + idx2 * barW + barW / 2;
+    ctx.fillStyle = '#ffd700';
+    ctx.font = "bold 9px 'Courier New', monospace";
+    ctx.fillText('gap=2 (twins!)', x2, topY + 10 + barAreaH + 22);
+  }
+
+  ctx.restore();
+}
+
+function drawDensityGraph(topY, visMin, visMax) {
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = '#304050';
+  ctx.font = "10px 'Courier New', monospace";
+  ctx.textAlign = 'center';
+  ctx.fillText('Twin Prime Density (thinning as numbers grow)', W / 2, topY);
+
+  // compute cumulative twin pairs in windows
+  const windowSize = 50;
+  const points = [];
+  for (let start = 1; start <= MAX_N - windowSize; start += windowSize / 2) {
+    const end = start + windowSize;
+    const count = twinPairs.filter(([a, b]) => a >= start && b <= end).length;
+    points.push({ x: (start + end) / 2, y: count });
+  }
+
+  if (points.length < 2) { ctx.restore(); return; }
+  const maxY = Math.max(...points.map(p => p.y), 1);
+  const graphH = 50;
+  const graphW = W - 200;
+  const graphLeft = 100;
+
+  ctx.strokeStyle = 'rgba(255,215,0,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const px = graphLeft + (p.x / MAX_N) * graphW;
+    const py = topY + 15 + graphH - (p.y / maxY) * graphH;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // fill under
+  ctx.globalAlpha = 0.1;
+  ctx.fillStyle = '#ffd700';
+  ctx.lineTo(graphLeft + (points[points.length - 1].x / MAX_N) * graphW, topY + 15 + graphH);
+  ctx.lineTo(graphLeft + (points[0].x / MAX_N) * graphW, topY + 15 + graphH);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// --- Constellation View ---
+function drawConstellation(t) {
+  if (!starPositions) generateStarPositions();
+
+  // background stars
+  const rng = mulberry32(99);
+  ctx.save();
+  for (let i = 0; i < 200; i++) {
+    const x = rng() * W;
+    const y = rng() * H;
+    const r = rng() * 1.2;
+    const a = 0.2 + 0.15 * Math.sin(t * (0.5 + rng()) + rng() * 10);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#a0b0d0';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // draw twin pairs as constellations
+  const cx = W / 2, cy = H / 2;
+
+  twinPairs.forEach(([a, b], i) => {
+    if (i >= animPhase) return;
+    const revealFrac = Math.min(1, animPhase - i);
+    const pa = starPositions[a];
+    const pb = starPositions[b];
+    if (!pa || !pb) return;
+
+    // transform with zoom and pan
+    const ax = cx + (pa.x - cx) * zoom + offsetX;
+    const ay = cy + (pa.y - cy) * zoom;
+    const bx = cx + (pb.x - cx) * zoom + offsetX;
+    const by = cy + (pb.y - cy) * zoom;
+
+    const isDoubleShield = SHIELD_PRIMES.has(a) && SHIELD_PRIMES.has(b);
+    const isSelected = selectedPair && selectedPair[0] === a && selectedPair[1] === b;
+
+    ctx.save();
+    ctx.globalAlpha = revealFrac;
+
+    // connecting line
+    let lineColor = 'rgba(255,215,0,0.3)';
+    let lineW = 1;
+    if (isDoubleShield) { lineColor = 'rgba(255,136,0,0.6)'; lineW = 2; }
+    if (isSelected) { lineColor = 'rgba(255,255,200,0.8)'; lineW = 2.5; }
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = lineW;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+
+    // star A
+    drawStar(ax, ay, a, t, revealFrac);
+    // star B
+    drawStar(bx, by, b, t, revealFrac);
+
+    // label
+    if (zoom > 0.6) {
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      ctx.globalAlpha = 0.6 * revealFrac;
+      ctx.fillStyle = isDoubleShield ? '#ff8800' : '#ffd700';
+      ctx.font = `${Math.max(9, 11 * zoom)}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`(${a},${b})`, mx, my - 10);
+      if (isDoubleShield) {
+        ctx.font = `bold ${Math.max(8, 9 * zoom)}px 'Courier New', monospace`;
+        ctx.fillText('SHIELD TWIN', mx, my - 22);
+      }
+    }
+
+    ctx.restore();
+  });
+
+  // stats update
+  const revealed = Math.min(Math.floor(animPhase), twinPairs.length);
+  document.getElementById('statCount').textContent = revealed;
+  if (revealed > 0) {
+    const last = twinPairs[revealed - 1];
+    document.getElementById('statLargest').textContent = `(${last[0]}, ${last[1]})`;
+  }
+  document.getElementById('statRange').textContent = 'constellation';
+}
+
+function drawStar(x, y, p, t, alpha) {
+  const isShield = SHIELD_PRIMES.has(p);
+  const isMersenne = p === MERSENNE_127;
+  const isTwin = twinSet.has(p);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  let radius = 3;
+  let color = '#ffd700';
+
+  if (isShield) {
+    radius = 5;
+    const haloColor = shieldColors[p];
+    glow(haloColor, 18);
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = haloColor;
+    ctx.globalAlpha = (0.3 + 0.15 * Math.sin(t * 2 + p)) * alpha;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    noGlow();
+    ctx.globalAlpha = alpha;
+  }
+
+  if (isMersenne) {
+    radius = 6;
+    glow('#ff44ff', 16);
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ff44ff';
+    ctx.globalAlpha = (0.4 + 0.2 * Math.sin(t * 3)) * alpha;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    noGlow();
+    ctx.globalAlpha = alpha;
+  }
+
+  glow(color, 8);
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  noGlow();
+
+  // four-pointed star shape for brighter ones
+  if (isShield || isMersenne) {
+    ctx.globalAlpha = 0.3 * alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.8;
+    const spLen = radius + 8;
+    ctx.beginPath();
+    ctx.moveTo(x - spLen, y); ctx.lineTo(x + spLen, y);
+    ctx.moveTo(x, y - spLen); ctx.lineTo(x, y + spLen);
+    ctx.stroke();
+  }
+
+  // number label
+  if (zoom > 0.5) {
+    ctx.globalAlpha = 0.7 * alpha;
+    ctx.fillStyle = isShield ? shieldColors[p] : '#b0a060';
+    ctx.font = `${Math.max(8, 10 * zoom)}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(p, x, y + radius + 13);
+  }
+
+  ctx.restore();
+}
+
+// --- Main Loop ---
+let lastTime = 0;
+function animate(ts) {
+  const dt = Math.min(0.05, (ts - lastTime) / 1000);
+  lastTime = ts;
+  animTime += dt;
+
+  // reveal twins gradually — faster as we go
+  if (animPhase < twinPairs.length) {
+    const accel = 1 + animPhase * 0.08;
+    animPhase += dt * revealSpeed * accel;
+    animPhase = Math.min(animPhase, twinPairs.length);
+  }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // subtle radial gradient background
+  const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.7);
+  bgGrad.addColorStop(0, '#0a0a1a');
+  bgGrad.addColorStop(1, '#060610');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  if (viewMode === 'numberline') {
+    drawNumberLine(animTime);
+  } else {
+    drawConstellation(animTime);
+  }
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

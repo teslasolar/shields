@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PERFECT · Perfect Numbers × Mersenne Primes · M₇</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:#060610;font-family:'Courier New',monospace;color:#aac}
+
+#nav{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:0;height:32px;background:rgba(6,6,16,.95);border-bottom:1px solid rgba(0,170,255,.15);backdrop-filter:blur(8px);padding:0 8px;overflow-x:auto}
+#nav .brand{font-size:9px;letter-spacing:2px;color:#556;margin-right:8px;white-space:nowrap}
+#nav .sep{color:#223;margin:0 2px;font-size:10px}
+#nav a{font-size:9px;letter-spacing:2px;text-decoration:none;padding:6px 10px;border-radius:4px 4px 0 0;transition:all .2s;white-space:nowrap;border:1px solid transparent;border-bottom:none;position:relative;top:1px}
+#nav a:hover{background:rgba(0,170,255,.08)}
+#nav a.active{background:rgba(0,170,255,.1);border-color:rgba(0,170,255,.2)}
+#nav .gallery-btn{color:#0af;font-weight:bold}
+
+canvas{position:fixed;top:32px;left:0;width:100%;height:calc(100% - 32px)}
+
+#overlay{position:fixed;top:32px;left:0;right:0;bottom:0;pointer-events:none;z-index:10}
+
+#info-panel{position:fixed;top:50px;right:20px;width:320px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.2);border-radius:8px;padding:18px;pointer-events:auto;z-index:20;display:none}
+#info-panel h2{font-size:13px;letter-spacing:3px;margin-bottom:10px}
+#info-panel .formula{font-size:10px;color:#fa0;margin:6px 0;letter-spacing:1px}
+#info-panel .mersenne{font-size:10px;color:#0ad;margin:4px 0}
+#info-panel .binary{font-size:10px;color:#4a4;margin:4px 0;word-break:break-all}
+#info-panel .divisors{font-size:9px;color:#a4f;margin:8px 0;line-height:1.8}
+#info-panel .special{font-size:9px;color:#fc0;margin:8px 0;padding:6px;border:1px solid rgba(252,192,0,.3);border-radius:4px;background:rgba(252,192,0,.05)}
+
+#sum-display{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);font-size:14px;letter-spacing:2px;color:#fff;text-align:center;pointer-events:none;z-index:20;text-shadow:0 0 20px rgba(0,170,255,.5);opacity:0;transition:opacity .5s}
+
+#bottom-panel{position:fixed;bottom:28px;left:20px;right:20px;background:rgba(6,6,16,.9);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:10px 16px;z-index:20;pointer-events:auto;max-height:160px;overflow-y:auto}
+#bottom-panel table{width:100%;border-collapse:collapse;font-size:8px;letter-spacing:1px}
+#bottom-panel th{color:#556;text-align:left;padding:3px 8px;border-bottom:1px solid rgba(0,170,255,.1)}
+#bottom-panel td{padding:3px 8px;color:#889}
+#bottom-panel tr.highlight td{color:#fc0;font-weight:bold}
+#bottom-panel tr:hover td{color:#0af}
+
+#footer{position:fixed;bottom:0;left:0;right:0;height:28px;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.1);display:flex;align-items:center;justify-content:center;z-index:30;font-size:8px;color:#334;letter-spacing:2px}
+#footer span.sig{color:#556}
+
+#build-status{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;letter-spacing:3px;color:#0af;z-index:50;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <span class="brand">M₇</span>
+  <a href=".." class="gallery-btn">GALLERY</a>
+  <span class="sep">|</span>
+  <a href="../orb/" style="color:#604">ORB</a>
+  <a href="../cascade/" style="color:#fa0">CASCADE</a>
+  <a href="../breath/" style="color:#a4f">BREATH</a>
+  <a href="../flat/" style="color:#0f8">FLAT</a>
+  <a href="../tree/" style="color:#4a4">TREE</a>
+  <a href="../drug/" style="color:#f44">DRUG</a>
+  <a href="../network/" style="color:#fc0">NETWORK</a>
+  <a href="../number/" style="color:#0ad">NUMBER</a>
+  <a href="../spiral/" style="color:#a4f">SPIRAL</a>
+  <a href="../sieve/" style="color:#4a4">SIEVE</a>
+  <a href="../twin/" style="color:#fa0">TWIN</a>
+  <a href="./" style="color:#fff" class="active">PERFECT</a>
+</nav>
+
+<canvas id="c"></canvas>
+
+<div id="info-panel"></div>
+<div id="sum-display"></div>
+
+<div id="bottom-panel">
+  <table>
+    <thead>
+      <tr><th>p</th><th>MERSENNE PRIME (2ᵖ-1)</th><th>PERFECT NUMBER 2ᵖ⁻¹×(2ᵖ-1)</th><th>BINARY</th></tr>
+    </thead>
+    <tbody id="table-body"></tbody>
+  </table>
+</div>
+
+<div id="footer">
+  <span class="sig">510,510 = 2×3×5×7×11×13×17</span>&nbsp;·&nbsp;EVERY EVEN PERFECT NUMBER IS A MERSENNE GIFT
+</div>
+
+<div id="build-status">INITIALIZING PERFECT NUMBERS...</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const infoPanel = document.getElementById('info-panel');
+const sumDisplay = document.getElementById('sum-display');
+const buildStatus = document.getElementById('build-status');
+const tableBody = document.getElementById('table-body');
+
+const TAU = Math.PI * 2;
+
+const RING_COLORS = ['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'];
+
+const PERFECT_DATA = [
+  { p:2,  mersenne:3,          perfect:6,              divisors:[1,2,3] },
+  { p:3,  mersenne:7,          perfect:28,             divisors:[1,2,4,7,14] },
+  { p:5,  mersenne:31,         perfect:496,            divisors:[1,2,4,8,16,31,62,124,248] },
+  { p:7,  mersenne:127,        perfect:8128,           divisors:[1,2,4,8,16,32,64,127,254,508,1016,2032,4064] },
+  { p:13, mersenne:8191,       perfect:33550336,       divisors:[1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8191,16382,32764,65528,131056,262112,524224,1048448,2096896,4193792,8387584,16775168] },
+  { p:17, mersenne:131071,     perfect:8589869056,     divisors:null },
+  { p:19, mersenne:524287,     perfect:137438691328,   divisors:null }
+];
+
+// For p=17 and p=19, divisors are too many to list; we show count instead
+// divisor count for 2^(p-1)*(2^p-1) = 2*p (since it's 2^(p-1) * prime)
+PERFECT_DATA[5].divisorCount = 2 * 17;
+PERFECT_DATA[6].divisorCount = 2 * 19;
+
+function toBinary(p) {
+  // Perfect number in binary: p ones followed by (p-1) zeros
+  return '1'.repeat(p) + '0'.repeat(p - 1);
+}
+
+function formatBig(n) {
+  if (n >= 1e9) return n.toLocaleString();
+  return n.toLocaleString();
+}
+
+// Superscript digits
+function superscript(n) {
+  const sup = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+  return String(n).split('').map(d => sup[+d]).join('');
+}
+
+// Build bottom table
+PERFECT_DATA.forEach((d, i) => {
+  const tr = document.createElement('tr');
+  if (i === 3) tr.className = 'highlight';
+  const bin = toBinary(d.p);
+  const binDisplay = bin.length > 30 ? bin.substring(0, 15) + '...' + bin.substring(bin.length - 10) + ' (' + bin.length + ' bits)' : bin;
+  tr.innerHTML = `<td>${d.p}</td><td>${formatBig(d.mersenne)}</td><td>${formatBig(d.perfect)}</td><td>${binDisplay}</td>`;
+  tr.style.cursor = 'pointer';
+  tr.addEventListener('click', () => selectRing(i));
+  tableBody.appendChild(tr);
+});
+
+let W, H, cx, cy;
+let selectedRing = -1;
+let buildPhase = 0; // 0..7 for build-up animation
+let buildTimer = 0;
+let time = 0;
+let sumAnimPhase = -1;
+let sumAnimTimer = 0;
+let sumAnimRing = -1;
+let particles = [];
+let clickRipples = [];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight - 32;
+  cx = W / 2;
+  cy = H / 2 - 30;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Ring radii based on log of perfect number, scaled to fit
+function getRingRadius(i) {
+  const logVals = PERFECT_DATA.map(d => Math.log10(d.perfect + 1));
+  const maxLog = logVals[logVals.length - 1];
+  const minR = Math.min(W, H) * 0.08;
+  const maxR = Math.min(W, H) * 0.38;
+  return minR + (logVals[i] / maxLog) * (maxR - minR);
+}
+
+function selectRing(i) {
+  selectedRing = i;
+  showInfoPanel(i);
+  startSumAnimation(i);
+}
+
+function showInfoPanel(i) {
+  const d = PERFECT_DATA[i];
+  const bin = toBinary(d.p);
+  const binDisplay = bin.length > 40 ? bin.substring(0, 20) + '<br>' + bin.substring(20, 40) + '...<br>(' + bin.length + ' bits total)' : bin;
+
+  let html = `<h2 style="color:${RING_COLORS[i]}">PERFECT #${i + 1}: ${formatBig(d.perfect)}</h2>`;
+  html += `<div class="formula">2${superscript(d.p - 1)} × (2${superscript(d.p)} - 1)</div>`;
+  html += `<div class="mersenne">Mersenne Prime M(${d.p}) = 2${superscript(d.p)} - 1 = ${formatBig(d.mersenne)}</div>`;
+  html += `<div class="binary">Binary: ${binDisplay}</div>`;
+  html += `<div style="font-size:8px;color:#556;margin:4px 0">${d.p} ones followed by ${d.p - 1} zeros</div>`;
+
+  if (d.divisors) {
+    html += `<div class="divisors">Divisors: ${d.divisors.join(' + ')} = ${formatBig(d.perfect)}</div>`;
+  } else {
+    html += `<div class="divisors">${d.divisorCount} divisors (too large to enumerate)</div>`;
+  }
+
+  if (i === 3) {
+    html += `<div class="special">THIS IS M₇'s PERFECT NUMBER<br>8128 = 2⁶ × 127<br>127 = 2⁷ - 1 is the 7th Mersenne prime</div>`;
+  }
+
+  infoPanel.style.display = 'block';
+  infoPanel.innerHTML = html;
+}
+
+function startSumAnimation(i) {
+  if (!PERFECT_DATA[i].divisors) {
+    sumDisplay.style.opacity = '1';
+    sumDisplay.textContent = formatBig(PERFECT_DATA[i].perfect) + ' = sum of ' + PERFECT_DATA[i].divisorCount + ' divisors';
+    setTimeout(() => { sumDisplay.style.opacity = '0'; }, 3000);
+    return;
+  }
+  sumAnimRing = i;
+  sumAnimPhase = 0;
+  sumAnimTimer = 0;
+}
+
+// Intro build-up
+let introComplete = false;
+let introStart = performance.now();
+
+function getVisibleRings() {
+  const elapsed = (performance.now() - introStart) / 1000;
+  if (elapsed > 10) { introComplete = true; return 7; }
+  return Math.min(7, Math.floor(elapsed / 1.3) + 1);
+}
+
+// Click detection
+canvas.addEventListener('click', (e) => {
+  const mx = e.clientX - 0;
+  const my = e.clientY - 32;
+  const dx = mx - cx;
+  const dy = my - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // Find closest ring
+  let closest = -1;
+  let closestDist = 40;
+  for (let i = 0; i < 7; i++) {
+    const r = getRingRadius(i);
+    const d = Math.abs(dist - r);
+    if (d < closestDist) {
+      closestDist = d;
+      closest = i;
+    }
+  }
+
+  if (closest >= 0) {
+    selectRing(closest);
+    clickRipples.push({ x: cx, y: cy, r: getRingRadius(closest), t: 0, color: RING_COLORS[closest] });
+  } else {
+    selectedRing = -1;
+    infoPanel.style.display = 'none';
+  }
+});
+
+function hexToRgb(hex) {
+  if (hex.length === 4) {
+    return {
+      r: parseInt(hex[1] + hex[1], 16),
+      g: parseInt(hex[2] + hex[2], 16),
+      b: parseInt(hex[3] + hex[3], 16)
+    };
+  }
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16)
+  };
+}
+
+function drawRing(i, t) {
+  const d = PERFECT_DATA[i];
+  const r = getRingRadius(i);
+  const color = RING_COLORS[i];
+  const rgb = hexToRgb(color);
+  const isSelected = (i === selectedRing);
+  const isM7 = (i === 3);
+
+  // Ring glow
+  const glowAlpha = isSelected ? 0.15 : (isM7 ? 0.08 : 0.04);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${glowAlpha + Math.sin(t * 0.5 + i) * 0.02})`;
+  ctx.lineWidth = isSelected ? 12 : (isM7 ? 8 : 4);
+  ctx.stroke();
+
+  // Main ring line
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${isSelected ? 0.8 : 0.4})`;
+  ctx.lineWidth = isSelected ? 2.5 : (isM7 ? 2 : 1.2);
+  ctx.stroke();
+
+  // Gold highlight for M7 ring
+  if (isM7) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.strokeStyle = `rgba(255,200,0,${0.1 + Math.sin(t * 1.2) * 0.06})`;
+    ctx.lineWidth = 6;
+    ctx.stroke();
+  }
+
+  // Divisor dots orbiting
+  const numDots = d.divisors ? d.divisors.length : d.divisorCount;
+  const displayDots = Math.min(numDots, 36); // cap visual dots
+  const speed = 0.15 / (i + 1); // outer rings slower
+
+  for (let j = 0; j < displayDots; j++) {
+    const angle = (j / displayDots) * TAU + t * speed * (j % 2 === 0 ? 1 : -0.6);
+    const dotR = r + Math.sin(t * 2 + j * 0.7) * 3;
+    const dx = cx + Math.cos(angle) * dotR;
+    const dy = cy + Math.sin(angle) * dotR;
+
+    const dotSize = isSelected ? 3.5 : (isM7 ? 2.8 : 2);
+    const alpha = isSelected ? 0.9 : 0.5;
+
+    ctx.beginPath();
+    ctx.arc(dx, dy, dotSize, 0, TAU);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+    ctx.fill();
+
+    // Small glow
+    if (isSelected || isM7) {
+      ctx.beginPath();
+      ctx.arc(dx, dy, dotSize * 3, 0, TAU);
+      ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.08)`;
+      ctx.fill();
+    }
+  }
+
+  // Ring label
+  const labelAngle = -Math.PI / 2 + i * 0.15;
+  const lx = cx + Math.cos(labelAngle) * (r + 18);
+  const ly = cy + Math.sin(labelAngle) * (r + 18);
+  ctx.font = `${isSelected ? 10 : 8}px 'Courier New', monospace`;
+  ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${isSelected ? 1 : 0.6})`;
+  ctx.textAlign = 'center';
+  ctx.fillText(formatBig(d.perfect), lx, ly);
+
+  if (isM7) {
+    ctx.font = "7px 'Courier New', monospace";
+    ctx.fillStyle = 'rgba(255,200,0,0.7)';
+    ctx.fillText('M₇ = 127', lx, ly + 12);
+  }
+}
+
+// Sum animation: terms fly to center
+function drawSumAnimation(t) {
+  if (sumAnimRing < 0 || sumAnimPhase < 0) return;
+
+  const d = PERFECT_DATA[sumAnimRing];
+  if (!d.divisors) return;
+
+  sumAnimTimer += 0.016;
+
+  const divisors = d.divisors;
+  const totalDur = divisors.length * 0.3 + 1.5;
+
+  if (sumAnimTimer > totalDur) {
+    sumAnimPhase = -1;
+    sumAnimRing = -1;
+    sumDisplay.style.opacity = '0';
+    return;
+  }
+
+  const r = getRingRadius(sumAnimRing);
+  let runningSum = 0;
+  let displayParts = [];
+
+  for (let j = 0; j < divisors.length; j++) {
+    const termStart = j * 0.3;
+    const termProgress = Math.max(0, Math.min(1, (sumAnimTimer - termStart) / 0.4));
+
+    if (termProgress > 0) {
+      const angle = (j / divisors.length) * TAU - Math.PI / 2;
+      const startX = cx + Math.cos(angle) * r;
+      const startY = cy + Math.sin(angle) * r;
+
+      const ease = termProgress < 0.5 ? 2 * termProgress * termProgress : 1 - Math.pow(-2 * termProgress + 2, 2) / 2;
+      const x = startX + (cx - startX) * ease;
+      const y = startY + (cy - startY) * ease;
+
+      const color = RING_COLORS[sumAnimRing];
+      const rgb = hexToRgb(color);
+      const alpha = 0.4 + termProgress * 0.6;
+
+      ctx.beginPath();
+      ctx.arc(x, y, 4 + (1 - termProgress) * 4, 0, TAU);
+      ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha * 0.6})`;
+      ctx.fill();
+
+      // Draw the number
+      ctx.font = "9px 'Courier New', monospace";
+      ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(divisors[j], x, y - 8);
+
+      if (termProgress >= 1) {
+        runningSum += divisors[j];
+        displayParts.push(divisors[j]);
+      }
+    }
+  }
+
+  // Show running sum at center
+  if (displayParts.length > 0) {
+    const sumText = displayParts.length <= 6
+      ? displayParts.join(' + ') + ' = ' + runningSum
+      : displayParts.slice(0, 3).join(' + ') + ' + ... + ' + displayParts[displayParts.length - 1] + ' = ' + runningSum;
+
+    sumDisplay.style.opacity = '1';
+    sumDisplay.innerHTML = sumText;
+
+    if (runningSum === PERFECT_DATA[sumAnimRing].perfect) {
+      sumDisplay.innerHTML += '<br><span style="color:#fc0;font-size:16px">PERFECT!</span>';
+    }
+  }
+}
+
+// Flash animation when a ring fully appears during build
+let flashRing = -1;
+let flashTimer = 0;
+
+function drawFlash() {
+  if (flashRing < 0) return;
+  flashTimer += 0.016;
+  if (flashTimer > 0.8) { flashRing = -1; return; }
+
+  const r = getRingRadius(flashRing);
+  const color = RING_COLORS[flashRing];
+  const rgb = hexToRgb(color);
+  const alpha = (1 - flashTimer / 0.8) * 0.3;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+  ctx.lineWidth = 20 + flashTimer * 40;
+  ctx.stroke();
+}
+
+// Click ripples
+function drawRipples() {
+  for (let i = clickRipples.length - 1; i >= 0; i--) {
+    const rp = clickRipples[i];
+    rp.t += 0.02;
+    if (rp.t > 1) { clickRipples.splice(i, 1); continue; }
+
+    const rgb = hexToRgb(rp.color);
+    const alpha = (1 - rp.t) * 0.3;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r + rp.t * 50, 0, TAU);
+    ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+    ctx.lineWidth = 3 * (1 - rp.t);
+    ctx.stroke();
+  }
+}
+
+// Central label
+function drawCenter(t) {
+  // Title
+  ctx.font = "11px 'Courier New', monospace";
+  ctx.fillStyle = `rgba(170,170,204,${0.5 + Math.sin(t * 0.3) * 0.1})`;
+  ctx.textAlign = 'center';
+  ctx.fillText('PERFECT NUMBERS', cx, cy - 15);
+
+  ctx.font = "8px 'Courier New', monospace";
+  ctx.fillStyle = 'rgba(0,170,255,0.4)';
+  ctx.fillText('n = sum of proper divisors', cx, cy + 2);
+
+  ctx.font = "8px 'Courier New', monospace";
+  ctx.fillStyle = 'rgba(250,160,0,0.3)';
+  ctx.fillText('2ᵖ⁻¹ × (2ᵖ - 1)', cx, cy + 16);
+
+  // Pulsing dot at center
+  const pulse = 2 + Math.sin(t * 2) * 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy - 6, pulse, 0, TAU);
+  ctx.fillStyle = 'rgba(0,170,255,0.3)';
+  ctx.fill();
+}
+
+// Background stars
+const stars = [];
+for (let i = 0; i < 80; i++) {
+  stars.push({
+    x: Math.random(),
+    y: Math.random(),
+    s: Math.random() * 1.2 + 0.3,
+    b: Math.random()
+  });
+}
+
+function drawStars(t) {
+  for (const s of stars) {
+    const alpha = 0.1 + Math.sin(t * 0.5 + s.b * 10) * 0.05;
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.s, 0, TAU);
+    ctx.fillStyle = `rgba(100,120,180,${alpha})`;
+    ctx.fill();
+  }
+}
+
+// Connecting lines between center and rings (subtle)
+function drawConnections(t, visibleCount) {
+  for (let i = 0; i < visibleCount; i++) {
+    const r = getRingRadius(i);
+    const angle = -Math.PI / 2 + t * 0.02 + i * TAU / 7;
+    const rgb = hexToRgb(RING_COLORS[i]);
+    const alpha = (i === selectedRing) ? 0.12 : 0.03;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+    ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+// Build-up status text
+let lastVisibleCount = 0;
+
+function drawBuildText(visibleCount) {
+  if (introComplete && visibleCount >= 7) {
+    buildStatus.style.display = 'none';
+    return;
+  }
+
+  if (visibleCount !== lastVisibleCount && visibleCount <= 7) {
+    const d = PERFECT_DATA[visibleCount - 1];
+    if (d) {
+      buildStatus.innerHTML = `RING ${visibleCount}: ${formatBig(d.perfect)}<br><span style="font-size:9px;color:#556">p = ${d.p} · M(${d.p}) = ${formatBig(d.mersenne)}</span>`;
+
+      if (visibleCount - 1 === 3) {
+        buildStatus.innerHTML += `<br><span style="font-size:9px;color:#fc0">M₇ = 127 · THE SEVENTH MERSENNE PRIME</span>`;
+      }
+
+      flashRing = visibleCount - 1;
+      flashTimer = 0;
+    }
+    lastVisibleCount = visibleCount;
+  }
+}
+
+// Divisor-sum proof particles during build
+function spawnBuildProof(ringIdx) {
+  const d = PERFECT_DATA[ringIdx];
+  if (!d.divisors) return;
+  const r = getRingRadius(ringIdx);
+
+  d.divisors.forEach((div, j) => {
+    const angle = (j / d.divisors.length) * TAU;
+    particles.push({
+      x: cx + Math.cos(angle) * r,
+      y: cy + Math.sin(angle) * r,
+      vx: -Math.cos(angle) * 0.5,
+      vy: -Math.sin(angle) * 0.5,
+      life: 1,
+      color: RING_COLORS[ringIdx],
+      label: div
+    });
+  });
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= 0.01;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+
+    const rgb = hexToRgb(p.color);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2 * p.life, 0, TAU);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${p.life * 0.5})`;
+    ctx.fill();
+  }
+}
+
+// Main loop
+let prevBuildCount = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  time += 0.016;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
+  grad.addColorStop(0, 'rgba(10,10,30,1)');
+  grad.addColorStop(1, 'rgba(6,6,16,1)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars(time);
+
+  const visibleCount = getVisibleRings();
+
+  drawBuildText(visibleCount);
+
+  // Spawn proof particles when new ring appears
+  if (visibleCount > prevBuildCount) {
+    for (let r = prevBuildCount; r < visibleCount; r++) {
+      spawnBuildProof(r);
+    }
+    prevBuildCount = visibleCount;
+  }
+
+  drawConnections(time, visibleCount);
+
+  // Draw rings
+  for (let i = 0; i < visibleCount; i++) {
+    drawRing(i, time);
+  }
+
+  drawCenter(time);
+  drawSumAnimation(time);
+  drawFlash();
+  drawRipples();
+  updateParticles();
+}
+
+// Auto-select M7 ring after build completes
+setTimeout(() => {
+  selectRing(3);
+}, 7000);
+
+animate();
+</script>
+</body>
+</html>
