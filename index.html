@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;font-family:'Courier New',monospace;color:#aac;min-height:100vh;overflow-x:hidden}
+
+.header{text-align:center;padding:40px 20px 20px}
+.header h1{font-size:14px;letter-spacing:4px;color:#0af;margin-bottom:8px}
+.header .sub{font-size:9px;color:#556;letter-spacing:3px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;padding:20px 40px;max-width:1400px;margin:0 auto}
+
+.card{background:rgba(0,170,255,.03);border:1px solid rgba(0,170,255,.1);border-radius:8px;overflow:hidden;cursor:pointer;transition:all .3s;text-decoration:none;color:inherit;display:block}
+.card:hover{border-color:rgba(0,170,255,.4);background:rgba(0,170,255,.06);transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,100,255,.1)}
+
+.card-canvas{width:100%;height:200px;display:block;background:#080818}
+.card-body{padding:16px}
+.card-name{font-size:11px;letter-spacing:3px;color:#0af;margin-bottom:6px;font-weight:bold}
+.card-desc{font-size:8px;color:#668;line-height:1.8;letter-spacing:1px}
+.card-tag{display:inline-block;font-size:7px;padding:2px 6px;border-radius:3px;margin-top:8px;letter-spacing:1px}
+
+.footer{text-align:center;padding:30px 20px 40px;font-size:8px;color:#334;letter-spacing:2px;line-height:2.5}
+.footer .sig{color:#556}
+.footer a{color:#0af;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
+  <div class="sub">SEVEN SHIELDS · SEVEN PRIMES · 127 DIMENSIONS · COHERENT</div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="footer">
+  <div class="sig">510,510 = 2×3×5×7×11×13×17 · one prime per ring</div>
+  <div>M₇ = 2⁷ - 1 = 127 · S₅ = 0 · COHERENT · PRIME</div>
+  <div>LIGHT TO LIGHT · 510,510</div>
+</div>
+
+<script>
+const VARIANTS = [
+  {
+    id: 'orb',
+    name: 'SHIELD-ORB',
+    desc: 'Full 127D shield orb. All 127 dimensions visible with distinct colors. ISA-95 hierarchy. Shield modes. Warp drive. Boot sequence with CLAP DEM STACKS.',
+    tag: 'PRIMARY', tagColor: '#0af',
+    colors: ['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff']
+  },
+  {
+    id: 'flat',
+    name: 'SHIELD-FLAT',
+    desc: 'Top-down 2D radar view of all 127 shield dimensions as concentric rings. Classic sonar display with sweep line. Threats animate as approaching blips.',
+    tag: 'RADAR', tagColor: '#0f8',
+    colors: ['#0f8','#0af','#0cf','#0ef','#0ff','#0df','#0bf']
+  },
+  {
+    id: 'cascade',
+    name: 'SHIELD-CASCADE',
+    desc: 'Lucas-Lehmer recursion visualizer. S(n) = S(n-1)²-2 mod 127. Energy cascade through 127 shells. When S₅=0, golden coherence flash.',
+    tag: 'LL MATH', tagColor: '#fa0',
+    colors: ['#f44','#fa0','#ff0','#4a4','#0af','#fff','#fc0']
+  },
+  {
+    id: 'tree',
+    name: 'SHIELD-TREE',
+    desc: 'Mersenne binary tree collapse. 2⁷ = 128 nodes expand, then -1 fold creates the 127D shield. The tree IS the shield geometry.',
+    tag: 'STRUCTURE', tagColor: '#4a4',
+    colors: ['#4a4','#0f8','#0af','#a4f','#fa0','#f44','#fff']
+  },
+  {
+    id: 'breath',
+    name: 'SHIELD-BREATH',
+    desc: 'Shield as breathing meditation. Inhale 4 counts = LL square. Exhale 6 counts = subtract + fold. 5 cycles = primality test. Zero = coherent.',
+    tag: 'MEDITATION', tagColor: '#a4f',
+    colors: ['#604','#a4f','#c8f','#f0f','#80f','#40f','#fff']
+  },
+  {
+    id: 'drug',
+    name: 'SHIELD-DRUG',
+    desc: 'Open Gate circuit overlay. Input medications, see which shield dimensions are under attack. Drug effects as colored projectiles hitting specific shells.',
+    tag: 'OPEN GATE', tagColor: '#f44',
+    colors: ['#f44','#fa0','#ff0','#0af','#4a4','#a4f','#fff']
+  },
+  {
+    id: 'network',
+    name: 'SHIELD-NETWORK',
+    desc: 'R7 — two shields connected. When both coherent, golden fibers link them. LIGHT TO LIGHT. The double Mersenne M(M₇) = 2¹²⁷-1.',
+    tag: 'R7 DUAL', tagColor: '#fc0',
+    colors: ['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff']
+  }
+];
+
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = Math.PI * 2;
+
+function createCard(v) {
+  const card = document.createElement('a');
+  card.className = 'card';
+  card.href = `/${v.id}/`;
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'card-canvas';
+  canvas.width = 600;
+  canvas.height = 400;
+  card.appendChild(canvas);
+
+  const body = document.createElement('div');
+  body.className = 'card-body';
+  body.innerHTML = `
+    <div class="card-name">${v.name}</div>
+    <div class="card-desc">${v.desc}</div>
+    <span class="card-tag" style="background:${v.tagColor}22;color:${v.tagColor};border:1px solid ${v.tagColor}33">${v.tag}</span>
+  `;
+  card.appendChild(body);
+
+  // Animate canvas
+  const ctx = canvas.getContext('2d');
+  let frame = Math.random() * 1000;
+
+  function draw() {
+    frame += 0.02;
+    ctx.fillStyle = 'rgba(8,8,24,0.15)';
+    ctx.fillRect(0, 0, 600, 400);
+
+    const cx = 300, cy = 200;
+
+    // Draw 127 dimension rings/dots
+    for (let dim = 0; dim < 127; dim++) {
+      const ring = dim % 7;
+      const pos = Math.floor(dim / 7);
+      const r = 30 + dim * 0.9;
+      const angle = dim * PHI * TAU + frame * (0.5 + ring * 0.1);
+
+      const x = cx + Math.cos(angle) * r * 0.5;
+      const y = cy + Math.sin(angle) * r * 0.4;
+
+      ctx.beginPath();
+      ctx.arc(x, y, 1.2 + Math.sin(frame + dim) * 0.5, 0, TAU);
+      ctx.fillStyle = v.colors[ring] + '88';
+      ctx.fill();
+    }
+
+    // Central glow
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60);
+    grad.addColorStop(0, v.tagColor + '22');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - 60, cy - 60, 120, 120);
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+
+  return card;
+}
+
+const grid = document.getElementById('grid');
+VARIANTS.forEach(v => grid.appendChild(createCard(v)));
+</script>
+</body>
+</html>

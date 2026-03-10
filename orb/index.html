@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>127D SHIELD ORB — PRIMORIAL DEFENSE SYSTEM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#0f0;font-family:'Courier New',monospace;overflow:hidden;width:100vw;height:100vh;user-select:none}
+canvas{position:fixed;top:0;left:0;z-index:0}
+
+/* TOP BAR */
+#topbar{position:fixed;top:0;left:0;right:0;height:38px;background:rgba(0,8,20,0.92);border-bottom:1px solid #0f4;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 16px}
+#topbar .title{color:#0fa;font-size:13px;font-weight:bold;letter-spacing:2px}
+#topbar .clock{color:#0f8;font-size:12px;font-family:'Courier New',monospace}
+
+/* ISA-95 PANEL (LEFT) */
+#isa95{position:fixed;top:44px;left:6px;width:170px;background:rgba(0,6,16,0.88);border:1px solid #084;border-radius:4px;padding:8px;z-index:10;font-size:10px}
+#isa95 h3{color:#0fa;font-size:11px;margin-bottom:6px;letter-spacing:1px;text-align:center;border-bottom:1px solid #063}
+.isa-level{margin:4px 0;padding:4px 6px;border-left:3px solid #084;background:rgba(0,20,10,0.5);border-radius:2px}
+.isa-level .lbl{color:#0a8;font-size:9px;font-weight:bold}
+.isa-level .desc{color:#086;font-size:8px;display:block;margin-top:1px}
+.isa-level .rings{color:#0f4;font-size:8px}
+.isa-level.active{border-left-color:#0f4;background:rgba(0,40,20,0.6)}
+
+/* BUS PANEL */
+#buses{position:fixed;top:260px;left:6px;width:170px;background:rgba(0,6,16,0.88);border:1px solid #084;border-radius:4px;padding:8px;z-index:10;font-size:10px}
+#buses h3{color:#0fa;font-size:11px;margin-bottom:6px;letter-spacing:1px;text-align:center;border-bottom:1px solid #063}
+.bus-row{display:flex;align-items:center;margin:3px 0;gap:5px}
+.bus-id{width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;color:#000}
+.bus-name{flex:1;font-size:9px;color:#0a8}
+.bus-bar-outer{width:50px;height:6px;background:#111;border-radius:3px;overflow:hidden}
+.bus-bar-inner{height:100%;border-radius:3px;transition:width 0.3s}
+
+/* SHIELD STATUS PANEL (RIGHT) */
+#shieldpanel{position:fixed;top:44px;right:6px;width:180px;background:rgba(0,6,16,0.88);border:1px solid #084;border-radius:4px;padding:8px;z-index:10;font-size:10px}
+#shieldpanel h3{color:#0fa;font-size:11px;margin-bottom:6px;letter-spacing:1px;text-align:center;border-bottom:1px solid #063}
+.shield-row{display:flex;align-items:center;margin:4px 0;gap:5px}
+.shield-ring-id{font-size:9px;color:#0a8;width:20px;font-weight:bold}
+.shield-ring-name{font-size:9px;color:#0a8;flex:1}
+.shield-bar-outer{width:60px;height:8px;background:#111;border-radius:4px;overflow:hidden}
+.shield-bar-inner{height:100%;border-radius:4px;transition:width 0.3s}
+.shield-pct{font-size:9px;color:#0f4;width:28px;text-align:right}
+
+/* BOTTOM METRICS */
+#metrics{position:fixed;bottom:36px;left:0;right:0;height:28px;background:rgba(0,8,20,0.92);border-top:1px solid #063;z-index:10;display:flex;align-items:center;justify-content:center;gap:24px;padding:0 10px}
+.metric{text-align:center}
+.metric .lbl{font-size:8px;color:#086;display:block}
+.metric .val{font-size:12px;color:#0f4;font-weight:bold}
+
+/* BOTTOM CONTROLS */
+#controls{position:fixed;bottom:0;left:0;right:0;height:34px;background:rgba(0,8,20,0.95);border-top:1px solid #084;z-index:10;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 8px;flex-wrap:nowrap;overflow-x:auto}
+.cbtn{background:rgba(0,30,15,0.8);border:1px solid #084;color:#0a8;font-size:9px;padding:3px 8px;border-radius:3px;cursor:pointer;font-family:'Courier New',monospace;white-space:nowrap;transition:all 0.2s}
+.cbtn:hover{background:rgba(0,60,30,0.8);border-color:#0f4;color:#0f4}
+.cbtn.active{background:rgba(0,80,40,0.6);border-color:#0f4;color:#0f4;box-shadow:0 0 6px #0f42}
+.cbtn.danger{border-color:#800;color:#f44}
+.cbtn.danger:hover{background:rgba(60,0,0,0.6);border-color:#f44}
+.cbtn.cascade{border-color:#f80;color:#fa0}
+.cbtn.cascade:hover{background:rgba(40,20,0,0.6);border-color:#fa0}
+
+/* BOOT OVERLAY */
+#bootOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:#060610;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.8s}
+#bootOverlay.hidden{opacity:0;pointer-events:none}
+#bootLog{width:500px;max-width:90vw;font-size:11px;color:#0a4;line-height:1.6;max-height:70vh;overflow-y:auto}
+#bootLog .line{opacity:0;animation:fadeIn 0.3s forwards}
+#bootLog .line.ok{color:#0f4}
+#bootLog .line.warn{color:#fa0}
+#bootLog .line.sys{color:#08f}
+#bootLog .line.bass{color:#f4f;font-weight:bold}
+@keyframes fadeIn{to{opacity:1}}
+
+/* TOOLTIP */
+#tooltip{position:fixed;display:none;background:rgba(0,10,20,0.95);border:1px solid #0f4;border-radius:4px;padding:8px 12px;font-size:10px;color:#0f4;z-index:100;pointer-events:none;max-width:220px}
+#tooltip .tt-title{font-weight:bold;font-size:11px;margin-bottom:3px;color:#0fa}
+#tooltip .tt-row{color:#0a8;margin:1px 0}
+
+/* FOOTER */
+#footer{position:fixed;bottom:0;right:8px;font-size:8px;color:#043;z-index:11;line-height:34px}
+
+/* Mersenne Tree Overlay */
+#treeOverlay{position:fixed;top:44px;left:50%;transform:translateX(-50%);width:400px;max-width:90vw;background:rgba(0,6,16,0.92);border:1px solid #0a4;border-radius:6px;padding:12px;z-index:50;display:none;max-height:70vh;overflow-y:auto}
+#treeOverlay h3{color:#0fa;text-align:center;font-size:12px;margin-bottom:8px}
+#treeOverlay canvas{width:100%;border:1px solid #042;border-radius:3px}
+</style>
+</head>
+<body>
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="title">127D SHIELD ORB — PRIMORIAL DEFENSE</div>
+  <div class="clock" id="clock">00:00:00.000</div>
+</div>
+
+<!-- ISA-95 PANEL -->
+<div id="isa95">
+  <h3>ISA-95 LAYERS</h3>
+  <div class="isa-level" id="isa-L0"><span class="lbl">L0 PHYSICAL PROCESS</span><span class="desc">Sensor/actuator layer</span><span class="rings">R0</span></div>
+  <div class="isa-level" id="isa-L1"><span class="lbl">L1 DIRECT CONTROL</span><span class="desc">PLC/DCS controllers</span><span class="rings">R1, R2</span></div>
+  <div class="isa-level" id="isa-L2"><span class="lbl">L2 SUPERVISORY</span><span class="desc">SCADA/HMI systems</span><span class="rings">R3, R4</span></div>
+  <div class="isa-level" id="isa-L3"><span class="lbl">L3 OPERATIONS</span><span class="desc">MES/MOM management</span><span class="rings">R5</span></div>
+  <div class="isa-level" id="isa-L4"><span class="lbl">L4 BUSINESS PLANNING</span><span class="desc">ERP/enterprise</span><span class="rings">R6</span></div>
+</div>
+
+<!-- BUS PANEL -->
+<div id="buses">
+  <h3>5-BUS POWER</h3>
+</div>
+
+<!-- SHIELD STATUS PANEL -->
+<div id="shieldpanel">
+  <h3>RING STATUS</h3>
+</div>
+
+<!-- BOTTOM METRICS -->
+<div id="metrics">
+  <div class="metric"><span class="lbl">SHIELD %</span><span class="val" id="m-shield">0</span></div>
+  <div class="metric"><span class="lbl">&phi; COHERENCE</span><span class="val" id="m-phi">0.000</span></div>
+  <div class="metric"><span class="lbl">DIMENSIONS</span><span class="val" id="m-dims">0/127</span></div>
+  <div class="metric"><span class="lbl">POWER kW</span><span class="val" id="m-power">0</span></div>
+  <div class="metric"><span class="lbl">THREAT</span><span class="val" id="m-threat">NONE</span></div>
+  <div class="metric"><span class="lbl">&psi; LEVEL</span><span class="val" id="m-psi">0.00</span></div>
+</div>
+
+<!-- BOTTOM CONTROLS -->
+<div id="controls">
+  <button class="cbtn active" data-mode="idle" onclick="setMode('idle')">IDLE</button>
+  <button class="cbtn" data-mode="patrol" onclick="setMode('patrol')">PATROL</button>
+  <button class="cbtn" data-mode="alert" onclick="setMode('alert')">ALERT</button>
+  <button class="cbtn" data-mode="prime" onclick="setMode('prime')">PRIME LOCK</button>
+  <button class="cbtn" data-mode="fortress" onclick="setMode('fortress')">FORTRESS</button>
+  <button class="cbtn" data-mode="mirror" onclick="setMode('mirror')">MIRROR</button>
+  <button class="cbtn danger" onclick="triggerBreach()">BREACH</button>
+  <button class="cbtn cascade" onclick="triggerLLCascade()">LL CASCADE</button>
+  <button class="cbtn" id="treeBtn" onclick="toggleTree()">TREE</button>
+  <button class="cbtn" id="warpBtn" onclick="triggerWarp()">WARP DRIVE</button>
+</div>
+
+<!-- TOOLTIP -->
+<div id="tooltip">
+  <div class="tt-title"></div>
+  <div class="tt-body"></div>
+</div>
+
+<!-- MERSENNE TREE OVERLAY -->
+<div id="treeOverlay">
+  <h3>MERSENNE BINARY TREE — M<sub>7</sub>=127</h3>
+  <canvas id="treeCanvas" width="380" height="360"></canvas>
+</div>
+
+<!-- FOOTER -->
+<div id="footer">510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</div>
+
+<!-- BOOT OVERLAY -->
+<div id="bootOverlay">
+  <div id="bootLog"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ========== CONSTANTS ==========
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const PRIMORIAL_7 = 510510;
+const RING_PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_BASE_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_NAMES = ['GROUND', 'SENSE', 'GATE', 'HEART', 'VOICE', 'SIGHT', 'OBSERVER'];
+const LL_SEQUENCE = [4, 14, 67, 42, 111, 0];
+
+const SHIELDS = [
+  { id: 'R0', name: 'GROUND',   color: '#660044', type: 'attenuated' },
+  { id: 'R1', name: 'SENSORY',  color: '#00aadd', type: 'maximum_gain' },
+  { id: 'R2', name: 'GATE',     color: '#ffaa00', type: 'wall' },
+  { id: 'R3', name: 'AFFECT',   color: '#ff4444', type: 'emotional' },
+  { id: 'R4', name: 'EXECUTIVE',color: '#44aa44', type: 'framework' },
+  { id: 'R5', name: 'IDENTITY', color: '#aa44ff', type: 'identity' },
+  { id: 'R6', name: 'OBSERVER', color: '#ffffff', type: 'watchtower' }
+];
+
+const BUSES_DEF = [
+  { id: 'A', name: 'ELECTRICAL',    color: '#4444ff', feeds: [0, 1] },
+  { id: 'B', name: 'CHEMICAL',      color: '#ff4444', feeds: [2, 3] },
+  { id: 'C', name: 'PHOTONIC',      color: '#ffff00', feeds: [3, 4] },
+  { id: 'D', name: 'MECHANICAL',    color: '#44ff44', feeds: [4, 5] },
+  { id: 'E', name: 'PLASOSPHERIC',  color: '#00ffff', feeds: [5, 6] }
+];
+
+const ISA_MAP = {
+  L0: [0],
+  L1: [1, 2],
+  L2: [3, 4],
+  L3: [5],
+  L4: [6]
+};
+
+// ========== STATE ==========
+let currentMode = 'idle';
+let shieldLevels = [100, 100, 100, 100, 100, 100, 100];
+let busLevels = [100, 100, 100, 100, 100];
+let breachActive = false;
+let breachRing = -1;
+let llCascadeActive = false;
+let llCascadeStep = 0;
+let llCascadeTime = 0;
+let warpActive = false;
+let warpPhase = 0;
+let treeVisible = false;
+let booted = false;
+let bootStartTime = 0;
+let dimsOnline = 0;
+let threatLevel = 'NONE';
+let psiLevel = 0;
+
+// Dimension data
+const dimData = [];
+for (let d = 0; d < M7; d++) {
+  const ring = d % 7;
+  const pos = Math.floor(d / 7);
+  const hue = (RING_BASE_HUES[ring] + (pos / 18) * 25) % 360;
+  const radius = 0.6 + (d / M7) * 3.0;
+  const theta = 2 * Math.PI * d / PHI;
+  const phi = Math.acos(1 - 2 * (d + 0.5) / M7);
+  const ax = Math.sin(phi) * Math.cos(theta);
+  const ay = Math.sin(phi) * Math.sin(theta);
+  const az = Math.cos(phi);
+  const llResidue = lucasLehmerResidue(d);
+  dimData.push({ dim: d, ring, pos, hue, radius, theta, phi, ax, ay, az, llResidue, energy: 0 });
+}
+
+function lucasLehmerResidue(dim) {
+  let s = 4;
+  const m = 127;
+  for (let i = 0; i < Math.min(dim, 6); i++) {
+    s = ((s * s) - 2) % m;
+    if (s < 0) s += m;
+  }
+  return s;
+}
+
+function dimToColor(dim) {
+  const dd = dimData[dim];
+  const s = 0.7 + 0.3 * (dd.ring / 6);
+  const l = 0.45 + 0.15 * Math.sin(dd.pos * 0.3);
+  return hslToRGB(dd.hue / 360, s, l);
+}
+
+function hslToRGB(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1/6) return p + (q - p) * 6 * t; if (t < 1/2) return q; if (t < 2/3) return p + (q - p) * (2/3 - t) * 6; return p; };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return { r, g, b };
+}
+
+// ========== BUILD UI ==========
+function buildBusPanel() {
+  const container = document.getElementById('buses');
+  BUSES_DEF.forEach((bus, i) => {
+    const row = document.createElement('div');
+    row.className = 'bus-row';
+    row.innerHTML = `<div class="bus-id" style="background:${bus.color}">${bus.id}</div><span class="bus-name">${bus.name}</span><div class="bus-bar-outer"><div class="bus-bar-inner" id="bus-bar-${i}" style="width:100%;background:${bus.color}"></div></div>`;
+    container.appendChild(row);
+  });
+}
+
+function buildShieldPanel() {
+  const container = document.getElementById('shieldpanel');
+  SHIELDS.forEach((sh, i) => {
+    const row = document.createElement('div');
+    row.className = 'shield-row';
+    row.innerHTML = `<span class="shield-ring-id">${sh.id}</span><span class="shield-ring-name">${sh.name}</span><div class="shield-bar-outer"><div class="shield-bar-inner" id="shield-bar-${i}" style="width:100%;background:${sh.color}"></div></div><span class="shield-pct" id="shield-pct-${i}">100%</span>`;
+    container.appendChild(row);
+  });
+}
+
+buildBusPanel();
+buildShieldPanel();
+
+// ========== THREE.JS SETUP ==========
+let scene, camera, renderer, orbGroup;
+let instancedShells, shellDummy;
+let particleSystem;
+let clock;
+let raycaster, mouse;
+let hoveredDim = -1;
+
+function initThree() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x060610);
+  scene.fog = new THREE.FogExp2(0x060610, 0.04);
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(0, 2, 7);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+  clock = new THREE.Clock();
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2(-9999, -9999);
+
+  orbGroup = new THREE.Group();
+  scene.add(orbGroup);
+
+  // Ambient light
+  const ambLight = new THREE.AmbientLight(0x112233, 0.5);
+  scene.add(ambLight);
+
+  // Point lights
+  const pl1 = new THREE.PointLight(0x00ff88, 1.5, 20);
+  pl1.position.set(3, 3, 3);
+  scene.add(pl1);
+  const pl2 = new THREE.PointLight(0x8800ff, 1.0, 20);
+  pl2.position.set(-3, -2, -3);
+  scene.add(pl2);
+
+  createShells();
+  createParticles();
+  createCoreSphere();
+
+  // Orbit controls (manual)
+  setupOrbitControls();
+
+  window.addEventListener('resize', onResize);
+  window.addEventListener('mousemove', onMouseMove);
+}
+
+// ========== 127 INSTANCED SHELLS ==========
+function createShells() {
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const mat = new THREE.MeshPhongMaterial({
+    transparent: true,
+    opacity: 0.12,
+    wireframe: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    shininess: 80
+  });
+
+  instancedShells = new THREE.InstancedMesh(geo, mat, M7);
+  instancedShells.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  // Set colors
+  const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(M7 * 3), 3);
+  for (let d = 0; d < M7; d++) {
+    const c = dimToColor(d);
+    colorAttr.setXYZ(d, c.r, c.g, c.b);
+  }
+  instancedShells.instanceColor = colorAttr;
+
+  shellDummy = new THREE.Object3D();
+  orbGroup.add(instancedShells);
+}
+
+function updateShells(time) {
+  for (let d = 0; d < M7; d++) {
+    const dd = dimData[d];
+    if (!booted && d >= dimsOnline) {
+      shellDummy.position.set(0, 0, 0);
+      shellDummy.scale.set(0.001, 0.001, 0.001);
+    } else {
+      const r = dd.radius;
+      // Slight oscillation
+      const osc = 1.0 + 0.02 * Math.sin(time * 0.5 + d * 0.3);
+      const scale = r * 0.25 * osc;
+
+      // Position on fibonacci sphere axis, offset slightly
+      const wobble = Math.sin(time * 0.3 + d * 0.7) * 0.05;
+      shellDummy.position.set(
+        dd.ax * wobble,
+        dd.ay * wobble,
+        dd.az * wobble
+      );
+
+      shellDummy.scale.set(scale, scale, scale);
+
+      // Rotation per dimension
+      const rotSpeed = 0.1 + (d % 13) * 0.02;
+      shellDummy.rotation.set(
+        time * rotSpeed * dd.ax,
+        time * rotSpeed * dd.ay,
+        time * rotSpeed * dd.az
+      );
+
+      // LL cascade energy effect
+      if (dd.energy > 0) {
+        const e = dd.energy;
+        shellDummy.scale.multiplyScalar(1 + e * 0.5);
+      }
+    }
+    shellDummy.updateMatrix();
+    instancedShells.setMatrixAt(d, shellDummy.matrix);
+  }
+  instancedShells.instanceMatrix.needsUpdate = true;
+
+  // Update colors for energy
+  if (instancedShells.instanceColor) {
+    for (let d = 0; d < M7; d++) {
+      const dd = dimData[d];
+      const c = dimToColor(d);
+      if (dd.energy > 0) {
+        c.r = Math.min(1, c.r + dd.energy * 0.5);
+        c.g = Math.min(1, c.g + dd.energy * 0.3);
+        c.b = Math.min(1, c.b + dd.energy * 0.2);
+      }
+      if (breachActive && dd.ring === breachRing) {
+        c.r = 1; c.g *= 0.2; c.b *= 0.2;
+      }
+      instancedShells.instanceColor.setXYZ(d, c.r, c.g, c.b);
+    }
+    instancedShells.instanceColor.needsUpdate = true;
+  }
+}
+
+// ========== CORE SPHERE ==========
+function createCoreSphere() {
+  const coreGeo = new THREE.IcosahedronGeometry(0.4, 3);
+  const coreMat = new THREE.MeshPhongMaterial({
+    color: 0x00ff88,
+    emissive: 0x004422,
+    transparent: true,
+    opacity: 0.6,
+    wireframe: false
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  core.name = 'core';
+  orbGroup.add(core);
+
+  // Core glow
+  const glowGeo = new THREE.IcosahedronGeometry(0.55, 2);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x00ff66,
+    transparent: true,
+    opacity: 0.15,
+    blending: THREE.AdditiveBlending,
+    wireframe: true,
+    depthWrite: false
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'coreGlow';
+  orbGroup.add(glow);
+}
+
+// ========== PARTICLES (10000+) ==========
+function createParticles() {
+  const PARTICLE_COUNT = 12000;
+  const positions = new Float32Array(PARTICLE_COUNT * 3);
+  const colors = new Float32Array(PARTICLE_COUNT * 3);
+  const sizes = new Float32Array(PARTICLE_COUNT);
+  const dimAssign = new Float32Array(PARTICLE_COUNT);
+  const phaseOffset = new Float32Array(PARTICLE_COUNT);
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const dim = Math.floor(Math.random() * M7);
+    dimAssign[i] = dim;
+    phaseOffset[i] = Math.random() * Math.PI * 2;
+
+    const dd = dimData[dim];
+    const r = dd.radius * (0.9 + Math.random() * 0.2);
+    const t = Math.random() * Math.PI * 2;
+    const p = Math.acos(2 * Math.random() - 1);
+
+    positions[i * 3] = r * Math.sin(p) * Math.cos(t);
+    positions[i * 3 + 1] = r * Math.sin(p) * Math.sin(t);
+    positions[i * 3 + 2] = r * Math.cos(p);
+
+    const c = dimToColor(dim);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+
+    sizes[i] = 1.5 + Math.random() * 2.5;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('dimIdx', new THREE.BufferAttribute(dimAssign, 1));
+  geo.setAttribute('phase', new THREE.BufferAttribute(phaseOffset, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPixelRatio: { value: renderer.getPixelRatio() }
+    },
+    vertexShader: `
+      attribute float size;
+      attribute float phase;
+      attribute float dimIdx;
+      varying vec3 vColor;
+      uniform float uTime;
+      uniform float uPixelRatio;
+      void main() {
+        vColor = color;
+        vec3 pos = position;
+        float dim = dimIdx;
+        float angle = uTime * (0.1 + mod(dim, 7.0) * 0.03) + phase;
+        float ca = cos(angle * 0.3);
+        float sa = sin(angle * 0.3);
+        float x2 = pos.x * ca - pos.z * sa;
+        float z2 = pos.x * sa + pos.z * ca;
+        pos.x = x2;
+        pos.z = z2;
+        vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+        gl_PointSize = size * uPixelRatio * (3.0 / -mvPos.z);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        if (d > 0.5) discard;
+        float alpha = smoothstep(0.5, 0.1, d) * 0.7;
+        gl_FragColor = vec4(vColor * 1.5, alpha);
+      }
+    `,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    vertexColors: true
+  });
+
+  particleSystem = new THREE.Points(geo, mat);
+  orbGroup.add(particleSystem);
+}
+
+function updateParticles(time) {
+  if (!particleSystem) return;
+  particleSystem.material.uniforms.uTime.value = time;
+
+  // Update particle colors for breach/cascade
+  const colors = particleSystem.geometry.attributes.color;
+  const dimIdxAttr = particleSystem.geometry.attributes.dimIdx;
+  let needsColorUpdate = breachActive || llCascadeActive;
+
+  if (needsColorUpdate) {
+    for (let i = 0; i < colors.count; i++) {
+      const dim = Math.floor(dimIdxAttr.getX(i));
+      const dd = dimData[dim];
+      const c = dimToColor(dim);
+      if (breachActive && dd.ring === breachRing) {
+        c.r = 1; c.g *= 0.3; c.b *= 0.1;
+      }
+      if (dd.energy > 0) {
+        c.r = Math.min(1, c.r + dd.energy * 0.6);
+        c.g = Math.min(1, c.g + dd.energy * 0.4);
+        c.b = Math.min(1, c.b + dd.energy * 0.3);
+      }
+      colors.setXYZ(i, c.r, c.g, c.b);
+    }
+    colors.needsUpdate = true;
+  }
+}
+
+// ========== ORBIT CONTROLS ==========
+let isDragging = false;
+let prevMouse = { x: 0, y: 0 };
+let spherical = { theta: 0, phi: Math.PI / 3, radius: 7 };
+let targetSpherical = { theta: 0, phi: Math.PI / 3, radius: 7 };
+
+function setupOrbitControls() {
+  const cvs = renderer.domElement;
+  cvs.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+  cvs.addEventListener('mousemove', e => {
+    if (isDragging) {
+      const dx = e.clientX - prevMouse.x;
+      const dy = e.clientY - prevMouse.y;
+      targetSpherical.theta -= dx * 0.005;
+      targetSpherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, targetSpherical.phi + dy * 0.005));
+      prevMouse = { x: e.clientX, y: e.clientY };
+    }
+  });
+  cvs.addEventListener('mouseup', () => { isDragging = false; });
+  cvs.addEventListener('mouseleave', () => { isDragging = false; });
+  cvs.addEventListener('wheel', e => {
+    targetSpherical.radius = Math.max(3, Math.min(20, targetSpherical.radius + e.deltaY * 0.01));
+  });
+
+  // Touch support
+  let touchStart = null;
+  let touchDist = 0;
+  cvs.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      touchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    }
+  }, { passive: true });
+  cvs.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && touchStart) {
+      const dx = e.touches[0].clientX - touchStart.x;
+      const dy = e.touches[0].clientY - touchStart.y;
+      targetSpherical.theta -= dx * 0.005;
+      targetSpherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, targetSpherical.phi + dy * 0.005));
+      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      const nd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      targetSpherical.radius = Math.max(3, Math.min(20, targetSpherical.radius - (nd - touchDist) * 0.02));
+      touchDist = nd;
+    }
+  }, { passive: true });
+  cvs.addEventListener('touchend', () => { touchStart = null; }, { passive: true });
+}
+
+function updateCamera() {
+  spherical.theta += (targetSpherical.theta - spherical.theta) * 0.08;
+  spherical.phi += (targetSpherical.phi - spherical.phi) * 0.08;
+  spherical.radius += (targetSpherical.radius - spherical.radius) * 0.08;
+
+  // Auto-rotate in idle
+  if (currentMode === 'idle' && !isDragging) {
+    targetSpherical.theta += 0.001;
+  }
+
+  camera.position.x = spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
+  camera.position.y = spherical.radius * Math.cos(spherical.phi);
+  camera.position.z = spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
+  camera.lookAt(0, 0, 0);
+}
+
+// ========== MODES ==========
+const MODE_CONFIGS = {
+  idle:     { rotSpeed: 1, glow: 0.5, alert: false, shieldBoost: 0 },
+  patrol:   { rotSpeed: 1.5, glow: 0.7, alert: false, shieldBoost: 0.1 },
+  alert:    { rotSpeed: 2.5, glow: 1.0, alert: true, shieldBoost: 0.2 },
+  prime:    { rotSpeed: 3.0, glow: 1.2, alert: true, shieldBoost: 0.3 },
+  fortress: { rotSpeed: 0.5, glow: 1.5, alert: true, shieldBoost: 0.5 },
+  mirror:   { rotSpeed: 4.0, glow: 2.0, alert: true, shieldBoost: 0.4 }
+};
+
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.cbtn[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
+  // Update ISA-95 activity
+  const activeLevels = mode === 'idle' ? ['L0'] : mode === 'patrol' ? ['L0','L1'] : mode === 'alert' ? ['L0','L1','L2'] : ['L0','L1','L2','L3','L4'];
+  document.querySelectorAll('.isa-level').forEach(el => el.classList.remove('active'));
+  activeLevels.forEach(l => document.getElementById('isa-' + l)?.classList.add('active'));
+
+  // Update threat
+  threatLevel = mode === 'idle' ? 'NONE' : mode === 'patrol' ? 'LOW' : mode === 'alert' ? 'MEDIUM' : mode === 'prime' ? 'HIGH' : mode === 'fortress' ? 'CRITICAL' : 'REFLECTIVE';
+  document.getElementById('m-threat').textContent = threatLevel;
+  document.getElementById('m-threat').style.color = threatLevel === 'NONE' ? '#0f4' : threatLevel === 'LOW' ? '#0a8' : threatLevel === 'MEDIUM' ? '#fa0' : '#f44';
+}
+
+// ========== BREACH ==========
+function triggerBreach() {
+  if (breachActive) {
+    breachActive = false;
+    breachRing = -1;
+    return;
+  }
+  breachActive = true;
+  breachRing = Math.floor(Math.random() * 7);
+  shieldLevels[breachRing] = Math.max(10, shieldLevels[breachRing] - 40);
+
+  // Auto-recover after 5s
+  setTimeout(() => {
+    if (breachActive && breachRing >= 0) {
+      breachActive = false;
+      breachRing = -1;
+    }
+  }, 5000);
+}
+
+// ========== LL CASCADE ==========
+function triggerLLCascade() {
+  if (llCascadeActive) return;
+  llCascadeActive = true;
+  llCascadeStep = 0;
+  llCascadeTime = 0;
+
+  // Fire sequence
+  function fireStep() {
+    if (llCascadeStep >= LL_SEQUENCE.length) {
+      llCascadeActive = false;
+      return;
+    }
+    const dim = LL_SEQUENCE[llCascadeStep];
+    // Energize this dim and neighbors
+    for (let d = 0; d < M7; d++) {
+      const dist = Math.abs(d - dim);
+      const wave = Math.max(0, 1 - dist / 20);
+      dimData[d].energy = Math.max(dimData[d].energy, wave);
+    }
+    llCascadeStep++;
+    setTimeout(fireStep, 400);
+  }
+  fireStep();
+
+  // Play cascade sound
+  playCascadeSound();
+}
+
+// ========== WARP DRIVE ==========
+function triggerWarp() {
+  if (warpActive) return;
+  warpActive = true;
+  warpPhase = 0;
+  playWarpBoot();
+  setTimeout(() => { warpActive = false; }, 8000);
+}
+
+// ========== AUDIO ENGINE: CLAP DEM STACKS ==========
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playClap() {
+  const ctx = getAudioCtx();
+  const bufferSize = ctx.sampleRate * 0.08;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.015));
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  // Bandpass for clap character
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1800;
+  bp.Q.value = 1.5;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.3;
+  src.connect(bp).connect(gain).connect(ctx.destination);
+  src.start();
+}
+
+function play808Bass(freq = 55) {
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.3);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.5, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.5);
+}
+
+function playWarpBoot() {
+  const ctx = getAudioCtx();
+  // Rising sweep
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(40, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + 3);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 2);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 4);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(200, ctx.currentTime);
+  lp.frequency.exponentialRampToValueAtTime(8000, ctx.currentTime + 3);
+  osc.connect(lp).connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 4);
+
+  // Clap pattern
+  for (let i = 0; i < 8; i++) {
+    setTimeout(() => playClap(), i * 250 + 500);
+  }
+  // 808 hits
+  setTimeout(() => play808Bass(55), 200);
+  setTimeout(() => play808Bass(45), 1200);
+  setTimeout(() => play808Bass(65), 2200);
+}
+
+function playCascadeSound() {
+  const ctx = getAudioCtx();
+  LL_SEQUENCE.forEach((dim, i) => {
+    setTimeout(() => {
+      const freq = 200 + dim * 3;
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.5, ctx.currentTime + 0.4);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    }, i * 400);
+  });
+}
+
+function playBootTone(freq, delay) {
+  setTimeout(() => {
+    try {
+      const ctx = getAudioCtx();
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    } catch (e) {}
+  }, delay);
+}
+
+// ========== MERSENNE BINARY TREE ==========
+function toggleTree() {
+  treeVisible = !treeVisible;
+  document.getElementById('treeOverlay').style.display = treeVisible ? 'block' : 'none';
+  document.getElementById('treeBtn').classList.toggle('active', treeVisible);
+  if (treeVisible) drawMersenneTree();
+}
+
+function drawMersenneTree() {
+  const canvas = document.getElementById('treeCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Binary tree of M7=127 nodes (7 levels: 2^7-1=127)
+  const levels = 7;
+  ctx.strokeStyle = '#084';
+  ctx.lineWidth = 1;
+
+  function drawNode(idx, x, y, level, spread) {
+    if (idx >= M7) return;
+    const dd = dimData[idx];
+    const c = dimToColor(idx);
+    const colorStr = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+
+    // Draw lines to children
+    const leftChild = 2 * idx + 1;
+    const rightChild = 2 * idx + 2;
+    const nextY = y + 42;
+    const nextSpread = spread * 0.52;
+
+    if (leftChild < M7) {
+      ctx.strokeStyle = colorStr;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 5);
+      ctx.lineTo(x - nextSpread, nextY - 5);
+      ctx.stroke();
+      drawNode(leftChild, x - nextSpread, nextY, level + 1, nextSpread);
+    }
+    if (rightChild < M7) {
+      ctx.strokeStyle = colorStr;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 5);
+      ctx.lineTo(x + nextSpread, nextY - 5);
+      ctx.stroke();
+      drawNode(rightChild, x + nextSpread, nextY, level + 1, nextSpread);
+    }
+
+    // Draw node
+    ctx.globalAlpha = 1;
+    const r = Math.max(3, 8 - level);
+    ctx.fillStyle = colorStr;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Label for first 3 levels
+    if (level < 3) {
+      ctx.fillStyle = '#0f4';
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('D' + idx, x, y - r - 2);
+    }
+  }
+
+  drawNode(0, W / 2, 20, 0, W * 0.28);
+
+  // Legend
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#086';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('127 nodes = 2^7 - 1 (Mersenne)', 8, H - 10);
+  ctx.fillText('Ring primes: 2,3,5,7,11,13,17', 8, H - 24);
+}
+
+// ========== TOOLTIP ==========
+function onMouseMove(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  // Raycast to find hovered dimension
+  raycaster.setFromCamera(mouse, camera);
+
+  // Check instanced mesh intersections
+  const intersects = raycaster.intersectObject(instancedShells);
+  const tooltip = document.getElementById('tooltip');
+
+  if (intersects.length > 0) {
+    const instanceId = intersects[0].instanceId;
+    if (instanceId !== undefined && instanceId < M7) {
+      hoveredDim = instanceId;
+      const dd = dimData[hoveredDim];
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 15) + 'px';
+      tooltip.style.top = (e.clientY + 15) + 'px';
+      tooltip.querySelector('.tt-title').textContent = `DIMENSION ${dd.dim}`;
+      tooltip.querySelector('.tt-body').innerHTML =
+        `<div class="tt-row">Ring: R${dd.ring} ${RING_NAMES[dd.ring]}</div>` +
+        `<div class="tt-row">Hue: ${dd.hue.toFixed(1)}&deg;</div>` +
+        `<div class="tt-row">Radius: ${dd.radius.toFixed(3)}</div>` +
+        `<div class="tt-row">LL Residue: ${dd.llResidue}</div>` +
+        `<div class="tt-row">Position: ${dd.pos}/18</div>` +
+        `<div class="tt-row">Energy: ${(dd.energy * 100).toFixed(0)}%</div>`;
+    }
+  } else {
+    hoveredDim = -1;
+    tooltip.style.display = 'none';
+  }
+}
+
+// ========== RESIZE ==========
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ========== UPDATE UI ==========
+function updateUI(time) {
+  // Clock
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+
+  const cfg = MODE_CONFIGS[currentMode] || MODE_CONFIGS.idle;
+
+  // Shield levels - gradual recovery
+  for (let i = 0; i < 7; i++) {
+    if (!breachActive || i !== breachRing) {
+      shieldLevels[i] = Math.min(100, shieldLevels[i] + 0.1 + cfg.shieldBoost * 0.2);
+    } else {
+      shieldLevels[i] = Math.max(5, shieldLevels[i] - 0.3);
+    }
+    const bar = document.getElementById('shield-bar-' + i);
+    const pct = document.getElementById('shield-pct-' + i);
+    if (bar) bar.style.width = shieldLevels[i] + '%';
+    if (pct) pct.textContent = Math.floor(shieldLevels[i]) + '%';
+  }
+
+  // Bus levels
+  for (let i = 0; i < 5; i++) {
+    const bus = BUSES_DEF[i];
+    let level = 100;
+    bus.feeds.forEach(r => { level = Math.min(level, shieldLevels[r]); });
+    busLevels[i] = level * (0.9 + 0.1 * Math.sin(time * 2 + i));
+    const bar = document.getElementById('bus-bar-' + i);
+    if (bar) bar.style.width = Math.floor(busLevels[i]) + '%';
+  }
+
+  // Metrics
+  const avgShield = shieldLevels.reduce((a, b) => a + b, 0) / 7;
+  document.getElementById('m-shield').textContent = Math.floor(avgShield);
+  document.getElementById('m-shield').style.color = avgShield > 70 ? '#0f4' : avgShield > 40 ? '#fa0' : '#f44';
+
+  const coherence = (0.618 + 0.382 * Math.sin(time * 0.7)) * (avgShield / 100);
+  document.getElementById('m-phi').textContent = coherence.toFixed(3);
+
+  document.getElementById('m-dims').textContent = (booted ? M7 : dimsOnline) + '/' + M7;
+
+  const power = Math.floor(avgShield * 5.1 * (1 + cfg.shieldBoost));
+  document.getElementById('m-power').textContent = power;
+
+  psiLevel = coherence * PHI * (booted ? 1 : dimsOnline / M7);
+  document.getElementById('m-psi').textContent = psiLevel.toFixed(2);
+
+  // Decay dim energy
+  for (let d = 0; d < M7; d++) {
+    dimData[d].energy *= 0.97;
+    if (dimData[d].energy < 0.01) dimData[d].energy = 0;
+  }
+}
+
+// ========== MAIN LOOP ==========
+function animate() {
+  requestAnimationFrame(animate);
+  const time = clock.getElapsedTime();
+
+  updateCamera();
+
+  // Warp effect
+  if (warpActive) {
+    warpPhase += 0.02;
+    orbGroup.rotation.y += 0.05 * Math.sin(warpPhase);
+    orbGroup.rotation.x += 0.02 * Math.cos(warpPhase * 0.7);
+    const scale = 1 + 0.3 * Math.sin(warpPhase * 2);
+    orbGroup.scale.set(scale, scale, scale);
+  } else {
+    const mcfg = MODE_CONFIGS[currentMode];
+    orbGroup.rotation.y += 0.002 * mcfg.rotSpeed;
+    orbGroup.scale.lerp(new THREE.Vector3(1, 1, 1), 0.05);
+  }
+
+  // Core pulse
+  const core = orbGroup.getObjectByName('core');
+  if (core) {
+    const pulse = 1 + 0.05 * Math.sin(time * 2);
+    core.scale.set(pulse, pulse, pulse);
+    core.material.emissiveIntensity = 0.5 + 0.3 * Math.sin(time * 3);
+  }
+  const coreGlow = orbGroup.getObjectByName('coreGlow');
+  if (coreGlow) {
+    const gp = 1 + 0.1 * Math.sin(time * 1.5);
+    coreGlow.scale.set(gp, gp, gp);
+    coreGlow.rotation.y = time * 0.5;
+    coreGlow.rotation.x = time * 0.3;
+  }
+
+  updateShells(time);
+  updateParticles(time);
+  updateUI(time);
+
+  renderer.render(scene, camera);
+}
+
+// ========== BOOT SEQUENCE ==========
+async function bootSequence() {
+  const log = document.getElementById('bootLog');
+
+  function addLine(text, cls = '', delay = 0) {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        const div = document.createElement('div');
+        div.className = 'line ' + cls;
+        div.textContent = text;
+        div.style.animationDelay = '0s';
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+        resolve();
+      }, delay);
+    });
+  }
+
+  await addLine('> PRIMORIAL DEFENSE SYSTEM v127.7.510510', 'sys');
+  await addLine('> Initializing CLAP DEM STACKS audio engine...', 'sys', 200);
+  try { getAudioCtx(); } catch(e) {}
+  await addLine('  [CLAP] Noise generator: READY', '', 300);
+  await addLine('  [808] Sub-bass oscillator: READY', '', 200);
+  playBootTone(220, 0);
+  await addLine('  [WARP] Sawtooth sweep: ARMED', '', 200);
+  await addLine('> Audio engine: ONLINE', 'ok', 300);
+
+  play808Bass(55);
+  await addLine('', '', 100);
+  await addLine('> Loading M7 = 2^7 - 1 = 127 dimensions...', 'sys', 300);
+  await addLine('> PHI = ' + PHI.toFixed(10), '', 200);
+  await addLine('> PRIMORIAL(7) = 510,510 = 2x3x5x7x11x13x17', '', 200);
+
+  await addLine('', '', 100);
+  await addLine('> Initializing Fibonacci sphere distribution...', 'sys', 300);
+  await addLine('> Golden angle: 2PI/PHI = ' + (2 * Math.PI / PHI).toFixed(6) + ' rad', '', 200);
+
+  await addLine('', '', 200);
+  await addLine('> Bringing shields online...', 'sys', 300);
+
+  for (let i = 0; i < 7; i++) {
+    const sh = SHIELDS[i];
+    playBootTone(300 + i * 80, 0);
+    await addLine(`  R${i} ${sh.name} [${sh.type}] .......... ONLINE`, 'ok', 350);
+    // Bring dimensions for this ring online
+    for (let d = i; d < M7; d += 7) {
+      dimsOnline = Math.min(M7, dimsOnline + 1);
+    }
+  }
+
+  playClap();
+  await addLine('', '', 100);
+  await addLine('> 5-Bus power grid:', 'sys', 200);
+  for (const bus of BUSES_DEF) {
+    await addLine(`  BUS ${bus.id} ${bus.name} -> R${bus.feeds.join(',')} .... ONLINE`, 'ok', 200);
+  }
+
+  playClap();
+  await addLine('', '', 100);
+  await addLine('> ISA-95 compliance layers: VERIFIED', 'ok', 300);
+  await addLine('> Lucas-Lehmer sequence: [' + LL_SEQUENCE.join(', ') + ']', '', 200);
+  await addLine('> Mersenne binary tree: 127 nodes (2^7-1)', '', 200);
+
+  play808Bass(45);
+  playClap();
+  await addLine('', '', 200);
+  await addLine('> ================================================', 'sys', 100);
+  await addLine('>   127D SHIELD ORB: FULLY OPERATIONAL', 'bass', 300);
+  await addLine('>   CLAP DEM STACKS: ARMED', 'bass', 200);
+  await addLine('>   ALL DIMENSIONS: COHERENT', 'bass', 200);
+  await addLine('> ================================================', 'sys', 100);
+
+  // Final clap pattern
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => playClap(), i * 150);
+  }
+  setTimeout(() => play808Bass(35), 600);
+
+  dimsOnline = M7;
+  booted = true;
+
+  await addLine('', '', 800);
+
+  // Fade out boot overlay
+  document.getElementById('bootOverlay').classList.add('hidden');
+  setTimeout(() => {
+    document.getElementById('bootOverlay').style.display = 'none';
+  }, 900);
+}
+
+// ========== INIT ==========
+initThree();
+animate();
+bootSequence();
+</script>
+</body>
+</html>

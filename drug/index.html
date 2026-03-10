@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-DRUG :: Open Gate Circuit :: K+ Channel Overlay</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#060610;color:#c8d0e0;font-family:'Consolas','Courier New',monospace;overflow:hidden;height:100vh;width:100vw;}
+#topbar{position:fixed;top:0;left:0;right:0;height:38px;background:linear-gradient(90deg,#0a0a1a,#101028,#0a0a1a);border-bottom:1px solid #1a1a3a;display:flex;align-items:center;justify-content:center;z-index:100;letter-spacing:3px;font-size:12px;color:#7080a0;}
+#topbar span{color:#90a0c0;}
+#bottombar{position:fixed;bottom:0;left:0;right:0;height:24px;background:#08081a;border-top:1px solid #1a1a3a;display:flex;align-items:center;justify-content:center;font-size:10px;color:#404060;z-index:100;letter-spacing:2px;}
+#leftpanel{position:fixed;top:38px;left:0;width:280px;bottom:24px;background:rgba(6,6,16,0.92);border-right:1px solid #1a1a3a;overflow-y:auto;z-index:50;padding:12px;}
+#rightpanel{position:fixed;top:38px;right:0;width:260px;bottom:24px;background:rgba(6,6,16,0.92);border-left:1px solid #1a1a3a;overflow-y:auto;z-index:50;padding:12px;}
+#canvas3d{position:fixed;top:38px;left:280px;right:260px;bottom:24px;}
+canvas{display:block;}
+h3{font-size:11px;color:#6070a0;letter-spacing:2px;margin-bottom:8px;border-bottom:1px solid #1a1a3a;padding-bottom:4px;}
+.drug-search{width:100%;background:#0c0c20;border:1px solid #2a2a4a;color:#c0c8e0;padding:6px 8px;font-family:inherit;font-size:11px;margin-bottom:6px;outline:none;}
+.drug-search:focus{border-color:#4060a0;}
+#suggestions{max-height:180px;overflow-y:auto;background:#0a0a1e;border:1px solid #2a2a4a;display:none;margin-bottom:6px;}
+#suggestions div{padding:4px 8px;font-size:11px;cursor:pointer;}
+#suggestions div:hover{background:#1a1a3a;}
+.btn{width:100%;padding:6px;background:#1a1a3a;border:1px solid #2a2a5a;color:#8090b0;font-family:inherit;font-size:10px;letter-spacing:1px;cursor:pointer;margin-bottom:6px;transition:all 0.2s;}
+.btn:hover{background:#2a2a5a;color:#c0d0f0;}
+.btn-clear{border-color:#5a2020;color:#a06060;}
+.btn-clear:hover{background:#3a1a1a;color:#e08080;}
+.btn-circuit{border-color:#2a4a2a;color:#60a060;}
+.btn-circuit:hover{background:#1a3a1a;}
+#activeDrugs{margin-top:8px;}
+.drug-item{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;margin-bottom:3px;border-left:3px solid;font-size:10px;background:rgba(20,20,40,0.6);}
+.drug-item .remove{cursor:pointer;color:#605050;font-size:12px;padding:0 4px;}
+.drug-item .remove:hover{color:#e06060;}
+.control-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:10px;}
+.control-row label{min-width:30px;color:#607090;}
+.control-row input[type=range]{flex:1;accent-color:#4060a0;height:4px;}
+.control-row .val{min-width:24px;text-align:right;color:#8090b0;}
+.sex-toggle{display:flex;gap:4px;}
+.sex-toggle button{padding:3px 10px;background:#0c0c20;border:1px solid #2a2a4a;color:#607090;font-family:inherit;font-size:10px;cursor:pointer;}
+.sex-toggle button.active{background:#1a2a4a;color:#90b0e0;border-color:#4060a0;}
+.ring-bar{margin-bottom:4px;}
+.ring-label{font-size:9px;color:#506080;display:flex;justify-content:space-between;margin-bottom:2px;}
+.ring-track{height:6px;background:#0c0c20;border:1px solid #1a1a2a;position:relative;}
+.ring-fill{height:100%;transition:width 0.4s;}
+.meter-section{margin-bottom:12px;}
+.k-meter{height:10px;background:#0c0c20;border:1px solid #1a1a2a;margin-bottom:4px;position:relative;}
+.k-fill{height:100%;background:linear-gradient(90deg,#204020,#60a020,#e0a000,#e04040);transition:width 0.4s;}
+.k-label{font-size:9px;color:#506080;text-align:center;}
+.conflict-item{font-size:9px;color:#e07060;padding:3px 0;border-bottom:1px solid #1a1a2a;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.overall-shield{text-align:center;font-size:20px;color:#6080b0;margin:8px 0;letter-spacing:2px;}
+.overall-label{text-align:center;font-size:9px;color:#405070;letter-spacing:2px;}
+#circuitOverlay{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(6,6,16,0.96);border:1px solid #2a2a5a;padding:20px;z-index:200;max-width:500px;font-size:10px;line-height:1.8;color:#8090b0;white-space:pre-line;}
+#circuitOverlay .close{position:absolute;top:6px;right:10px;cursor:pointer;color:#606080;font-size:14px;}
+#circuitOverlay .close:hover{color:#c0c0e0;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:#060610;}
+::-webkit-scrollbar-thumb{background:#1a1a3a;}
+</style>
+</head>
+<body>
+
+<div id="topbar">SHIELD-DRUG <span>&middot;</span> OPEN GATE CIRCUIT <span>&middot;</span> K&#x207A; CHANNEL OVERLAY</div>
+
+<div id="leftpanel">
+  <h3>DRUG INPUT</h3>
+  <input type="text" class="drug-search" id="drugSearch" placeholder="Search medication..." autocomplete="off">
+  <div id="suggestions"></div>
+  <button class="btn" id="btnAdd">ADD MEDICATION</button>
+  <div class="control-row">
+    <label>AGE</label>
+    <input type="range" id="ageSlider" min="18" max="90" value="35">
+    <span class="val" id="ageVal">35</span>
+  </div>
+  <div class="control-row">
+    <label>SEX</label>
+    <div class="sex-toggle">
+      <button id="sexM" class="active" onclick="setSex('M')">M</button>
+      <button id="sexF" onclick="setSex('F')">F</button>
+    </div>
+  </div>
+  <button class="btn btn-circuit" id="btnCircuit">SHOW CIRCUIT</button>
+  <button class="btn btn-clear" id="btnClear">CLEAR ALL</button>
+  <h3 style="margin-top:12px;">ACTIVE MEDICATIONS</h3>
+  <div id="activeDrugs"></div>
+</div>
+
+<div id="rightpanel">
+  <h3>SHIELD STATUS</h3>
+  <div class="overall-label">OVERALL INTEGRITY</div>
+  <div class="overall-shield" id="overallPct">100%</div>
+  <div id="ringBars"></div>
+  <div class="meter-section">
+    <h3>K&#x207A; CHANNEL LOAD</h3>
+    <div class="k-meter"><div class="k-fill" id="kFill" style="width:0%"></div></div>
+    <div class="k-label" id="kLabel">0% K&#x207A; burden</div>
+  </div>
+  <div class="meter-section">
+    <h3>CONFLICT ZONES</h3>
+    <div id="conflicts"><div style="font-size:9px;color:#304050;">No conflicts detected</div></div>
+  </div>
+</div>
+
+<div id="canvas3d"></div>
+
+<div id="circuitOverlay">
+  <span class="close" onclick="document.getElementById('circuitOverlay').style.display='none'">&times;</span>
+<strong>OPEN GATE FAILURE CASCADE</strong>
+
+R0 GROUND (dim 0-17) &larr; GABA / Opioid
+  Sedation overrides sensory floor
+  K&#x207A; leak &rarr; hyperpolarization
+    &darr;
+R1 SENSORY (dim 18-35) &larr; Norepinephrine
+  Amplification without ground &rarr; anxiety
+  Withdrawal &rarr; sensory flooding
+    &darr;
+R2 GATE (dim 36-53) &larr; Dopamine
+  Gate forced open &rarr; psychosis risk
+  Gate forced shut &rarr; anhedonia
+    &darr;
+R3 AFFECT (dim 54-71) &larr; Serotonin
+  Modulation flattened &rarr; emotional blunting
+  Excess &rarr; serotonin syndrome
+    &darr;
+R4 EXECUTIVE (dim 72-89) &larr; Glutamate
+  Dissociation (ketamine) or seizure threshold
+  NMDA block &rarr; reality detachment
+    &darr;
+R5 IDENTITY (dim 90-107) &larr; Acetylcholine
+  Memory fragmentation
+  Anticholinergic burden &rarr; delirium
+    &darr;
+R6 TEMPORAL (dim 108-126) &larr; Multi-system
+  Time perception distortion
+  Cascade endpoint: full shield failure
+
+<em>K&#x207A; channels span all rings.
+High K&#x207A; burden = cracks across shield.</em>
+</div>
+
+<div id="bottombar">510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</div>
+
+<script>
+// ===== DRUG DATABASE =====
+const RING_NAMES = ['R0 GROUND','R1 SENSORY','R2 GATE','R3 AFFECT','R4 EXECUTIVE','R5 IDENTITY','R6 TEMPORAL'];
+const RING_BASE_HUES = [0,25,50,140,210,270,300];
+
+const CATEGORIES = {
+  DA:   {name:'Dopamine',ring:2,color:'#e09030',projHue:30,label:'GATE'},
+  GABA: {name:'GABA',ring:0,color:'#3070d0',projHue:220,label:'GROUND'},
+  SER:  {name:'Serotonin',ring:3,color:'#30b060',projHue:140,label:'AFFECT'},
+  NE:   {name:'Norepinephrine',ring:1,color:'#d04040',projHue:0,label:'SENSORY'},
+  GLU:  {name:'Glutamate',ring:4,color:'#d0c030',projHue:55,label:'EXECUTIVE'},
+  ACH:  {name:'Acetylcholine',ring:5,color:'#9040d0',projHue:280,label:'IDENTITY'},
+  OPI:  {name:'Opioid',ring:0,color:'#802020',projHue:0,label:'GROUND'}
+};
+
+const DRUG_DB = [
+  // DA
+  {name:'Amphetamine',cat:'DA',kPlus:true,strength:0.8},
+  {name:'Methylphenidate',cat:'DA',kPlus:false,strength:0.6},
+  {name:'L-DOPA',cat:'DA',kPlus:false,strength:0.7},
+  {name:'Cocaine',cat:'DA',kPlus:true,strength:0.9},
+  {name:'Modafinil',cat:'DA',kPlus:true,strength:0.4},
+  {name:'Pramipexole',cat:'DA',kPlus:false,strength:0.5},
+  // GABA
+  {name:'Diazepam',cat:'GABA',kPlus:true,strength:0.6},
+  {name:'Alprazolam',cat:'GABA',kPlus:true,strength:0.7},
+  {name:'Clonazepam',cat:'GABA',kPlus:true,strength:0.65},
+  {name:'Gabapentin',cat:'GABA',kPlus:true,strength:0.5},
+  {name:'Pregabalin',cat:'GABA',kPlus:true,strength:0.55},
+  {name:'Zolpidem',cat:'GABA',kPlus:false,strength:0.5},
+  {name:'Phenobarbital',cat:'GABA',kPlus:true,strength:0.8},
+  // SER
+  {name:'Fluoxetine',cat:'SER',kPlus:true,strength:0.5},
+  {name:'Sertraline',cat:'SER',kPlus:true,strength:0.5},
+  {name:'Paroxetine',cat:'SER',kPlus:true,strength:0.55},
+  {name:'Escitalopram',cat:'SER',kPlus:true,strength:0.45},
+  {name:'Venlafaxine',cat:'SER',kPlus:true,strength:0.6},
+  {name:'Duloxetine',cat:'SER',kPlus:true,strength:0.55},
+  {name:'Trazodone',cat:'SER',kPlus:false,strength:0.4},
+  // NE
+  {name:'Atomoxetine',cat:'NE',kPlus:true,strength:0.5},
+  {name:'Bupropion',cat:'NE',kPlus:true,strength:0.45},
+  {name:'Clonidine',cat:'NE',kPlus:false,strength:0.4},
+  {name:'Guanfacine',cat:'NE',kPlus:false,strength:0.35},
+  // GLU
+  {name:'Ketamine',cat:'GLU',kPlus:false,strength:0.8},
+  {name:'Memantine',cat:'GLU',kPlus:false,strength:0.4},
+  {name:'Lamotrigine',cat:'GLU',kPlus:true,strength:0.5},
+  // ACH
+  {name:'Donepezil',cat:'ACH',kPlus:false,strength:0.4},
+  {name:'Galantamine',cat:'ACH',kPlus:false,strength:0.35},
+  {name:'Nicotine',cat:'ACH',kPlus:true,strength:0.5},
+  // OPI
+  {name:'Morphine',cat:'OPI',kPlus:true,strength:0.8},
+  {name:'Oxycodone',cat:'OPI',kPlus:true,strength:0.75},
+  {name:'Buprenorphine',cat:'OPI',kPlus:true,strength:0.6},
+  {name:'Naltrexone',cat:'OPI',kPlus:false,strength:0.3,blocker:true}
+];
+
+// ===== STATE =====
+let activeDrugs = [];
+let sex = 'M';
+let age = 35;
+let ringIntegrity = new Float32Array(7).fill(100);
+let kPlusLoad = 0;
+let conflicts = [];
+let audioCtx = null;
+let audioInited = false;
+
+// ===== THREE.JS SETUP =====
+const container = document.getElementById('canvas3d');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060610);
+scene.fog = new THREE.FogExp2(0x060610, 0.04);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+camera.position.set(0, 1.5, 7);
+
+const renderer = new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+container.appendChild(renderer.domElement);
+
+// Lights
+scene.add(new THREE.AmbientLight(0x304060, 0.4));
+const pointLight = new THREE.PointLight(0x6080c0, 1.2, 20);
+pointLight.position.set(2, 3, 4);
+scene.add(pointLight);
+const pointLight2 = new THREE.PointLight(0x406080, 0.6, 15);
+pointLight2.position.set(-3, -1, -2);
+scene.add(pointLight2);
+
+// ===== SHIELD ORB (127 shells as InstancedMesh) =====
+const SHELL_COUNT = 127;
+const shellGeo = new THREE.SphereGeometry(1, 16, 12);
+const shellMat = new THREE.MeshPhongMaterial({
+  transparent: true, opacity: 0.15, side: THREE.DoubleSide,
+  depthWrite: false, blending: THREE.AdditiveBlending
+});
+const shellMesh = new THREE.InstancedMesh(shellGeo, shellMat, SHELL_COUNT);
+scene.add(shellMesh);
+
+// Shell data
+const shellData = [];
+const dummy = new THREE.Object3D();
+const shellColors = new Float32Array(SHELL_COUNT * 3);
+
+for (let dim = 0; dim < SHELL_COUNT; dim++) {
+  const ring = dim % 7;
+  const hue = (RING_BASE_HUES[ring] + (Math.floor(dim / 7) / 18) * 25) % 360;
+  const radius = 0.6 + (dim / 127) * 3.0;
+  const col = new THREE.Color();
+  col.setHSL(hue / 360, 0.6, 0.4);
+  shellColors[dim * 3] = col.r;
+  shellColors[dim * 3 + 1] = col.g;
+  shellColors[dim * 3 + 2] = col.b;
+
+  dummy.position.set(0, 0, 0);
+  dummy.scale.set(radius, radius, radius);
+  dummy.updateMatrix();
+  shellMesh.setMatrixAt(dim, dummy.matrix);
+  shellMesh.setColorAt(dim, col);
+
+  shellData.push({dim, ring, hue, radius, baseColor: col.clone(), integrity: 1.0, flickerTime: 0, crackLevel: 0});
+}
+shellMesh.instanceMatrix.needsUpdate = true;
+shellMesh.instanceColor.needsUpdate = true;
+
+// ===== PROJECTILE SYSTEM =====
+const MAX_PROJECTILES = 600;
+const projGeo = new THREE.SphereGeometry(0.04, 6, 4);
+const projMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+const projMesh = new THREE.InstancedMesh(projGeo, projMat, MAX_PROJECTILES);
+projMesh.count = 0;
+scene.add(projMesh);
+
+const projectiles = [];
+
+// ===== PARTICLE BURST SYSTEM =====
+const MAX_PARTICLES = 1000;
+const partGeo = new THREE.BufferGeometry();
+const partPositions = new Float32Array(MAX_PARTICLES * 3);
+const partColors = new Float32Array(MAX_PARTICLES * 3);
+const partSizes = new Float32Array(MAX_PARTICLES);
+partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
+partGeo.setAttribute('color', new THREE.BufferAttribute(partColors, 3));
+partGeo.setAttribute('size', new THREE.BufferAttribute(partSizes, 1));
+const partMat = new THREE.PointsMaterial({
+  size: 0.06, vertexColors: true, transparent: true, opacity: 0.8,
+  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+});
+const partPoints = new THREE.Points(partGeo, partMat);
+scene.add(partPoints);
+
+const particles = [];
+
+// ===== CRACK LINES (K+ visualization) =====
+const crackGroup = new THREE.Group();
+scene.add(crackGroup);
+let crackLines = [];
+
+function rebuildCracks() {
+  crackGroup.clear();
+  crackLines = [];
+  if (kPlusLoad <= 0) return;
+  const numCracks = Math.floor(kPlusLoad * 40);
+  const lMat = new THREE.LineBasicMaterial({color: 0x80a040, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending});
+  for (let i = 0; i < numCracks; i++) {
+    const shellIdx = Math.floor(Math.random() * SHELL_COUNT);
+    const sd = shellData[shellIdx];
+    const r = sd.radius;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI;
+    const pts = [];
+    const segs = 3 + Math.floor(Math.random() * 4);
+    for (let s = 0; s <= segs; s++) {
+      const t = theta + (s / segs) * 0.3;
+      const p = phi + (s / segs) * 0.2 + (Math.random() - 0.5) * 0.1;
+      pts.push(new THREE.Vector3(
+        r * Math.sin(p) * Math.cos(t),
+        r * Math.cos(p),
+        r * Math.sin(p) * Math.sin(t)
+      ));
+    }
+    const geom = new THREE.BufferGeometry().setFromPoints(pts);
+    const line = new THREE.Line(geom, lMat);
+    crackGroup.add(line);
+    crackLines.push(line);
+  }
+}
+
+// ===== ESTROGEN OVERLAY =====
+const estrogenMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(2.5, 32, 24),
+  new THREE.MeshPhongMaterial({color: 0x4060c0, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false})
+);
+scene.add(estrogenMesh);
+
+// ===== MOUSE CONTROLS =====
+let isDragging = false;
+let prevMouse = {x:0, y:0};
+let orbRotation = {x: 0.2, y: 0};
+let targetZoom = 7;
+
+container.addEventListener('mousedown', e => { isDragging = true; prevMouse = {x: e.clientX, y: e.clientY}; });
+container.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  orbRotation.y += (e.clientX - prevMouse.x) * 0.005;
+  orbRotation.x += (e.clientY - prevMouse.y) * 0.005;
+  orbRotation.x = Math.max(-1.2, Math.min(1.2, orbRotation.x));
+  prevMouse = {x: e.clientX, y: e.clientY};
+});
+container.addEventListener('mouseup', () => isDragging = false);
+container.addEventListener('mouseleave', () => isDragging = false);
+container.addEventListener('wheel', e => {
+  targetZoom += e.deltaY * 0.005;
+  targetZoom = Math.max(3, Math.min(14, targetZoom));
+});
+
+// ===== AUDIO =====
+function initAudio() {
+  if (audioInited) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioInited = true;
+  // ambient drone
+  startDrone();
+}
+
+function startDrone() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = 55;
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.03;
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+
+  const osc2 = audioCtx.createOscillator();
+  osc2.type = 'sine';
+  osc2.frequency.value = 82.5;
+  const gain2 = audioCtx.createGain();
+  gain2.gain.value = 0.02;
+  osc2.connect(gain2);
+  gain2.connect(audioCtx.destination);
+  osc2.start();
+}
+
+function playImpact() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = 80 + Math.random() * 40;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.3);
+}
+
+function playAlarm() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.value = 880;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.5);
+}
+
+function playConflict() {
+  if (!audioCtx) return;
+  [220, 233, 311].forEach(f => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = f;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.8);
+  });
+}
+
+// ===== DRUG MANAGEMENT =====
+function addDrug(drugName) {
+  initAudio();
+  const drug = DRUG_DB.find(d => d.name.toLowerCase() === drugName.toLowerCase());
+  if (!drug) return;
+  if (activeDrugs.find(d => d.name === drug.name)) return;
+  activeDrugs.push({...drug});
+  playImpact();
+  recalculate();
+  renderDrugList();
+  document.getElementById('drugSearch').value = '';
+  document.getElementById('suggestions').style.display = 'none';
+}
+
+function removeDrug(name) {
+  activeDrugs = activeDrugs.filter(d => d.name !== name);
+  recalculate();
+  renderDrugList();
+}
+
+function clearAll() {
+  activeDrugs = [];
+  recalculate();
+  renderDrugList();
+}
+
+function recalculate() {
+  // Reset
+  ringIntegrity.fill(100);
+  kPlusLoad = 0;
+  conflicts = [];
+
+  // Age resilience: younger = more resilient
+  const ageMultiplier = 1.0 + (age - 18) / 144; // 1.0 at 18, ~1.5 at 90
+
+  // Drug effects
+  const ringHits = {};
+  activeDrugs.forEach(drug => {
+    const cat = CATEGORIES[drug.cat];
+    const ring = cat.ring;
+    const impact = drug.strength * 20 * ageMultiplier;
+    ringIntegrity[ring] = Math.max(0, ringIntegrity[ring] - impact);
+
+    if (!ringHits[ring]) ringHits[ring] = [];
+    ringHits[ring].push(drug);
+
+    if (drug.kPlus) kPlusLoad += drug.strength * 0.15;
+
+    // Secondary ring effects (cascade)
+    const nextRing = (ring + 1) % 7;
+    ringIntegrity[nextRing] = Math.max(0, ringIntegrity[nextRing] - impact * 0.2);
+  });
+
+  kPlusLoad = Math.min(1, kPlusLoad);
+
+  // K+ load reduces all rings slightly
+  for (let r = 0; r < 7; r++) {
+    ringIntegrity[r] = Math.max(0, ringIntegrity[r] - kPlusLoad * 10);
+  }
+
+  // Estrogen shield (female, age-dependent)
+  if (sex === 'F') {
+    const estrogenFactor = Math.max(0, 1.0 - (age - 18) / 40);
+    for (let r = 0; r < 7; r++) {
+      ringIntegrity[r] = Math.min(100, ringIntegrity[r] + estrogenFactor * 8);
+    }
+  }
+
+  // Detect conflicts (two drugs different categories on same ring)
+  conflicts = [];
+  for (const ring in ringHits) {
+    const drugs = ringHits[ring];
+    if (drugs.length >= 2) {
+      const cats = [...new Set(drugs.map(d => d.cat))];
+      if (cats.length >= 2) {
+        conflicts.push({ring: parseInt(ring), drugs: drugs.map(d => d.name), cats});
+        ringIntegrity[parseInt(ring)] = Math.max(0, ringIntegrity[parseInt(ring)] - 10);
+        playConflict();
+      }
+    }
+  }
+
+  // K+ alarm
+  if (kPlusLoad > 0.6) playAlarm();
+
+  // Update shell integrity
+  shellData.forEach(sd => {
+    const ringPct = ringIntegrity[sd.ring] / 100;
+    sd.integrity = ringPct;
+    sd.crackLevel = kPlusLoad;
+  });
+
+  rebuildCracks();
+  updateRightPanel();
+}
+
+function renderDrugList() {
+  const el = document.getElementById('activeDrugs');
+  if (activeDrugs.length === 0) {
+    el.innerHTML = '<div style="font-size:9px;color:#304050;padding:4px;">No active medications</div>';
+    return;
+  }
+  el.innerHTML = activeDrugs.map(d => {
+    const cat = CATEGORIES[d.cat];
+    const blockerTag = d.blocker ? ' <span style="color:#60a060">[BLOCKER]</span>' : '';
+    return `<div class="drug-item" style="border-color:${cat.color}">
+      <span style="color:${cat.color}">${d.name}${blockerTag}<br><span style="font-size:8px;color:#506080">${cat.name} &rarr; ${cat.label}</span></span>
+      <span class="remove" onclick="removeDrug('${d.name}')">&times;</span>
+    </div>`;
+  }).join('');
+}
+
+function updateRightPanel() {
+  // Ring bars
+  const barsEl = document.getElementById('ringBars');
+  barsEl.innerHTML = RING_NAMES.map((name, i) => {
+    const pct = ringIntegrity[i];
+    const hue = pct > 60 ? 140 : pct > 30 ? 40 : 0;
+    return `<div class="ring-bar">
+      <div class="ring-label"><span>${name}</span><span>${pct.toFixed(0)}%</span></div>
+      <div class="ring-track"><div class="ring-fill" style="width:${pct}%;background:hsl(${hue},60%,40%)"></div></div>
+    </div>`;
+  }).join('');
+
+  // K+ meter
+  document.getElementById('kFill').style.width = (kPlusLoad * 100) + '%';
+  document.getElementById('kLabel').textContent = (kPlusLoad * 100).toFixed(0) + '% K\u207A burden' + (kPlusLoad > 0.6 ? ' \u26A0 HIGH' : '');
+
+  // Conflicts
+  const cEl = document.getElementById('conflicts');
+  if (conflicts.length === 0) {
+    cEl.innerHTML = '<div style="font-size:9px;color:#304050;">No conflicts detected</div>';
+  } else {
+    cEl.innerHTML = conflicts.map(c =>
+      `<div class="conflict-item">\u26A0 ${RING_NAMES[c.ring]}: ${c.drugs.join(' \u00D7 ')}</div>`
+    ).join('');
+  }
+
+  // Overall
+  const overall = ringIntegrity.reduce((a, b) => a + b, 0) / 7;
+  document.getElementById('overallPct').textContent = overall.toFixed(0) + '%';
+  document.getElementById('overallPct').style.color = overall > 70 ? '#6080b0' : overall > 40 ? '#b0a040' : '#c04040';
+}
+
+// ===== SEARCH/SUGGESTIONS =====
+const searchInput = document.getElementById('drugSearch');
+const suggestionsEl = document.getElementById('suggestions');
+
+searchInput.addEventListener('input', () => {
+  const val = searchInput.value.toLowerCase().trim();
+  if (!val) { suggestionsEl.style.display = 'none'; return; }
+  const matches = DRUG_DB.filter(d => d.name.toLowerCase().includes(val));
+  if (matches.length === 0) { suggestionsEl.style.display = 'none'; return; }
+  suggestionsEl.style.display = 'block';
+  suggestionsEl.innerHTML = matches.map(d => {
+    const cat = CATEGORIES[d.cat];
+    return `<div style="color:${cat.color}" onclick="addDrug('${d.name}')">${d.name} <span style="font-size:9px;color:#506080">(${cat.name})</span></div>`;
+  }).join('');
+});
+
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const val = searchInput.value.toLowerCase().trim();
+    const match = DRUG_DB.find(d => d.name.toLowerCase().startsWith(val));
+    if (match) addDrug(match.name);
+  }
+});
+
+document.getElementById('btnAdd').addEventListener('click', () => {
+  const val = searchInput.value.toLowerCase().trim();
+  const match = DRUG_DB.find(d => d.name.toLowerCase().startsWith(val));
+  if (match) addDrug(match.name);
+});
+
+document.getElementById('btnClear').addEventListener('click', clearAll);
+document.getElementById('btnCircuit').addEventListener('click', () => {
+  document.getElementById('circuitOverlay').style.display = 'block';
+});
+
+// Age slider
+const ageSlider = document.getElementById('ageSlider');
+ageSlider.addEventListener('input', () => {
+  age = parseInt(ageSlider.value);
+  document.getElementById('ageVal').textContent = age;
+  recalculate();
+});
+
+function setSex(s) {
+  sex = s;
+  document.getElementById('sexM').classList.toggle('active', s === 'M');
+  document.getElementById('sexF').classList.toggle('active', s === 'F');
+  recalculate();
+}
+
+// ===== PROJECTILE SPAWNING =====
+function spawnProjectile(drug) {
+  const cat = CATEGORIES[drug.cat];
+  const targetRing = cat.ring;
+  // Pick a random shell in this ring
+  const ringShells = shellData.filter(s => s.ring === targetRing);
+  const target = ringShells[Math.floor(Math.random() * ringShells.length)];
+
+  // Spawn from random direction outside orb
+  const phi = Math.random() * Math.PI * 2;
+  const theta = Math.random() * Math.PI;
+  const spawnR = 6;
+  const startPos = new THREE.Vector3(
+    spawnR * Math.sin(theta) * Math.cos(phi),
+    spawnR * Math.cos(theta),
+    spawnR * Math.sin(theta) * Math.sin(phi)
+  );
+
+  // Target position on shell surface
+  const tPhi = Math.random() * Math.PI * 2;
+  const tTheta = Math.random() * Math.PI;
+  const tR = target.radius;
+  const endPos = new THREE.Vector3(
+    tR * Math.sin(tTheta) * Math.cos(tPhi),
+    tR * Math.cos(tTheta),
+    tR * Math.sin(tTheta) * Math.sin(tPhi)
+  );
+
+  const col = new THREE.Color(cat.color);
+  if (drug.blocker) col.setHex(0x40c060); // Blockers shown green
+
+  projectiles.push({
+    pos: startPos.clone(),
+    start: startPos.clone(),
+    end: endPos.clone(),
+    t: 0,
+    speed: 0.4 + Math.random() * 0.3,
+    color: col,
+    targetShell: target.dim,
+    drug: drug,
+    alive: true
+  });
+}
+
+let spawnTimers = {};
+function updateSpawnTimers(dt) {
+  activeDrugs.forEach(drug => {
+    if (!spawnTimers[drug.name]) spawnTimers[drug.name] = 0;
+    spawnTimers[drug.name] += dt;
+    const interval = 0.15 + (1 - drug.strength) * 0.3;
+    if (spawnTimers[drug.name] >= interval && projectiles.length < MAX_PROJECTILES) {
+      spawnProjectile(drug);
+      spawnTimers[drug.name] = 0;
+    }
+  });
+  // Clean dead drug timers
+  for (const key in spawnTimers) {
+    if (!activeDrugs.find(d => d.name === key)) delete spawnTimers[key];
+  }
+}
+
+// ===== PARTICLE BURST =====
+function burstAt(pos, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      pos: pos.clone(),
+      vel: new THREE.Vector3((Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2),
+      color: color.clone(),
+      life: 0.5 + Math.random() * 0.5,
+      age: 0
+    });
+  }
+}
+
+// ===== RESIZE =====
+function resize() {
+  const rect = container.getBoundingClientRect();
+  camera.aspect = rect.width / rect.height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(rect.width, rect.height);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ===== ANIMATION LOOP =====
+let lastTime = performance.now();
+const tempColor = new THREE.Color();
+const tempMatrix = new THREE.Matrix4();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // Camera
+  camera.position.z += (targetZoom - camera.position.z) * 0.05;
+  const orbGroup = shellMesh;
+
+  // Orbit rotation
+  shellMesh.rotation.x += (orbRotation.x - shellMesh.rotation.x) * 0.08;
+  shellMesh.rotation.y += (orbRotation.y - shellMesh.rotation.y) * 0.08;
+  projMesh.rotation.copy(shellMesh.rotation);
+  crackGroup.rotation.copy(shellMesh.rotation);
+  estrogenMesh.rotation.copy(shellMesh.rotation);
+  partPoints.rotation.copy(shellMesh.rotation);
+
+  // Auto-rotate slowly
+  if (!isDragging) orbRotation.y += dt * 0.1;
+
+  // Spawn projectiles
+  updateSpawnTimers(dt);
+
+  // Update projectiles
+  let projCount = 0;
+  const dummyP = new THREE.Object3D();
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.t += dt * p.speed;
+    if (p.t >= 1) {
+      // Impact!
+      burstAt(p.end, p.color, 5);
+      const sd = shellData[p.targetShell];
+      sd.flickerTime = 0.3;
+      p.alive = false;
+    }
+    if (!p.alive) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+    p.pos.lerpVectors(p.start, p.end, p.t);
+    if (projCount < MAX_PROJECTILES) {
+      dummyP.position.copy(p.pos);
+      dummyP.scale.set(1, 1, 1);
+      dummyP.updateMatrix();
+      projMesh.setMatrixAt(projCount, dummyP.matrix);
+      projMesh.setColorAt(projCount, p.color);
+      projCount++;
+    }
+  }
+  projMesh.count = projCount;
+  if (projCount > 0) {
+    projMesh.instanceMatrix.needsUpdate = true;
+    projMesh.instanceColor.needsUpdate = true;
+  }
+
+  // Update particles
+  let partCount = 0;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.age += dt;
+    if (p.age >= p.life) { particles.splice(i, 1); continue; }
+    p.pos.addScaledVector(p.vel, dt);
+    p.vel.multiplyScalar(0.96);
+    if (partCount < MAX_PARTICLES) {
+      partPositions[partCount * 3] = p.pos.x;
+      partPositions[partCount * 3 + 1] = p.pos.y;
+      partPositions[partCount * 3 + 2] = p.pos.z;
+      const fade = 1 - p.age / p.life;
+      partColors[partCount * 3] = p.color.r * fade;
+      partColors[partCount * 3 + 1] = p.color.g * fade;
+      partColors[partCount * 3 + 2] = p.color.b * fade;
+      partSizes[partCount] = 0.06 * fade;
+      partCount++;
+    }
+  }
+  // Zero out unused
+  for (let i = partCount; i < MAX_PARTICLES; i++) {
+    partPositions[i * 3 + 1] = -999;
+    partSizes[i] = 0;
+  }
+  partGeo.attributes.position.needsUpdate = true;
+  partGeo.attributes.color.needsUpdate = true;
+  partGeo.attributes.size.needsUpdate = true;
+  partGeo.setDrawRange(0, partCount);
+
+  // Update shell visuals
+  for (let dim = 0; dim < SHELL_COUNT; dim++) {
+    const sd = shellData[dim];
+    const scale = sd.radius;
+    dummy.position.set(0, 0, 0);
+    dummy.scale.set(scale, scale, scale);
+    dummy.updateMatrix();
+    shellMesh.setMatrixAt(dim, dummy.matrix);
+
+    // Color: base + flicker + conflict flash
+    tempColor.copy(sd.baseColor);
+
+    // Integrity fade
+    const intFade = 0.3 + sd.integrity * 0.7;
+    tempColor.multiplyScalar(intFade);
+
+    // Flicker on hit
+    if (sd.flickerTime > 0) {
+      sd.flickerTime -= dt;
+      const flash = Math.sin(sd.flickerTime * 30) * 0.5 + 0.5;
+      tempColor.r += flash * 0.4;
+      tempColor.g += flash * 0.2;
+      tempColor.b += flash * 0.1;
+    }
+
+    // Conflict flash
+    if (conflicts.some(c => c.ring === sd.ring)) {
+      const flash = Math.sin(now * 0.008) * 0.3 + 0.3;
+      tempColor.r += flash * 0.5;
+      tempColor.g *= 0.6;
+      tempColor.b *= 0.6;
+    }
+
+    // K+ crack desaturation
+    if (kPlusLoad > 0.3) {
+      const crack = (kPlusLoad - 0.3) * 1.4;
+      tempColor.lerp(new THREE.Color(0.2, 0.25, 0.15), crack * 0.3);
+    }
+
+    shellMesh.setColorAt(dim, tempColor);
+  }
+  shellMesh.instanceMatrix.needsUpdate = true;
+  shellMesh.instanceColor.needsUpdate = true;
+
+  // Estrogen overlay
+  if (sex === 'F') {
+    const eFactor = Math.max(0, 1.0 - (age - 18) / 40);
+    estrogenMesh.material.opacity += (eFactor * 0.06 - estrogenMesh.material.opacity) * 0.05;
+  } else {
+    estrogenMesh.material.opacity *= 0.95;
+  }
+
+  // Crack line flicker
+  crackLines.forEach(l => {
+    l.material.opacity = 0.2 + Math.sin(now * 0.003 + Math.random()) * 0.3;
+  });
+
+  renderer.render(scene, camera);
+}
+
+// Init UI
+renderDrugList();
+updateRightPanel();
+animate();
+</script>
+</body>
+</html>

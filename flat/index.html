@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FLAT · 127D RADAR · M₇ = 2⁷-1</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #0f8;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: crosshair;
+  user-select: none;
+}
+#topPanel {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  background: rgba(6,6,16,0.92);
+  border-bottom: 1px solid rgba(0,255,136,0.15);
+  z-index: 10;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+#topPanel .title {
+  color: #0f8;
+  font-size: 15px;
+  font-weight: bold;
+  text-shadow: 0 0 8px rgba(0,255,136,0.5);
+}
+#topPanel .stat { color: #0a6; }
+#topPanel .stat span { color: #0f8; font-weight: bold; }
+
+#canvasWrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+}
+canvas#radar {
+  display: block;
+}
+
+/* CRT scanline overlay */
+#canvasWrap::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+#bottomPanel {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 80px;
+  background: rgba(6,6,16,0.92);
+  border-top: 1px solid rgba(0,255,136,0.15);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+#controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+#controls button {
+  background: rgba(0,255,136,0.08);
+  border: 1px solid rgba(0,255,136,0.3);
+  color: #0f8;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  padding: 5px 14px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+#controls button:hover {
+  background: rgba(0,255,136,0.18);
+  border-color: #0f8;
+  text-shadow: 0 0 6px rgba(0,255,136,0.6);
+}
+#controls button.active {
+  background: rgba(0,255,136,0.25);
+  border-color: #0f8;
+  box-shadow: 0 0 8px rgba(0,255,136,0.3);
+}
+#controls button.breach {
+  border-color: rgba(255,60,60,0.5);
+  color: #f44;
+}
+#controls button.breach:hover {
+  background: rgba(255,60,60,0.18);
+  border-color: #f44;
+}
+#llSequence {
+  font-size: 12px;
+  color: #0a6;
+  letter-spacing: 2px;
+}
+#llSequence span.active { color: #0f8; font-weight: bold; text-shadow: 0 0 6px rgba(0,255,136,0.6); }
+#factoid {
+  font-size: 10px;
+  color: #063;
+  letter-spacing: 1px;
+}
+#infoPopup {
+  display: none;
+  position: fixed;
+  background: rgba(6,6,16,0.95);
+  border: 1px solid rgba(0,255,136,0.4);
+  padding: 10px 16px;
+  font-size: 12px;
+  color: #0f8;
+  z-index: 20;
+  pointer-events: none;
+  line-height: 1.6;
+  box-shadow: 0 0 12px rgba(0,255,136,0.15);
+}
+#audioHint {
+  position: fixed;
+  top: 58px;
+  right: 12px;
+  font-size: 10px;
+  color: #063;
+  z-index: 10;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="topPanel">
+  <div class="title">SHIELD-FLAT · 127D RADAR · M&#x2087; = 2&#x2077;-1</div>
+  <div class="stat">DIM: <span id="dimCount">127</span></div>
+  <div class="stat">SHIELD: <span id="shieldPct">100%</span></div>
+  <div class="stat">COHERENCE: <span id="coherence">1.618</span></div>
+</div>
+
+<div id="canvasWrap">
+  <canvas id="radar"></canvas>
+</div>
+
+<div id="bottomPanel">
+  <div id="controls">
+    <button class="mode active" data-mode="standby">STANDBY</button>
+    <button class="mode" data-mode="patrol">PATROL</button>
+    <button class="mode" data-mode="alert">ALERT</button>
+    <button class="mode" data-mode="fortress">FORTRESS</button>
+    <button class="breach" id="btnBreach">SIM BREACH</button>
+  </div>
+  <div id="llSequence"></div>
+  <div id="factoid">510,510 = 2×3×5×7×11×13×17</div>
+</div>
+
+<div id="infoPopup"></div>
+<div id="audioHint">[ click for audio ]</div>
+
+<script>
+// ── Constants ──
+const DIMS = 127;
+const BANDS = 7;
+const RING_BASE_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_NAMES = ['GROUND','SENSE','GATE','HEART','VOICE','SIGHT','OBSERVER'];
+const LL_SEQUENCE = [4, 14, 67, 42, 111, 0];
+const PHI = (1 + Math.sqrt(5)) / 2;
+
+// ── State ──
+const shields = new Float64Array(BANDS).fill(1.0);
+const ringPulse = new Float64Array(DIMS);   // per-ring pulse phase
+const breachGaps = [];   // {dim, angle, size, life}
+const blips = [];        // {angle, radius, speed, life, band}
+let mode = 'standby';
+let sweepAngle = 0;
+let sweepSpeed = 0.012;
+let zoom = 1.0;
+let panX = 0, panY = 0;
+let highlightDim = -1;
+let audioStarted = false;
+let audioCtx, gainMaster, oscHum;
+let lastPingAngle = 0;
+let time = 0;
+let llIndex = 0;
+let llTimer = 0;
+
+// ── Canvas Setup ──
+const canvas = document.getElementById('radar');
+const ctx = canvas.getContext('2d');
+let cx, cy, maxR;
+
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight - 134; // top+bottom panels
+  canvas.width = w;
+  canvas.height = h;
+  cx = w / 2;
+  cy = h / 2;
+  maxR = Math.min(w, h) / 2 - 20;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Color helpers ──
+function ringHue(dim) {
+  const band = dim % BANDS;
+  return (RING_BASE_HUES[band] + (Math.floor(dim / BANDS) / 18) * 25) % 360;
+}
+
+function ringColor(dim, alpha) {
+  return `hsla(${ringHue(dim)}, 85%, 55%, ${alpha})`;
+}
+
+// ── Ring geometry ──
+function ringRadius(dim) {
+  const gap = maxR / (DIMS + 4);
+  return (dim + 2) * gap * zoom;
+}
+
+// ── Breach gaps logic ──
+function isInGap(dim, angle) {
+  for (const g of breachGaps) {
+    if (g.dim === dim) {
+      let da = angle - g.angle;
+      while (da > Math.PI) da -= 2 * Math.PI;
+      while (da < -Math.PI) da += 2 * Math.PI;
+      if (Math.abs(da) < g.size / 2) return true;
+    }
+  }
+  return false;
+}
+
+// ── Draw functions ──
+function drawGrid() {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,255,136,0.07)';
+  ctx.lineWidth = 1;
+  // Concentric guide rings every 18 dims
+  for (let i = 0; i < DIMS; i += 18) {
+    const r = ringRadius(i);
+    ctx.beginPath();
+    ctx.arc(cx + panX, cy + panY, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Radial lines at 45 degrees
+  for (let a = 0; a < 8; a++) {
+    const angle = a * Math.PI / 4;
+    const outerR = ringRadius(DIMS - 1) + 10;
+    ctx.beginPath();
+    ctx.moveTo(cx + panX, cy + panY);
+    ctx.lineTo(cx + panX + Math.cos(angle) * outerR, cy + panY + Math.sin(angle) * outerR);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCardinals() {
+  ctx.save();
+  ctx.font = '13px Courier New';
+  ctx.fillStyle = 'rgba(0,255,136,0.35)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const r = ringRadius(DIMS - 1) + 22;
+  const labels = ['N', 'E', 'S', 'W'];
+  const angles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+  for (let i = 0; i < 4; i++) {
+    ctx.fillText(labels[i],
+      cx + panX + Math.cos(angles[i]) * r,
+      cy + panY + Math.sin(angles[i]) * r
+    );
+  }
+  ctx.restore();
+}
+
+function drawRings() {
+  const centerX = cx + panX;
+  const centerY = cy + panY;
+  ctx.save();
+  for (let dim = 0; dim < DIMS; dim++) {
+    const band = dim % BANDS;
+    const integrity = shields[band];
+    const r = ringRadius(dim);
+    if (r < 1) continue;
+
+    // Pulse
+    const pulse = 0.02 * Math.sin(ringPulse[dim]);
+    const alpha = Math.max(0.05, integrity * 0.7 + pulse);
+
+    ctx.strokeStyle = ringColor(dim, alpha);
+    ctx.lineWidth = Math.max(1, 1.8 * zoom);
+
+    // Check for gaps
+    let hasGap = false;
+    for (const g of breachGaps) {
+      if (g.dim === dim) { hasGap = true; break; }
+    }
+
+    if (!hasGap) {
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // Draw ring segments, skipping gaps
+      for (const g of breachGaps) {
+        if (g.dim !== dim) continue;
+        const gapHalf = g.size / 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, r, g.angle + gapHalf, g.angle + Math.PI * 2 - gapHalf);
+        ctx.stroke();
+      }
+    }
+
+    // Highlight
+    if (dim === highlightDim) {
+      ctx.strokeStyle = `hsla(${ringHue(dim)}, 100%, 75%, 0.9)`;
+      ctx.lineWidth = 3 * zoom;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawSweep() {
+  const centerX = cx + panX;
+  const centerY = cy + panY;
+  const outerR = ringRadius(DIMS - 1) + 5;
+  ctx.save();
+
+  // Fade trail - wedge gradient
+  const trailAngle = 0.5; // radians of trail
+  for (let i = 0; i < 30; i++) {
+    const a = sweepAngle - (i / 30) * trailAngle;
+    const alpha = (1 - i / 30) * 0.12;
+    ctx.strokeStyle = `rgba(0,255,136,${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(centerX + Math.cos(a) * outerR, centerY + Math.sin(a) * outerR);
+    ctx.stroke();
+  }
+
+  // Main sweep line with glow
+  ctx.shadowColor = '#0f8';
+  ctx.shadowBlur = 15;
+  ctx.strokeStyle = 'rgba(0,255,136,0.8)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY);
+  ctx.lineTo(centerX + Math.cos(sweepAngle) * outerR, centerY + Math.sin(sweepAngle) * outerR);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+function drawBlips() {
+  const centerX = cx + panX;
+  const centerY = cy + panY;
+  ctx.save();
+  for (const b of blips) {
+    const x = centerX + Math.cos(b.angle) * b.radius;
+    const y = centerY + Math.sin(b.angle) * b.radius;
+    const alpha = Math.min(1, b.life / 30);
+
+    // Glow
+    ctx.shadowColor = '#f33';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = `rgba(255,60,60,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 3 * zoom, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = `rgba(255,200,180,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5 * zoom, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCenterDot() {
+  const centerX = cx + panX;
+  const centerY = cy + panY;
+  ctx.save();
+  ctx.shadowColor = '#0f8';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#0f8';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// ── LL Sequence ──
+function updateLLDisplay() {
+  const el = document.getElementById('llSequence');
+  let html = 'LL: ';
+  for (let i = 0; i < LL_SEQUENCE.length; i++) {
+    const cls = i === llIndex ? 'active' : '';
+    html += `<span class="${cls}">${LL_SEQUENCE[i]}</span>`;
+    if (i < LL_SEQUENCE.length - 1) html += ' → ';
+  }
+  el.innerHTML = html;
+}
+
+// ── Stats update ──
+function updateStats() {
+  const avg = shields.reduce((a, b) => a + b, 0) / BANDS;
+  document.getElementById('shieldPct').textContent = (avg * 100).toFixed(1) + '%';
+
+  // Coherence: phi ratio between adjacent ring band integrities
+  let coherenceSum = 0;
+  let coherenceCount = 0;
+  for (let i = 0; i < BANDS - 1; i++) {
+    if (shields[i + 1] > 0.01) {
+      coherenceSum += shields[i] / shields[i + 1];
+      coherenceCount++;
+    }
+  }
+  const coh = coherenceCount > 0 ? coherenceSum / coherenceCount : 0;
+  const phiDist = Math.abs(coh - PHI);
+  const coherenceDisplay = (PHI - phiDist * 0.3).toFixed(3);
+  document.getElementById('coherence').textContent = coherenceDisplay;
+}
+
+// ── Breach simulation ──
+function simBreach() {
+  const band = Math.floor(Math.random() * BANDS);
+  const angle = Math.random() * Math.PI * 2;
+  const severity = 0.3 + Math.random() * 0.5;
+
+  // Damage shield band
+  shields[band] = Math.max(0.05, shields[band] - severity);
+
+  // Create gaps in affected dims
+  for (let dim = band; dim < DIMS; dim += BANDS) {
+    if (Math.random() < 0.6) {
+      breachGaps.push({
+        dim,
+        angle: angle + (Math.random() - 0.5) * 0.4,
+        size: 0.3 + Math.random() * 0.5,
+        life: 80 + Math.random() * 60
+      });
+    }
+  }
+
+  // Spawn blips
+  const blipCount = 3 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < blipCount; i++) {
+    const blipAngle = angle + (Math.random() - 0.5) * 0.8;
+    blips.push({
+      angle: blipAngle,
+      radius: ringRadius(DIMS - 1) + 10,
+      speed: (0.5 + Math.random() * 1.0) * zoom,
+      life: 120 + Math.random() * 60,
+      band
+    });
+  }
+
+  // Alarm sound
+  if (audioStarted) playAlarm();
+}
+
+// ── Shield recovery ──
+function recoverShields(dt) {
+  const rates = { standby: 0.001, patrol: 0.002, alert: 0.003, fortress: 0.005 };
+  const rate = rates[mode] || 0.001;
+  for (let i = 0; i < BANDS; i++) {
+    if (shields[i] < 1.0) {
+      shields[i] = Math.min(1.0, shields[i] + rate);
+    }
+  }
+}
+
+// ── Audio ──
+function initAudio() {
+  if (audioStarted) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  gainMaster = audioCtx.createGain();
+  gainMaster.gain.value = 0.15;
+  gainMaster.connect(audioCtx.destination);
+
+  // 55hz hum
+  oscHum = audioCtx.createOscillator();
+  oscHum.type = 'sine';
+  oscHum.frequency.value = 55;
+  const humGain = audioCtx.createGain();
+  humGain.gain.value = 0.06;
+  oscHum.connect(humGain);
+  humGain.connect(gainMaster);
+  oscHum.start();
+
+  audioStarted = true;
+  document.getElementById('audioHint').textContent = '[ audio on ]';
+}
+
+function playPing() {
+  if (!audioStarted) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = 1200;
+  gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+  osc.connect(gain);
+  gain.connect(gainMaster);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.15);
+}
+
+function playAlarm() {
+  if (!audioStarted) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 440;
+  osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+  osc.frequency.linearRampToValueAtTime(220, audioCtx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(gainMaster);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+
+  // Second tone
+  const osc2 = audioCtx.createOscillator();
+  const gain2 = audioCtx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.value = 880;
+  gain2.gain.setValueAtTime(0.08, audioCtx.currentTime + 0.05);
+  gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+  osc2.connect(gain2);
+  gain2.connect(gainMaster);
+  osc2.start(audioCtx.currentTime + 0.05);
+  osc2.stop(audioCtx.currentTime + 0.3);
+}
+
+// ── Interaction ──
+canvas.addEventListener('click', (e) => {
+  initAudio();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left - cx - panX;
+  const my = e.clientY - rect.top - cy - panY;
+  const dist = Math.sqrt(mx * mx + my * my);
+
+  // Find closest ring
+  let closestDim = -1;
+  let closestDist = Infinity;
+  for (let dim = 0; dim < DIMS; dim++) {
+    const r = ringRadius(dim);
+    const d = Math.abs(dist - r);
+    if (d < closestDist && d < 8) {
+      closestDist = d;
+      closestDim = dim;
+    }
+  }
+
+  if (closestDim >= 0) {
+    highlightDim = closestDim;
+    const band = closestDim % BANDS;
+    const popup = document.getElementById('infoPopup');
+    popup.style.display = 'block';
+    popup.style.left = (e.clientX + 15) + 'px';
+    popup.style.top = (e.clientY - 10) + 'px';
+    popup.innerHTML = `DIM: ${closestDim}<br>RING BAND: R${band}<br>` +
+      `HUE: ${ringHue(closestDim).toFixed(0)}°<br>` +
+      `NAME: ${RING_NAMES[band]}<br>` +
+      `INTEGRITY: ${(shields[band] * 100).toFixed(1)}%`;
+    setTimeout(() => {
+      popup.style.display = 'none';
+      highlightDim = -1;
+    }, 3000);
+  } else {
+    highlightDim = -1;
+    document.getElementById('infoPopup').style.display = 'none';
+  }
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY > 0 ? 0.93 : 1.07;
+  zoom = Math.max(0.3, Math.min(3.0, zoom * zoomFactor));
+}, { passive: false });
+
+// Mode buttons
+document.querySelectorAll('.mode').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    const speeds = { standby: 0.012, patrol: 0.018, alert: 0.028, fortress: 0.04 };
+    sweepSpeed = speeds[mode] || 0.012;
+    initAudio();
+  });
+});
+
+document.getElementById('btnBreach').addEventListener('click', () => {
+  initAudio();
+  simBreach();
+});
+
+document.getElementById('audioHint').addEventListener('click', () => {
+  initAudio();
+});
+
+// ── Main Loop ──
+function update() {
+  time++;
+
+  // Sweep
+  const prevAngle = sweepAngle;
+  sweepAngle += sweepSpeed;
+  if (sweepAngle >= Math.PI * 2) sweepAngle -= Math.PI * 2;
+
+  // Ping on sweep crossing 0 (north)
+  if (prevAngle > sweepAngle || (prevAngle < -Math.PI/2 + 0.1 && sweepAngle >= -Math.PI/2 + 0.1)) {
+    // Check if we crossed a cardinal direction
+    const crossings = [0, Math.PI/2, Math.PI, Math.PI*1.5];
+    for (const c of crossings) {
+      if (prevAngle < c && sweepAngle >= c) {
+        playPing();
+        break;
+      }
+    }
+  }
+  // Also ping on full rotation
+  if (prevAngle > sweepAngle) playPing();
+
+  // Ring pulses
+  for (let dim = 0; dim < DIMS; dim++) {
+    const band = dim % BANDS;
+    const freq = 0.02 + band * 0.005;
+    ringPulse[dim] = time * freq + dim * 0.1;
+  }
+
+  // Update breach gaps
+  for (let i = breachGaps.length - 1; i >= 0; i--) {
+    breachGaps[i].life--;
+    if (breachGaps[i].life <= 0) {
+      breachGaps.splice(i, 1);
+    }
+  }
+
+  // Update blips
+  for (let i = blips.length - 1; i >= 0; i--) {
+    const b = blips[i];
+    b.radius -= b.speed;
+    b.life--;
+
+    // Check if blip hit a shield ring
+    for (let dim = DIMS - 1; dim >= 0; dim--) {
+      const r = ringRadius(dim);
+      if (Math.abs(b.radius - r) < 2 && shields[dim % BANDS] > 0.2) {
+        // Flash impact - dim the shield slightly
+        shields[dim % BANDS] = Math.max(0.05, shields[dim % BANDS] - 0.02);
+        b.life = Math.min(b.life, 5); // blip dies quickly after hit
+        break;
+      }
+    }
+
+    if (b.life <= 0 || b.radius < 5) {
+      blips.splice(i, 1);
+    }
+  }
+
+  // Shield recovery
+  recoverShields();
+
+  // LL sequence
+  llTimer++;
+  if (llTimer > 90) {
+    llTimer = 0;
+    llIndex = (llIndex + 1) % LL_SEQUENCE.length;
+    updateLLDisplay();
+  }
+
+  updateStats();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Background glow at center
+  const grad = ctx.createRadialGradient(cx + panX, cy + panY, 0, cx + panX, cy + panY, ringRadius(DIMS - 1));
+  grad.addColorStop(0, 'rgba(0,255,136,0.03)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawGrid();
+  drawCardinals();
+  drawRings();
+  drawSweep();
+  drawBlips();
+  drawCenterDot();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ── Init ──
+updateLLDisplay();
+updateStats();
+loop();
+</script>
+</body>
+</html>

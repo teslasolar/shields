@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shield-Tree: Mersenne Binary Collapse</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#060610;color:#c0c8e0;font-family:'Courier New',monospace;overflow:hidden;width:100vw;height:100vh;}
+#canvas-container{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;}
+canvas{display:block;}
+
+#top-bar{
+  position:fixed;top:0;left:0;right:0;height:44px;z-index:10;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,rgba(6,6,16,0.95),rgba(6,6,16,0.6));
+  border-bottom:1px solid rgba(100,120,200,0.15);
+  letter-spacing:3px;font-size:13px;color:#8090c0;
+  text-shadow:0 0 12px rgba(100,140,255,0.3);
+}
+#top-bar span.accent{color:#a0b8ff;font-weight:bold;}
+
+#left-panel{
+  position:fixed;top:54px;left:14px;z-index:10;
+  background:rgba(6,6,16,0.85);border:1px solid rgba(100,120,200,0.12);
+  border-radius:6px;padding:14px 18px;min-width:180px;
+  font-size:12px;line-height:2;
+}
+#left-panel .level-row{display:flex;justify-content:space-between;gap:12px;opacity:0.3;transition:opacity 0.4s,color 0.4s;}
+#left-panel .level-row.active{opacity:1;color:#fff;text-shadow:0 0 8px rgba(150,180,255,0.5);}
+#left-panel .level-row.reached{opacity:0.7;}
+#left-panel .level-row.fold{color:#ff4060;text-shadow:0 0 12px rgba(255,60,80,0.5);}
+
+#bottom-bar{
+  position:fixed;bottom:0;left:0;right:0;height:38px;z-index:10;
+  display:flex;align-items:center;justify-content:center;gap:40px;
+  background:linear-gradient(0deg,rgba(6,6,16,0.95),rgba(6,6,16,0.6));
+  border-top:1px solid rgba(100,120,200,0.15);
+  font-size:12px;color:#6878a0;letter-spacing:1px;
+}
+#node-count{color:#a0b8ff;}
+#triangle-num{color:#7888b0;font-size:11px;}
+
+#controls{
+  position:fixed;top:54px;right:14px;z-index:10;
+  background:rgba(6,6,16,0.85);border:1px solid rgba(100,120,200,0.12);
+  border-radius:6px;padding:12px 16px;font-size:11px;
+  display:flex;flex-direction:column;gap:8px;min-width:160px;
+}
+#controls label{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+#controls input[type=range]{width:80px;accent-color:#6080d0;}
+#controls button{
+  background:rgba(60,80,160,0.25);border:1px solid rgba(100,120,200,0.25);
+  color:#8098d0;padding:5px 10px;border-radius:4px;cursor:pointer;
+  font-family:inherit;font-size:11px;transition:background 0.2s;
+}
+#controls button:hover{background:rgba(60,80,160,0.45);}
+#controls button.active{background:rgba(80,120,200,0.4);color:#c0d0ff;}
+
+#node-info{
+  position:fixed;bottom:50px;right:14px;z-index:10;
+  background:rgba(6,6,16,0.92);border:1px solid rgba(100,120,200,0.2);
+  border-radius:6px;padding:10px 14px;font-size:11px;line-height:1.8;
+  display:none;min-width:170px;
+}
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  SHIELD-TREE <span class="accent">&middot;</span> MERSENNE BINARY COLLAPSE <span class="accent">&middot;</span> 2<sup>7</sup> &minus; 1 = 127
+</div>
+
+<div id="left-panel">
+  <div class="level-row" data-level="0">2<sup>0</sup> = 1</div>
+  <div class="level-row" data-level="1">2<sup>1</sup> = 2</div>
+  <div class="level-row" data-level="2">2<sup>2</sup> = 4</div>
+  <div class="level-row" data-level="3">2<sup>3</sup> = 8</div>
+  <div class="level-row" data-level="4">2<sup>4</sup> = 16</div>
+  <div class="level-row" data-level="5">2<sup>5</sup> = 32</div>
+  <div class="level-row" data-level="6">2<sup>6</sup> = 64</div>
+  <div class="level-row" data-level="7">2<sup>7</sup> = 128</div>
+  <div class="level-row" data-level="fold">128 &minus; 1 = 127</div>
+</div>
+
+<div id="bottom-bar">
+  <span>NODES: <span id="node-count">0</span></span>
+  <span id="triangle-num">510,510 = 2 &times; 3 &times; 5 &times; 7 &times; 11 &times; 13 &times; 17</span>
+</div>
+
+<div id="controls">
+  <label>
+    <button id="btn-autoplay" class="active">AUTO</button>
+    <button id="btn-step">STEP</button>
+  </label>
+  <label>Speed <input type="range" id="speed-slider" min="0.5" max="3" step="0.1" value="1"></label>
+  <button id="btn-reset">RESET</button>
+  <div style="color:#5868a0;font-size:10px;margin-top:4px;">Drag: rotate &middot; Scroll: zoom<br>Click node: info</div>
+</div>
+
+<div id="node-info">
+  <div>Dimension: <span id="info-dim">-</span></div>
+  <div>Ring Band: <span id="info-ring">-</span></div>
+  <div>Tree Level: <span id="info-level">-</span></div>
+  <div>Hue: <span id="info-hue">-</span></div>
+</div>
+
+<div id="canvas-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+// ── Constants ──
+const RING_BASE_HUES = [0, 25, 50, 140, 210, 270, 300];
+const BG = 0x060610;
+const MAX_LEVEL = 7;
+const TOTAL_TREE_NODES = 255; // 2^8 - 1
+const LEAF_COUNT = 128;
+const SHIELD_DIMS = 127;
+
+// ── State ──
+let autoPlay = true;
+let speedMult = 1.0;
+let currentPhase = 'idle'; // idle, expanding, pause128, fold, rearrange, shield, done
+let currentLevel = -1;
+let animTimer = 0;
+let expandQueue = [];
+let foldTimer = 0;
+let rearrangeProgress = 0;
+let removedNodeIndex = -1;
+let shieldRotation = 0;
+let audioCtx = null;
+let droneOsc = null;
+let droneGain = null;
+let audioStarted = false;
+
+// ── Three.js Setup ──
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(BG);
+scene.fog = new THREE.FogExp2(BG, 0.012);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 2, 28);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+// ── Lights ──
+const ambientLight = new THREE.AmbientLight(0x303060, 0.5);
+scene.add(ambientLight);
+const pointLight = new THREE.PointLight(0x6080ff, 1.5, 80);
+pointLight.position.set(5, 10, 15);
+scene.add(pointLight);
+const pointLight2 = new THREE.PointLight(0xff6040, 0.6, 60);
+pointLight2.position.set(-8, -5, 10);
+scene.add(pointLight2);
+
+// ── Tree Data Structure ──
+// Each node: { index, level, parent, children, treePos, spherePos, currentPos, mesh, dimIndex, ring, hue, visible, leafIndex }
+let nodes = [];
+let edges = []; // { from, to, line }
+let nodeGroup = new THREE.Group();
+let edgeGroup = new THREE.Group();
+let particleSystem = null;
+let shieldGroup = new THREE.Group();
+scene.add(shieldGroup);
+shieldGroup.add(nodeGroup);
+shieldGroup.add(edgeGroup);
+
+// Glow sprite texture
+function createGlowTexture() {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.15, 'rgba(255,255,255,0.8)');
+  grad.addColorStop(0.4, 'rgba(200,220,255,0.3)');
+  grad.addColorStop(1, 'rgba(100,120,200,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+const glowTexture = createGlowTexture();
+
+// ── Compute tree positions ──
+function computeTreePos(index, level, posInLevel) {
+  const totalAtLevel = Math.pow(2, level);
+  const spacingX = 22 / (totalAtLevel + 1);
+  const x = (posInLevel - (totalAtLevel - 1) / 2) * Math.min(spacingX, 3.5 - level * 0.25);
+  const y = 8 - level * 2.2;
+  const z = 0;
+  return new THREE.Vector3(x, y, z);
+}
+
+// ── Fibonacci sphere distribution ──
+function fibSpherePos(i, total, radius) {
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const y = 1 - (i / (total - 1)) * 2;
+  const r = Math.sqrt(1 - y * y);
+  const theta = goldenAngle * i;
+  return new THREE.Vector3(
+    Math.cos(theta) * r * radius,
+    y * radius,
+    Math.sin(theta) * r * radius
+  );
+}
+
+// ── Dim color ──
+function dimColor(dim) {
+  const ring = dim % 7;
+  const hue = (RING_BASE_HUES[ring] + (Math.floor(dim / 7) / 18) * 25) % 360;
+  return { ring, hue };
+}
+
+function hslToThreeColor(h, s, l) {
+  const c = new THREE.Color();
+  c.setHSL(h / 360, s, l);
+  return c;
+}
+
+// ── Build all tree nodes (but keep them hidden) ──
+function buildTree() {
+  nodes = [];
+  edges = [];
+
+  // Clear groups
+  while (nodeGroup.children.length) nodeGroup.remove(nodeGroup.children[0]);
+  while (edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]);
+
+  let idx = 0;
+  let leafIdx = 0;
+  const queue = [{ parentIdx: -1, level: 0, posInLevel: 0 }];
+  const byLevel = [];
+  for (let l = 0; l <= MAX_LEVEL; l++) byLevel.push([]);
+
+  // BFS build
+  function buildLevel(level) {
+    const count = Math.pow(2, level);
+    for (let p = 0; p < count; p++) {
+      const nodeIdx = idx++;
+      const treePos = computeTreePos(nodeIdx, level, p);
+      const isLeaf = (level === MAX_LEVEL);
+      const li = isLeaf ? leafIdx++ : -1;
+
+      // Determine dim color based on leaf index or level
+      let ring, hue;
+      if (isLeaf && li < LEAF_COUNT) {
+        const dc = dimColor(li);
+        ring = dc.ring;
+        hue = dc.hue;
+      } else {
+        ring = level % 7;
+        hue = RING_BASE_HUES[ring];
+      }
+
+      const color = hslToThreeColor(hue, 0.7, 0.55);
+      const nodeSize = isLeaf ? 0.12 : 0.15 + (MAX_LEVEL - level) * 0.03;
+
+      // Sphere mesh
+      const geo = new THREE.SphereGeometry(nodeSize, 12, 8);
+      const mat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.6,
+        roughness: 0.3,
+        metalness: 0.4,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(treePos);
+      mesh.visible = false;
+      mesh.userData = { nodeIdx: nodeIdx };
+      nodeGroup.add(mesh);
+
+      // Glow sprite
+      const spriteMat = new THREE.SpriteMaterial({
+        map: glowTexture,
+        color: color,
+        transparent: true,
+        opacity: 0.4,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(nodeSize * 5, nodeSize * 5, 1);
+      mesh.add(sprite);
+
+      // Parent index in this level-order scheme
+      const parentIdx = level > 0 ? Math.floor((nodes.length - Math.pow(2, level) + Math.pow(2, level)) / 1) : -1;
+
+      const node = {
+        index: nodeIdx,
+        level: level,
+        posInLevel: p,
+        treePos: treePos.clone(),
+        spherePos: new THREE.Vector3(),
+        currentPos: treePos.clone(),
+        mesh: mesh,
+        dimIndex: li,
+        ring: ring,
+        hue: hue,
+        visible: false,
+        leafIndex: li,
+        children: [],
+        parentIndex: -1,
+        revealed: false,
+        revealAnim: 0,
+      };
+      nodes.push(node);
+      byLevel[level].push(nodeIdx);
+    }
+  }
+
+  for (let l = 0; l <= MAX_LEVEL; l++) {
+    buildLevel(l);
+  }
+
+  // Link parents and children
+  // In a level-order binary tree: node at index i has children at 2i+1, 2i+2
+  for (let i = 0; i < nodes.length; i++) {
+    const left = 2 * i + 1;
+    const right = 2 * i + 2;
+    if (left < nodes.length) {
+      nodes[i].children.push(left);
+      nodes[left].parentIndex = i;
+    }
+    if (right < nodes.length) {
+      nodes[i].children.push(right);
+      nodes[right].parentIndex = i;
+    }
+  }
+
+  // Build edges
+  for (let i = 0; i < nodes.length; i++) {
+    for (const childIdx of nodes[i].children) {
+      const points = [nodes[i].treePos.clone(), nodes[childIdx].treePos.clone()];
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({
+        color: 0x3040a0,
+        transparent: true,
+        opacity: 0.0,
+        linewidth: 1,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.visible = false;
+      edgeGroup.add(line);
+      edges.push({ from: i, to: childIdx, line: line, visible: false });
+    }
+  }
+
+  // Compute sphere positions for leaves (127 dims)
+  let dimIdx = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].level === MAX_LEVEL) {
+      if (dimIdx < SHIELD_DIMS) {
+        const dimRadius = 0.6 + (dimIdx / 127) * 3.0;
+        const sphR = 6.0;
+        nodes[i].spherePos = fibSpherePos(dimIdx, SHIELD_DIMS, sphR);
+        nodes[i].dimIndex = dimIdx;
+        dimIdx++;
+      } else {
+        // The 128th node (to be removed)
+        nodes[i].spherePos = new THREE.Vector3(0, 0, 0);
+        nodes[i].dimIndex = 127; // will be removed
+      }
+    }
+  }
+
+  // Internal nodes get positions inside the sphere based on level
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].level < MAX_LEVEL) {
+      const l = nodes[i].level;
+      const r = 1.0 + l * 0.7;
+      const angle = (nodes[i].posInLevel / Math.pow(2, l)) * Math.PI * 2 + l * 0.3;
+      const y = (l / MAX_LEVEL) * 4 - 2;
+      nodes[i].spherePos = new THREE.Vector3(
+        Math.cos(angle) * r,
+        y,
+        Math.sin(angle) * r
+      );
+    }
+  }
+}
+
+// ── Audio ──
+function initAudio() {
+  if (audioStarted) return;
+  audioStarted = true;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Ambient drone
+  droneGain = audioCtx.createGain();
+  droneGain.gain.value = 0.0;
+  droneGain.connect(audioCtx.destination);
+
+  droneOsc = audioCtx.createOscillator();
+  droneOsc.type = 'sine';
+  droneOsc.frequency.value = 55;
+  const droneFilter = audioCtx.createBiquadFilter();
+  droneFilter.type = 'lowpass';
+  droneFilter.frequency.value = 200;
+  droneOsc.connect(droneFilter);
+  droneFilter.connect(droneGain);
+  droneOsc.start();
+
+  // Fade in drone
+  droneGain.gain.setTargetAtTime(0.06, audioCtx.currentTime, 1.0);
+}
+
+function playTone(freq, duration, vol, type) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.value = freq;
+  gain.gain.value = vol || 0.15;
+  gain.gain.setTargetAtTime(0, audioCtx.currentTime + duration * 0.3, duration * 0.3);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playLevelTone(level) {
+  const freq = 55 * Math.pow(2, level);
+  playTone(freq, 0.6, 0.12, 'triangle');
+  // Add harmonic
+  playTone(freq * 1.5, 0.4, 0.04, 'sine');
+}
+
+function playBassDrop() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 60;
+  osc.frequency.setTargetAtTime(30, audioCtx.currentTime, 0.5);
+  gain.gain.value = 0.3;
+  gain.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 1.2);
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 150;
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 3);
+}
+
+function playShieldChord() {
+  if (!audioCtx) return;
+  // All 7 ring fundamentals
+  const baseFreqs = [220, 246.94, 261.63, 329.63, 392, 440, 493.88];
+  baseFreqs.forEach((f, i) => {
+    setTimeout(() => {
+      playTone(f, 3.0, 0.06, 'sine');
+      playTone(f * 2, 2.5, 0.03, 'sine');
+    }, i * 120);
+  });
+}
+
+// ── UI Updates ──
+const nodeCountEl = document.getElementById('node-count');
+const levelRows = document.querySelectorAll('#left-panel .level-row');
+const nodeInfoPanel = document.getElementById('node-info');
+
+function updateLevelDisplay(level, isFold) {
+  levelRows.forEach((row) => {
+    const l = row.dataset.level;
+    row.classList.remove('active', 'reached', 'fold');
+    if (l === 'fold') {
+      if (isFold) { row.classList.add('active', 'fold'); }
+    } else {
+      const lNum = parseInt(l);
+      if (lNum < level) row.classList.add('reached');
+      if (lNum === level && !isFold) row.classList.add('active');
+      if (lNum <= level) row.classList.add('reached');
+    }
+  });
+}
+
+function countVisibleNodes() {
+  let c = 0;
+  nodes.forEach(n => { if (n.visible) c++; });
+  return c;
+}
+
+// ── Particles ──
+function createParticles() {
+  const count = 300;
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 7 + Math.random() * 3;
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+
+    const hue = Math.random() * 360;
+    const c = hslToThreeColor(hue, 0.5, 0.6);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 0.08,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  particleSystem = new THREE.Points(geo, mat);
+  particleSystem.visible = false;
+  shieldGroup.add(particleSystem);
+}
+
+function updateParticles(time) {
+  if (!particleSystem || !particleSystem.visible) return;
+  const pos = particleSystem.geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const theta = time * 0.1 + i * 0.05;
+    const baseR = 7 + (i % 30) * 0.1;
+    const r = baseR + Math.sin(time * 0.5 + i) * 0.5;
+    const phi = (i / pos.count) * Math.PI * 2 + time * 0.05;
+    const y = pos.getY(i);
+    pos.setX(i, r * Math.cos(theta + phi));
+    pos.setZ(i, r * Math.sin(theta + phi));
+  }
+  pos.needsUpdate = true;
+}
+
+// ── Camera Controls (simple orbit) ──
+let isDragging = false;
+let prevMouse = { x: 0, y: 0 };
+let cameraTheta = 0;
+let cameraPhi = Math.PI / 2;
+let cameraRadius = 28;
+let targetTheta = 0;
+let targetPhi = Math.PI / 2;
+let targetRadius = 28;
+let cameraTarget = new THREE.Vector3(0, 0, 0);
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  prevMouse = { x: e.clientX, y: e.clientY };
+});
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - prevMouse.x;
+  const dy = e.clientY - prevMouse.y;
+  targetTheta -= dx * 0.005;
+  targetPhi = Math.max(0.2, Math.min(Math.PI - 0.2, targetPhi - dy * 0.005));
+  prevMouse = { x: e.clientX, y: e.clientY };
+});
+renderer.domElement.addEventListener('mouseup', () => { isDragging = false; });
+renderer.domElement.addEventListener('wheel', (e) => {
+  targetRadius = Math.max(8, Math.min(60, targetRadius + e.deltaY * 0.03));
+});
+
+function updateCamera() {
+  cameraTheta += (targetTheta - cameraTheta) * 0.08;
+  cameraPhi += (targetPhi - cameraPhi) * 0.08;
+  cameraRadius += (targetRadius - cameraRadius) * 0.08;
+
+  camera.position.x = cameraTarget.x + cameraRadius * Math.sin(cameraPhi) * Math.cos(cameraTheta);
+  camera.position.y = cameraTarget.y + cameraRadius * Math.cos(cameraPhi);
+  camera.position.z = cameraTarget.z + cameraRadius * Math.sin(cameraPhi) * Math.sin(cameraTheta);
+  camera.lookAt(cameraTarget);
+}
+
+// ── Click Detection ──
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (e) => {
+  // Start audio on first click
+  initAudio();
+
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(nodeGroup.children, false);
+
+  if (intersects.length > 0) {
+    const idx = intersects[0].object.userData.nodeIdx;
+    if (idx !== undefined && nodes[idx] && nodes[idx].visible) {
+      const n = nodes[idx];
+      document.getElementById('info-dim').textContent = n.dimIndex >= 0 ? n.dimIndex : 'internal';
+      document.getElementById('info-ring').textContent = 'R' + n.ring + ' (hue ' + Math.round(n.hue) + ')';
+      document.getElementById('info-level').textContent = n.level;
+      document.getElementById('info-hue').textContent = Math.round(n.hue);
+      nodeInfoPanel.style.display = 'block';
+    }
+  } else {
+    nodeInfoPanel.style.display = 'none';
+  }
+});
+
+// ── Animation Phases ──
+let phaseTime = 0;
+let expansionDone = false;
+let flashIntensity = 0;
+let removedNode = null;
+let nodesVisibleCount = 0;
+
+function revealLevel(level) {
+  const startIdx = Math.pow(2, level) - 1;
+  const count = Math.pow(2, level);
+  for (let i = startIdx; i < startIdx + count && i < nodes.length; i++) {
+    nodes[i].visible = true;
+    nodes[i].mesh.visible = true;
+    nodes[i].revealAnim = 0;
+    nodes[i].mesh.scale.set(0.01, 0.01, 0.01);
+  }
+  // Show edges to this level
+  edges.forEach(e => {
+    if (nodes[e.to].level === level && nodes[e.to].visible) {
+      e.line.visible = true;
+      e.visible = true;
+      e.line.material.opacity = 0;
+    }
+  });
+  currentLevel = level;
+  updateLevelDisplay(level, false);
+  playLevelTone(level);
+}
+
+function animateReveal(dt) {
+  let allDone = true;
+  nodes.forEach(n => {
+    if (n.visible && n.revealAnim < 1) {
+      n.revealAnim = Math.min(1, n.revealAnim + dt * 3);
+      const s = easeOutBack(n.revealAnim);
+      n.mesh.scale.set(s, s, s);
+      allDone = false;
+    }
+  });
+  edges.forEach(e => {
+    if (e.visible && e.line.material.opacity < 0.25) {
+      e.line.material.opacity = Math.min(0.25, e.line.material.opacity + dt * 0.5);
+    }
+  });
+  return allDone;
+}
+
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// ── Main State Machine ──
+let expandDelay = 0;
+let levelExpandDone = true;
+let pauseTimer = 0;
+let foldPhaseStep = 0; // 0=flash, 1=remove, 2=wait
+let rearrangeStarted = false;
+let stepRequested = false;
+let awaitingStep = false;
+
+function startSequence() {
+  currentPhase = 'expanding';
+  currentLevel = -1;
+  expandDelay = 0.5;
+  levelExpandDone = true;
+}
+
+function update(dt) {
+  dt *= speedMult;
+  phaseTime += dt;
+
+  switch (currentPhase) {
+    case 'idle':
+      break;
+
+    case 'expanding':
+      if (levelExpandDone) {
+        expandDelay -= dt;
+        if (expandDelay <= 0) {
+          if (!autoPlay && currentLevel >= 0 && !stepRequested) {
+            awaitingStep = true;
+            return;
+          }
+          stepRequested = false;
+          awaitingStep = false;
+
+          const nextLevel = currentLevel + 1;
+          if (nextLevel <= MAX_LEVEL) {
+            revealLevel(nextLevel);
+            levelExpandDone = false;
+            expandDelay = 0.8 / speedMult;
+          } else {
+            currentPhase = 'pause128';
+            pauseTimer = 1.5;
+          }
+        }
+      } else {
+        levelExpandDone = animateReveal(dt);
+      }
+      nodesVisibleCount = countVisibleNodes();
+      nodeCountEl.textContent = nodesVisibleCount;
+      break;
+
+    case 'pause128':
+      pauseTimer -= dt;
+      flashIntensity = Math.sin(phaseTime * 8) * 0.5 + 0.5;
+      // Flash all leaf nodes
+      nodes.forEach(n => {
+        if (n.level === MAX_LEVEL && n.visible) {
+          n.mesh.material.emissiveIntensity = 0.6 + flashIntensity * 0.8;
+        }
+      });
+      if (pauseTimer <= 0) {
+        if (!autoPlay && !stepRequested) { awaitingStep = true; return; }
+        stepRequested = false;
+        currentPhase = 'fold';
+        foldPhaseStep = 0;
+        foldTimer = 0;
+        // Pick the last leaf node (index 127 among leaves)
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          if (nodes[i].level === MAX_LEVEL && nodes[i].visible) {
+            removedNodeIndex = i;
+            removedNode = nodes[i];
+            break;
+          }
+        }
+      }
+      break;
+
+    case 'fold':
+      foldTimer += dt;
+      if (foldPhaseStep === 0) {
+        // Flash the removed node red
+        if (removedNode) {
+          removedNode.mesh.material.color.setHex(0xff2040);
+          removedNode.mesh.material.emissive.setHex(0xff2040);
+          removedNode.mesh.material.emissiveIntensity = 1.5 + Math.sin(foldTimer * 15) * 1.0;
+          const s = 1 + Math.sin(foldTimer * 12) * 0.3;
+          removedNode.mesh.scale.set(s, s, s);
+        }
+        if (foldTimer > 1.2) {
+          foldPhaseStep = 1;
+          foldTimer = 0;
+          playBassDrop();
+        }
+      } else if (foldPhaseStep === 1) {
+        // Implode the node
+        if (removedNode) {
+          const s = Math.max(0, 1 - foldTimer * 2);
+          removedNode.mesh.scale.set(s, s, s);
+          removedNode.mesh.material.emissiveIntensity = 3.0 * s;
+          if (foldTimer > 0.6) {
+            removedNode.visible = false;
+            removedNode.mesh.visible = false;
+            // Hide edges to this node
+            edges.forEach(e => {
+              if (e.from === removedNodeIndex || e.to === removedNodeIndex) {
+                e.line.visible = false;
+                e.visible = false;
+              }
+            });
+            foldPhaseStep = 2;
+            foldTimer = 0;
+            updateLevelDisplay(MAX_LEVEL, true);
+            // Reset emissive on remaining leaves
+            nodes.forEach(n => {
+              if (n.level === MAX_LEVEL && n.visible) {
+                n.mesh.material.emissiveIntensity = 0.6;
+              }
+            });
+          }
+        }
+        nodesVisibleCount = countVisibleNodes();
+        nodeCountEl.textContent = nodesVisibleCount;
+      } else if (foldPhaseStep === 2) {
+        // Brief pause after removal
+        if (foldTimer > 0.8) {
+          if (!autoPlay && !stepRequested) { awaitingStep = true; return; }
+          stepRequested = false;
+          currentPhase = 'rearrange';
+          rearrangeProgress = 0;
+          rearrangeStarted = true;
+          playShieldChord();
+          // Adjust camera target
+          cameraTarget.set(0, 0, 0);
+          targetRadius = 20;
+          targetPhi = Math.PI / 2;
+        }
+      }
+      nodesVisibleCount = countVisibleNodes();
+      nodeCountEl.textContent = nodesVisibleCount;
+      break;
+
+    case 'rearrange':
+      rearrangeProgress = Math.min(1, rearrangeProgress + dt / 3.0);
+      const t = easeInOutCubic(rearrangeProgress);
+
+      nodes.forEach(n => {
+        if (!n.visible) return;
+        const target = n.spherePos;
+        const start = n.treePos;
+        n.currentPos.lerpVectors(start, target, t);
+        n.mesh.position.copy(n.currentPos);
+      });
+
+      // Update edge positions
+      edges.forEach(e => {
+        if (!e.visible) return;
+        const posAttr = e.line.geometry.attributes.position;
+        if (!posAttr) return;
+        posAttr.setXYZ(0, nodes[e.from].currentPos.x, nodes[e.from].currentPos.y, nodes[e.from].currentPos.z);
+        posAttr.setXYZ(1, nodes[e.to].currentPos.x, nodes[e.to].currentPos.y, nodes[e.to].currentPos.z);
+        posAttr.needsUpdate = true;
+        // Fade edges slightly
+        e.line.material.opacity = 0.12 + t * 0.08;
+      });
+
+      if (rearrangeProgress >= 1) {
+        currentPhase = 'shield';
+        // Show particles
+        if (particleSystem) {
+          particleSystem.visible = true;
+          particleSystem.material.opacity = 0;
+        }
+      }
+      break;
+
+    case 'shield':
+      shieldRotation += dt * 0.15;
+      shieldGroup.rotation.y = shieldRotation;
+      shieldGroup.rotation.x = Math.sin(shieldRotation * 0.3) * 0.1;
+
+      // Fade in particles
+      if (particleSystem && particleSystem.material.opacity < 0.5) {
+        particleSystem.material.opacity = Math.min(0.5, particleSystem.material.opacity + dt * 0.15);
+      }
+      updateParticles(phaseTime);
+
+      // Gentle pulsing of nodes
+      nodes.forEach(n => {
+        if (!n.visible) return;
+        const pulse = 0.5 + Math.sin(phaseTime * 2 + n.index * 0.2) * 0.15;
+        n.mesh.material.emissiveIntensity = pulse;
+      });
+      break;
+  }
+}
+
+// ── Controls ──
+document.getElementById('btn-autoplay').addEventListener('click', function() {
+  autoPlay = true;
+  this.classList.add('active');
+  document.getElementById('btn-step').classList.remove('active');
+  if (awaitingStep) { stepRequested = true; awaitingStep = false; }
+});
+document.getElementById('btn-step').addEventListener('click', function() {
+  autoPlay = false;
+  this.classList.add('active');
+  document.getElementById('btn-autoplay').classList.remove('active');
+  stepRequested = true;
+  awaitingStep = false;
+});
+document.getElementById('speed-slider').addEventListener('input', function() {
+  speedMult = parseFloat(this.value);
+});
+document.getElementById('btn-reset').addEventListener('click', function() {
+  reset();
+});
+
+function reset() {
+  // Reset everything
+  currentPhase = 'idle';
+  currentLevel = -1;
+  animTimer = 0;
+  phaseTime = 0;
+  expandDelay = 0;
+  levelExpandDone = true;
+  pauseTimer = 0;
+  foldPhaseStep = 0;
+  foldTimer = 0;
+  rearrangeProgress = 0;
+  rearrangeStarted = false;
+  removedNodeIndex = -1;
+  removedNode = null;
+  shieldRotation = 0;
+  stepRequested = false;
+  awaitingStep = false;
+  flashIntensity = 0;
+  nodesVisibleCount = 0;
+
+  shieldGroup.rotation.set(0, 0, 0);
+
+  cameraTarget.set(0, 2, 0);
+  targetTheta = 0;
+  targetPhi = Math.PI / 2;
+  targetRadius = 28;
+
+  nodeInfoPanel.style.display = 'none';
+  nodeCountEl.textContent = '0';
+  levelRows.forEach(r => r.classList.remove('active', 'reached', 'fold'));
+
+  buildTree();
+  createParticles();
+
+  setTimeout(() => { startSequence(); }, 300);
+}
+
+// ── Resize ──
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Render Loop ──
+let lastTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  updateCamera();
+  update(dt);
+  renderer.render(scene, camera);
+}
+
+// ── Init ──
+buildTree();
+createParticles();
+cameraTarget.set(0, 2, 0);
+
+// Start on first interaction (for audio policy) or after a brief delay
+let started = false;
+function startOnInteraction() {
+  if (started) return;
+  started = true;
+  initAudio();
+  startSequence();
+}
+
+// Auto-start after brief delay (visuals work without audio)
+setTimeout(() => {
+  if (!started) {
+    started = true;
+    startSequence();
+  }
+}, 800);
+
+// Start audio on first click
+document.addEventListener('click', () => { initAudio(); }, { once: false });
+document.addEventListener('keydown', () => { initAudio(); }, { once: false });
+
+animate();
+
+})();
+</script>
+</body>
+</html>

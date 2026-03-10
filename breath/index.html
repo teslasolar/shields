@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shield-Breath Meditation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+canvas { display: block; position: absolute; top: 0; left: 0; }
+
+#overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+#top-text {
+  margin-top: 24px;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: rgba(180, 180, 200, 0.5);
+  text-transform: uppercase;
+}
+
+#center-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+#phase-text {
+  font-size: 28px;
+  letter-spacing: 12px;
+  font-weight: 300;
+  color: rgba(200, 200, 220, 0.8);
+  transition: color 0.5s;
+  min-height: 40px;
+}
+
+#count-text {
+  font-size: 96px;
+  font-weight: 100;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1;
+  min-height: 100px;
+  transition: color 0.5s;
+}
+
+#ll-text {
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: rgba(180, 180, 200, 0.6);
+  margin-top: 8px;
+  min-height: 28px;
+}
+
+#coherent-text {
+  font-size: 52px;
+  letter-spacing: 16px;
+  font-weight: 300;
+  color: rgba(255, 215, 100, 0);
+  position: absolute;
+  transition: color 1.5s;
+}
+
+#bottom-area {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  pointer-events: all;
+}
+
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+button, select {
+  font-family: 'Courier New', monospace;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(200, 200, 220, 0.8);
+  padding: 10px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  border-radius: 2px;
+  transition: background 0.3s, border-color 0.3s;
+}
+button:hover, select:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+select { padding: 10px 12px; }
+
+#start-btn { padding: 12px 40px; font-size: 16px; }
+
+#cycle-text {
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: rgba(180, 180, 200, 0.45);
+}
+
+#bottom-text {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: rgba(140, 140, 160, 0.35);
+}
+
+#waiting-text {
+  font-size: 18px;
+  letter-spacing: 4px;
+  color: rgba(180, 180, 200, 0.4);
+}
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div id="top-text">SHIELD-BREATH &middot; M&#8327; = 2&#8311;-1 &middot; MEDITATION</div>
+
+  <div id="center-area">
+    <div id="phase-text"></div>
+    <div id="count-text"></div>
+    <div id="ll-text"></div>
+    <div id="coherent-text">COHERENT</div>
+    <div id="waiting-text">press start to begin</div>
+  </div>
+
+  <div id="bottom-area">
+    <div id="controls">
+      <button id="start-btn">START</button>
+      <select id="speed-select">
+        <option value="1">NORMAL</option>
+        <option value="1.4">SLOW</option>
+        <option value="2">VERY SLOW</option>
+      </select>
+      <button id="sound-btn">SOUND ON</button>
+    </div>
+    <div id="cycle-text"></div>
+    <div id="bottom-text">510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  // === CONSTANTS ===
+  const SHELL_COUNT = 127;
+  const INHALE_COUNTS = 4;
+  const EXHALE_COUNTS = 6;
+  const TOTAL_CYCLES = 5;
+  const LL_SEQUENCE = [4, 14, 67, 42, 111, 0];
+  const RING_BASE_HUES = [0, 25, 50, 140, 210, 270, 300];
+  const RING_FREQS = [55, 110, 165, 275, 385, 605, 935];
+  const TINT_COLORS = [
+    [1.0, 0.3, 0.2],   // S0 warm red
+    [1.0, 0.55, 0.2],  // S1 orange
+    [1.0, 0.82, 0.3],  // S2 gold
+    [0.3, 0.9, 0.4],   // S3 green
+    [0.3, 0.5, 1.0],   // S4 blue
+    [1.0, 0.92, 0.6],  // S5 golden white
+  ];
+
+  // === STATE ===
+  let running = false;
+  let paused = false;
+  let soundOn = true;
+  let speedMult = 1.0;
+  let cycle = 0;           // 0..4
+  let phase = 'idle';      // 'idle', 'inhale', 'exhale', 'coherent'
+  let phaseTime = 0;
+  let breathT = 0;         // 0..1 normalized breath expansion
+  let currentCount = 0;
+  let coherentTimer = 0;
+  let totalCyclesCompleted = 0;
+
+  // === DOM ===
+  const phaseEl = document.getElementById('phase-text');
+  const countEl = document.getElementById('count-text');
+  const llEl = document.getElementById('ll-text');
+  const coherentEl = document.getElementById('coherent-text');
+  const waitingEl = document.getElementById('waiting-text');
+  const startBtn = document.getElementById('start-btn');
+  const speedSel = document.getElementById('speed-select');
+  const soundBtn = document.getElementById('sound-btn');
+  const cycleEl = document.getElementById('cycle-text');
+
+  // === THREE.JS SETUP ===
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.z = 6;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x060610, 1);
+  document.body.insertBefore(renderer.domElement, document.getElementById('overlay'));
+
+  // === BUILD SHELL DATA ===
+  const shellData = [];
+  for (let dim = 0; dim < SHELL_COUNT; dim++) {
+    const ring = dim % 7;
+    const hue = (RING_BASE_HUES[ring] + (Math.floor(dim / 7) / 18) * 25) % 360;
+    const baseRadius = 0.3 + (dim / SHELL_COUNT) * 1.8;
+    shellData.push({ dim, ring, hue, baseRadius });
+  }
+
+  // === INSTANCED SPHERES ===
+  const shellGeo = new THREE.SphereBufferGeometry(1, 16, 12);
+  const shellMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.08,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const shellMesh = new THREE.InstancedMesh(shellGeo, shellMat, SHELL_COUNT);
+  shellMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  // Color buffer
+  const colorArr = new Float32Array(SHELL_COUNT * 3);
+  shellMesh.instanceColor = new THREE.InstancedBufferAttribute(colorArr, 3);
+  scene.add(shellMesh);
+
+  const dummy = new THREE.Object3D();
+  const tempColor = new THREE.Color();
+
+  function updateShells(t, tintIdx) {
+    const tint0 = TINT_COLORS[Math.min(tintIdx, 5)];
+    const tint1 = TINT_COLORS[Math.min(tintIdx + 1, 5)];
+    const tintBlend = 0; // within a cycle we stay on one tint
+
+    for (let i = 0; i < SHELL_COUNT; i++) {
+      const sd = shellData[i];
+      const expand = 1.0 + t * 0.6;
+      const r = sd.baseRadius * expand;
+
+      // Gentle rotation per shell for organic feel
+      const angle = sd.dim * 0.37 + performance.now() * 0.00003 * (sd.ring + 1);
+      const phi = sd.dim * 2.399 + performance.now() * 0.00002;
+
+      dummy.position.set(
+        Math.sin(angle) * Math.cos(phi) * r * 0.08,
+        Math.cos(angle) * r * 0.06,
+        Math.sin(phi) * r * 0.05
+      );
+      dummy.scale.setScalar(r);
+      dummy.updateMatrix();
+      shellMesh.setMatrixAt(i, dummy.matrix);
+
+      // Color: base hue blended with tint
+      tempColor.setHSL(sd.hue / 360, 0.6, 0.45);
+      const tr = tempColor.r * 0.5 + tint0[0] * 0.5;
+      const tg = tempColor.g * 0.5 + tint0[1] * 0.5;
+      const tb = tempColor.b * 0.5 + tint0[2] * 0.5;
+      colorArr[i * 3] = tr;
+      colorArr[i * 3 + 1] = tg;
+      colorArr[i * 3 + 2] = tb;
+    }
+    shellMesh.instanceMatrix.needsUpdate = true;
+    shellMesh.instanceColor.needsUpdate = true;
+
+    // Opacity based on expansion
+    shellMat.opacity = 0.04 + t * 0.06;
+  }
+
+  // === BACKGROUND STARS ===
+  const starCount = 400;
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    starPos[i * 3] = (Math.random() - 0.5) * 60;
+    starPos[i * 3 + 1] = (Math.random() - 0.5) * 40;
+    starPos[i * 3 + 2] = -20 - Math.random() * 30;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  const starMat = new THREE.PointsMaterial({
+    color: 0x8888aa,
+    size: 0.04,
+    transparent: true,
+    opacity: 0.3,
+  });
+  scene.add(new THREE.Points(starGeo, starMat));
+
+  // === FLOATING PARTICLES ===
+  const particleCount = 200;
+  const pGeo = new THREE.BufferGeometry();
+  const pPos = new Float32Array(particleCount * 3);
+  const pVel = [];
+  for (let i = 0; i < particleCount; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 2.0 + Math.random() * 2.0;
+    pPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    pPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    pPos[i * 3 + 2] = r * Math.cos(phi);
+    pVel.push({
+      x: (Math.random() - 0.5) * 0.002,
+      y: (Math.random() - 0.5) * 0.002,
+      z: (Math.random() - 0.5) * 0.002,
+    });
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  const pMat = new THREE.PointsMaterial({
+    color: 0xaabbdd,
+    size: 0.025,
+    transparent: true,
+    opacity: 0.25,
+    blending: THREE.AdditiveBlending,
+  });
+  const particles = new THREE.Points(pGeo, pMat);
+  scene.add(particles);
+
+  function updateParticles() {
+    const pos = particles.geometry.attributes.position.array;
+    for (let i = 0; i < particleCount; i++) {
+      pos[i * 3] += pVel[i].x;
+      pos[i * 3 + 1] += pVel[i].y;
+      pos[i * 3 + 2] += pVel[i].z;
+      const d = Math.sqrt(pos[i*3]**2 + pos[i*3+1]**2 + pos[i*3+2]**2);
+      if (d > 5) {
+        pVel[i].x *= -0.9;
+        pVel[i].y *= -0.9;
+        pVel[i].z *= -0.9;
+      }
+    }
+    particles.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // === GLOW (post-process-like soft sphere) ===
+  const glowGeo = new THREE.SphereBufferGeometry(2.5, 32, 24);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x334466,
+    transparent: true,
+    opacity: 0.04,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  scene.add(glowMesh);
+
+  // === AUDIO ===
+  let audioCtx = null;
+  let masterGain = null;
+
+  function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.3;
+    masterGain.connect(audioCtx.destination);
+  }
+
+  function playBreathTone(rising, duration) {
+    if (!audioCtx || !soundOn) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    const ringIdx = cycle % 7;
+    const baseFreq = RING_FREQS[ringIdx];
+
+    if (rising) {
+      osc.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
+      osc.frequency.linearRampToValueAtTime(baseFreq * 1.5, audioCtx.currentTime + duration);
+    } else {
+      osc.frequency.setValueAtTime(baseFreq * 1.5, audioCtx.currentTime);
+      osc.frequency.linearRampToValueAtTime(baseFreq, audioCtx.currentTime + duration);
+    }
+
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.08, audioCtx.currentTime + duration - 0.5);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + duration);
+  }
+
+  let heartbeatInterval = null;
+  function startHeartbeat() {
+    stopHeartbeat();
+    if (!audioCtx || !soundOn) return;
+    function beat() {
+      if (!soundOn || !running || paused) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 60;
+      gain.gain.setValueAtTime(0, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.03, audioCtx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(masterGain);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.2);
+    }
+    beat();
+    heartbeatInterval = setInterval(beat, 1000);
+  }
+  function stopHeartbeat() {
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  }
+
+  function playSingingBowl() {
+    if (!audioCtx || !soundOn) return;
+    const fundamentals = [432, 864, 1296];
+    fundamentals.forEach((freq, idx) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const vol = 0.12 / (idx + 1);
+      gain.gain.setValueAtTime(0, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 6);
+      osc.connect(gain);
+      gain.connect(masterGain);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 6.5);
+    });
+  }
+
+  // === EASING ===
+  function sineEaseInOut(t) {
+    return 0.5 * (1 - Math.cos(Math.PI * t));
+  }
+
+  // === UI UPDATES ===
+  function updateLLDisplay() {
+    const idx = Math.min(cycle, 5);
+    const sub = idx <= 0 ? '\u2080' : ['\u2080','\u2081','\u2082','\u2083','\u2084','\u2085'][idx];
+    llEl.textContent = 'S' + sub + ' = ' + LL_SEQUENCE[idx];
+  }
+
+  function updateCycleDisplay() {
+    if (running && phase !== 'idle') {
+      cycleEl.textContent = 'Cycle ' + (Math.min(cycle, TOTAL_CYCLES - 1) + 1) + '/' + TOTAL_CYCLES;
+    } else {
+      cycleEl.textContent = '';
+    }
+  }
+
+  // === MAIN BREATH LOGIC ===
+  let lastTime = 0;
+  let breathToneStarted = false;
+
+  function startBreathCycle() {
+    phase = 'inhale';
+    phaseTime = 0;
+    breathToneStarted = false;
+    updateLLDisplay();
+    updateCycleDisplay();
+    waitingEl.style.display = 'none';
+  }
+
+  function tick(dt) {
+    if (!running || paused) return;
+
+    if (phase === 'idle') {
+      startBreathCycle();
+      return;
+    }
+
+    if (phase === 'coherent') {
+      coherentTimer += dt;
+      // Golden flash
+      const flashT = Math.min(coherentTimer / 1.5, 1);
+      const alpha = flashT < 0.5 ? flashT * 2 : 2 - flashT * 2;
+      coherentEl.style.color = 'rgba(255, 215, 100, ' + (alpha * 0.9).toFixed(3) + ')';
+      // Keep shells fully expanded with golden tint
+      breathT = 1.0;
+      // After 5 seconds, reset
+      if (coherentTimer > 5) {
+        coherentEl.style.color = 'rgba(255, 215, 100, 0)';
+        cycle = 0;
+        totalCyclesCompleted++;
+        phase = 'idle';
+        phaseEl.textContent = '';
+        countEl.textContent = '';
+        llEl.textContent = '';
+      }
+      return;
+    }
+
+    const countDuration = 1.0 * speedMult; // seconds per count
+
+    if (phase === 'inhale') {
+      if (!breathToneStarted) {
+        breathToneStarted = true;
+        playBreathTone(true, INHALE_COUNTS * countDuration);
+      }
+      phaseTime += dt;
+      const totalDuration = INHALE_COUNTS * countDuration;
+      const progress = Math.min(phaseTime / totalDuration, 1);
+      breathT = sineEaseInOut(progress);
+
+      const remaining = Math.ceil((totalDuration - phaseTime) / countDuration);
+      currentCount = Math.max(1, Math.min(INHALE_COUNTS, remaining));
+      phaseEl.textContent = 'INHALE';
+      countEl.textContent = currentCount;
+
+      if (phaseTime >= totalDuration) {
+        phase = 'exhale';
+        phaseTime = 0;
+        breathToneStarted = false;
+      }
+    } else if (phase === 'exhale') {
+      if (!breathToneStarted) {
+        breathToneStarted = true;
+        playBreathTone(false, EXHALE_COUNTS * countDuration);
+      }
+      phaseTime += dt;
+      const totalDuration = EXHALE_COUNTS * countDuration;
+      const progress = Math.min(phaseTime / totalDuration, 1);
+      breathT = 1.0 - sineEaseInOut(progress);
+
+      const remaining = Math.ceil((totalDuration - phaseTime) / countDuration);
+      currentCount = Math.max(1, Math.min(EXHALE_COUNTS, remaining));
+      phaseEl.textContent = 'EXHALE';
+      countEl.textContent = currentCount;
+
+      if (phaseTime >= totalDuration) {
+        cycle++;
+        if (cycle >= TOTAL_CYCLES) {
+          // S5 = 0, COHERENT
+          phase = 'coherent';
+          coherentTimer = 0;
+          phaseEl.textContent = '';
+          countEl.textContent = '';
+          updateLLDisplay();
+          updateCycleDisplay();
+          playSingingBowl();
+        } else {
+          phase = 'inhale';
+          phaseTime = 0;
+          breathToneStarted = false;
+          updateLLDisplay();
+          updateCycleDisplay();
+        }
+      }
+    }
+  }
+
+  // === RENDER LOOP ===
+  function animate(time) {
+    requestAnimationFrame(animate);
+
+    const dt = lastTime ? (time - lastTime) / 1000 : 0;
+    lastTime = time;
+
+    tick(dt);
+
+    // Default idle breathing (very subtle)
+    let displayT = breathT;
+    if (!running || phase === 'idle') {
+      displayT = 0.3 + 0.1 * Math.sin(time * 0.001);
+    }
+
+    const tintIdx = Math.min(cycle, 5);
+    updateShells(displayT, tintIdx);
+    updateParticles();
+
+    // Glow responds to breath
+    const glowScale = 1.0 + displayT * 0.5;
+    glowMesh.scale.setScalar(glowScale);
+    const tint = TINT_COLORS[tintIdx];
+    glowMat.color.setRGB(tint[0] * 0.3, tint[1] * 0.3, tint[2] * 0.4);
+    glowMat.opacity = 0.03 + displayT * 0.03;
+
+    // Particle color tint
+    pMat.color.setRGB(
+      0.5 + tint[0] * 0.3,
+      0.5 + tint[1] * 0.3,
+      0.6 + tint[2] * 0.3
+    );
+
+    // Coherent flash: brighten background slightly
+    if (phase === 'coherent') {
+      const flashBright = Math.sin(coherentTimer * 2) * 0.03 + 0.03;
+      renderer.setClearColor(new THREE.Color(
+        0.024 + flashBright * TINT_COLORS[5][0],
+        0.024 + flashBright * TINT_COLORS[5][1],
+        0.063 + flashBright * TINT_COLORS[5][2]
+      ), 1);
+    } else {
+      renderer.setClearColor(0x060610, 1);
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  animate(0);
+
+  // === CONTROLS ===
+  startBtn.addEventListener('click', () => {
+    initAudio();
+    if (!running) {
+      running = true;
+      paused = false;
+      cycle = 0;
+      phase = 'idle';
+      breathT = 0;
+      coherentEl.style.color = 'rgba(255, 215, 100, 0)';
+      startBtn.textContent = 'PAUSE';
+      startHeartbeat();
+    } else if (!paused) {
+      paused = true;
+      startBtn.textContent = 'RESUME';
+      stopHeartbeat();
+    } else {
+      paused = false;
+      startBtn.textContent = 'PAUSE';
+      startHeartbeat();
+    }
+  });
+
+  speedSel.addEventListener('change', () => {
+    speedMult = parseFloat(speedSel.value);
+  });
+
+  soundBtn.addEventListener('click', () => {
+    initAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'SOUND ON' : 'SOUND OFF';
+    if (soundOn && running && !paused) startHeartbeat();
+    else stopHeartbeat();
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+})();
+</script>
+</body>
+</html>

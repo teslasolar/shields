@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>R7 Dual Shield Network</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#e0e0e0;font-family:'Courier New',monospace;overflow:hidden;user-select:none}
+canvas{display:block;position:fixed;top:0;left:0;z-index:0}
+
+#hud{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+
+#top-bar{
+  text-align:center;padding:12px 0 8px;
+  font-size:13px;letter-spacing:6px;color:#c8a050;
+  text-shadow:0 0 20px rgba(255,200,60,0.4);
+  background:linear-gradient(180deg,rgba(6,6,16,0.9) 0%,transparent 100%);
+}
+
+#panel-left,#panel-right{
+  position:absolute;top:80px;width:220px;
+  background:rgba(6,6,16,0.85);border:1px solid rgba(255,200,60,0.15);
+  border-radius:8px;padding:14px;font-size:11px;
+}
+#panel-left{left:16px}
+#panel-right{right:16px}
+
+.panel-title{
+  font-size:14px;letter-spacing:4px;color:#fc0;margin-bottom:12px;
+  text-shadow:0 0 10px rgba(255,200,60,0.5);text-align:center;
+}
+.ring-row{display:flex;align-items:center;margin:3px 0;gap:6px}
+.ring-label{width:24px;font-size:10px;color:#888}
+.ring-bar-bg{flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden}
+.ring-bar-fill{height:100%;border-radius:3px;transition:width 0.3s,background 0.3s}
+.coherence-line{
+  margin-top:10px;text-align:center;font-size:16px;letter-spacing:2px;
+  color:#fc0;text-shadow:0 0 12px rgba(255,200,60,0.4);
+}
+
+#panel-center{
+  position:absolute;top:80px;left:50%;transform:translateX(-50%);
+  width:200px;text-align:center;
+  background:rgba(6,6,16,0.85);border:1px solid rgba(255,200,60,0.15);
+  border-radius:8px;padding:14px;font-size:11px;
+}
+.center-label{color:#888;letter-spacing:2px;margin-bottom:4px;font-size:10px}
+.center-value{color:#fc0;font-size:18px;margin-bottom:10px;text-shadow:0 0 10px rgba(255,200,60,0.4)}
+#r7-status{font-size:12px;letter-spacing:3px;color:#888}
+#fiber-count-display{font-size:12px;color:#aaa;margin-top:4px}
+
+#bottom-bar{
+  position:absolute;bottom:0;left:0;width:100%;
+  text-align:center;padding:8px 0 10px;font-size:11px;
+  color:#666;letter-spacing:3px;
+  background:linear-gradient(0deg,rgba(6,6,16,0.9) 0%,transparent 100%);
+}
+#bottom-bar .prime{color:#c8a050}
+
+#controls{
+  position:absolute;bottom:50px;left:50%;transform:translateX(-50%);
+  display:flex;gap:8px;flex-wrap:wrap;justify-content:center;
+  pointer-events:all;max-width:700px;
+}
+#controls button{
+  background:rgba(255,200,60,0.08);color:#c8a050;
+  border:1px solid rgba(255,200,60,0.25);border-radius:4px;
+  padding:6px 14px;font-family:'Courier New',monospace;font-size:11px;
+  cursor:pointer;letter-spacing:1px;transition:all 0.2s;
+  pointer-events:all;
+}
+#controls button:hover{
+  background:rgba(255,200,60,0.2);border-color:rgba(255,200,60,0.5);
+  box-shadow:0 0 12px rgba(255,200,60,0.2);
+}
+#controls button.active{
+  background:rgba(255,200,60,0.25);border-color:#fc0;color:#fff;
+}
+
+#mm7-flash{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:48px;color:#fff;letter-spacing:8px;
+  text-shadow:0 0 40px rgba(255,200,60,0.8),0 0 80px rgba(255,200,60,0.4);
+  opacity:0;transition:opacity 0.5s;pointer-events:none;z-index:20;
+  font-family:'Courier New',monospace;
+}
+
+#golden-flash{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:radial-gradient(circle,rgba(255,200,60,0.3) 0%,transparent 70%);
+  opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:5;
+}
+</style>
+</head>
+<body>
+
+<div id="golden-flash"></div>
+<div id="mm7-flash">M(M<sub>7</sub>) = 2<sup>127</sup> - 1</div>
+
+<div id="hud">
+  <div id="top-bar">SHIELD-NETWORK &middot; R7 BIOPHOTONIC BUS &middot; LIGHT TO LIGHT</div>
+
+  <div id="panel-left">
+    <div class="panel-title">SHIELD &alpha;</div>
+    <div id="rings-left"></div>
+    <div class="coherence-line" id="coh-left">0%</div>
+  </div>
+
+  <div id="panel-right">
+    <div class="panel-title">SHIELD &beta;</div>
+    <div id="rings-right"></div>
+    <div class="coherence-line" id="coh-right">0%</div>
+  </div>
+
+  <div id="panel-center">
+    <div class="center-label">CONNECTION</div>
+    <div class="center-value" id="conn-str">0%</div>
+    <div id="fiber-count-display">FIBERS: 0</div>
+    <div id="r7-status">R7 &middot; OFFLINE</div>
+  </div>
+
+  <div id="controls">
+    <button onclick="triggerFortress(0)">&#945; FORTRESS</button>
+    <button onclick="triggerBreach(0)">BREACH LEFT</button>
+    <button id="btn-sync" onclick="triggerSync()">SYNC</button>
+    <button onclick="triggerBreach(1)">BREACH RIGHT</button>
+    <button onclick="triggerFortress(1)">&#946; FORTRESS</button>
+    <button id="btn-eye" onclick="toggleEyeGaze()">EYE GAZE</button>
+    <button onclick="triggerLLCascade()">LL CASCADE</button>
+  </div>
+
+  <div id="bottom-bar">
+    <span class="prime">M(M&#8327;) = 2&#185;&#178;&#8311; - 1</span> &middot; 510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ============================================================
+// R7 DUAL SHIELD NETWORK - BIOPHOTONIC BUS VISUALIZATION
+// ============================================================
+
+const RING_BASE_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+const DIM_COUNT = 127;
+const MAX_FIBERS = 50;
+
+// ---- Shield State ----
+class ShieldState {
+  constructor() {
+    this.ringIntegrity = new Float32Array(7).fill(0.5);
+    this.dimIntegrity = new Float32Array(DIM_COUNT);
+    this.coherence = 0;
+    this.llStep = -1;
+    this.llS = 4n;
+    this.llRunning = false;
+    this.mode = 'idle'; // idle, fortress, breach, eyegaze, llcascade
+    this.targetIntegrity = new Float32Array(7).fill(0.5);
+    for (let i = 0; i < DIM_COUNT; i++) this.dimIntegrity[i] = 0.5;
+  }
+
+  computeCoherence() {
+    let sum = 0;
+    for (let i = 0; i < 7; i++) sum += this.ringIntegrity[i];
+    this.coherence = sum / 7;
+    return this.coherence;
+  }
+
+  stepLL() {
+    if (this.llStep < 0) {
+      this.llStep = 0;
+      this.llS = 4n;
+      this.llRunning = true;
+    }
+    if (this.llStep < 125) {
+      const M = (1n << 127n) - 1n;
+      this.llS = (this.llS * this.llS - 2n) % M;
+      this.llStep++;
+      const progress = this.llStep / 125;
+      for (let r = 0; r < 7; r++) {
+        const ringProgress = Math.min(1, progress * 1.2 - r * 0.03);
+        this.targetIntegrity[r] = Math.max(this.targetIntegrity[r], Math.max(0, ringProgress));
+      }
+      if (this.llStep === 125) {
+        const isPrime = this.llS === 0n;
+        if (isPrime) {
+          for (let r = 0; r < 7; r++) this.targetIntegrity[r] = 1.0;
+        }
+        this.llRunning = false;
+        return isPrime;
+      }
+    }
+    return null;
+  }
+
+  update(dt) {
+    for (let r = 0; r < 7; r++) {
+      const diff = this.targetIntegrity[r] - this.ringIntegrity[r];
+      this.ringIntegrity[r] += diff * Math.min(1, dt * 3);
+    }
+    for (let d = 0; d < DIM_COUNT; d++) {
+      const ring = d % 7;
+      this.dimIntegrity[d] = this.ringIntegrity[ring];
+    }
+    this.computeCoherence();
+  }
+}
+
+const shieldA = new ShieldState();
+const shieldB = new ShieldState();
+let eyeGazeMode = false;
+let syncFlashTime = 0;
+let mm7Displayed = false;
+let fullCoherenceAchieved = false;
+
+// ---- Build ring bars in HUD ----
+function buildRingBars(containerId) {
+  const c = document.getElementById(containerId);
+  for (let r = 0; r < 7; r++) {
+    const row = document.createElement('div');
+    row.className = 'ring-row';
+    const hue = RING_BASE_HUES[r];
+    row.innerHTML = `<span class="ring-label">R${r}</span>
+      <div class="ring-bar-bg"><div class="ring-bar-fill" id="${containerId}-r${r}" style="width:50%;background:hsl(${hue},70%,50%)"></div></div>`;
+    c.appendChild(row);
+  }
+}
+buildRingBars('rings-left');
+buildRingBars('rings-right');
+
+// ---- Three.js Setup ----
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060610);
+scene.fog = new THREE.FogExp2(0x060610, 0.04);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 5, 14);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+// ---- Lights ----
+const ambientLight = new THREE.AmbientLight(0x222233, 0.5);
+scene.add(ambientLight);
+const pointLight1 = new THREE.PointLight(0xffcc44, 1.0, 30);
+pointLight1.position.set(-5, 4, 2);
+scene.add(pointLight1);
+const pointLight2 = new THREE.PointLight(0x4488ff, 0.6, 30);
+pointLight2.position.set(5, 4, 2);
+scene.add(pointLight2);
+
+// ---- Orb Construction ----
+const ORB_OFFSET_X = 5.5;
+const orbGroupA = new THREE.Group();
+const orbGroupB = new THREE.Group();
+orbGroupA.position.set(-ORB_OFFSET_X, 0, 0);
+orbGroupB.position.set(ORB_OFFSET_X, 0, 0);
+scene.add(orbGroupA);
+scene.add(orbGroupB);
+
+function createOrbInstanced() {
+  const geo = new THREE.SphereGeometry(0.04, 6, 4);
+  const mat = new THREE.MeshStandardMaterial({
+    roughness: 0.3, metalness: 0.6, transparent: true, opacity: 0.9
+  });
+  const mesh = new THREE.InstancedMesh(geo, mat, DIM_COUNT);
+
+  const dummy = new THREE.Object3D();
+  const colors = [];
+
+  for (let d = 0; d < DIM_COUNT; d++) {
+    const ring = d % 7;
+    const hue = (RING_BASE_HUES[ring] + (Math.floor(d / 7) / 18) * 25) % 360;
+    const radius = 0.6 + (d / 127) * 3.0;
+
+    // golden angle distribution
+    const phi = Math.acos(1 - 2 * (d + 0.5) / DIM_COUNT);
+    const theta = Math.PI * (1 + Math.sqrt(5)) * d;
+
+    dummy.position.set(
+      radius * Math.sin(phi) * Math.cos(theta),
+      radius * Math.sin(phi) * Math.sin(theta),
+      radius * Math.cos(phi)
+    );
+    const scale = 0.6 + (ring / 7) * 0.8;
+    dummy.scale.set(scale, scale, scale);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(d, dummy.matrix);
+
+    const c = new THREE.Color();
+    c.setHSL(hue / 360, 0.7, 0.5);
+    mesh.setColorAt(d, c);
+  }
+
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+  return mesh;
+}
+
+const orbMeshA = createOrbInstanced();
+const orbMeshB = createOrbInstanced();
+orbGroupA.add(orbMeshA);
+orbGroupB.add(orbMeshB);
+
+// ---- Core glow for each orb ----
+function createCoreGlow() {
+  const geo = new THREE.SphereGeometry(0.5, 16, 12);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffcc44, transparent: true, opacity: 0.15
+  });
+  return new THREE.Mesh(geo, mat);
+}
+const coreA = createCoreGlow();
+const coreB = createCoreGlow();
+orbGroupA.add(coreA);
+orbGroupB.add(coreB);
+
+// ---- Fiber Connection System ----
+const fiberGroup = new THREE.Group();
+scene.add(fiberGroup);
+
+let activeFibers = [];
+const fiberMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffcc00, transparent: true, opacity: 0.6,
+  blending: THREE.AdditiveBlending
+});
+
+function createFiber(index, total) {
+  const ySpread = 2.5;
+  const zSpread = 2.5;
+  const t = total > 1 ? index / (total - 1) : 0.5;
+  const angle = (index / Math.max(total, 1)) * Math.PI * 2;
+
+  // surface points on orbs
+  const surfR = 2.0;
+  const leftPt = new THREE.Vector3(
+    -ORB_OFFSET_X + surfR * Math.cos(angle) * 0.3,
+    Math.sin(angle) * ySpread * 0.4,
+    Math.cos(angle * 1.7) * zSpread * 0.3
+  );
+  const rightPt = new THREE.Vector3(
+    ORB_OFFSET_X - surfR * Math.cos(angle + 0.5) * 0.3,
+    Math.sin(angle + 1) * ySpread * 0.4,
+    Math.cos(angle * 1.3 + 2) * zSpread * 0.3
+  );
+
+  // control points for curve
+  const midY = (Math.random() - 0.5) * 1.5;
+  const midZ = (Math.random() - 0.5) * 1.5;
+  const ctrl1 = new THREE.Vector3(-ORB_OFFSET_X * 0.4, midY * 0.7, midZ * 0.7);
+  const ctrl2 = new THREE.Vector3(0, midY, midZ);
+  const ctrl3 = new THREE.Vector3(ORB_OFFSET_X * 0.4, midY * 0.7, midZ * 0.7);
+
+  const curve = new THREE.CatmullRomCurve3([leftPt, ctrl1, ctrl2, ctrl3, rightPt]);
+  const tubeGeo = new THREE.TubeGeometry(curve, 32, 0.015 + Math.random() * 0.015, 4, false);
+  const mat = fiberMaterial.clone();
+  const mesh = new THREE.Mesh(tubeGeo, mat);
+
+  return { mesh, curve, phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 1.5 };
+}
+
+// ---- Fiber Particles ----
+const PARTICLE_COUNT = 200;
+const particleGeo = new THREE.BufferGeometry();
+const particlePositions = new Float32Array(PARTICLE_COUNT * 3);
+const particleAlphas = new Float32Array(PARTICLE_COUNT);
+particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+const particleMat = new THREE.PointsMaterial({
+  color: 0xffdd44, size: 0.06, transparent: true, opacity: 0.8,
+  blending: THREE.AdditiveBlending, sizeAttenuation: true
+});
+const particleSystem = new THREE.Points(particleGeo, particleMat);
+scene.add(particleSystem);
+
+// particle state
+const particleData = [];
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  particleData.push({
+    fiberIdx: 0, t: Math.random(), speed: 0.1 + Math.random() * 0.3,
+    alive: false
+  });
+}
+
+// ---- Update Orb Visuals ----
+const tempColor = new THREE.Color();
+const tempMatrix = new THREE.Matrix4();
+const tempPos = new THREE.Vector3();
+const tempQuat = new THREE.Quaternion();
+const tempScale = new THREE.Vector3();
+
+function updateOrbVisuals(mesh, shield, time) {
+  for (let d = 0; d < DIM_COUNT; d++) {
+    const ring = d % 7;
+    const integrity = shield.dimIntegrity[d];
+    const hue = (RING_BASE_HUES[ring] + (Math.floor(d / 7) / 18) * 25) % 360;
+
+    // color based on integrity
+    const sat = 0.3 + integrity * 0.5;
+    const lum = 0.15 + integrity * 0.45;
+    tempColor.setHSL(hue / 360, sat, lum);
+    mesh.setColorAt(d, tempColor);
+
+    // pulse scale
+    mesh.getMatrixAt(d, tempMatrix);
+    tempMatrix.decompose(tempPos, tempQuat, tempScale);
+    const baseScale = 0.6 + (ring / 7) * 0.8;
+    const pulse = 1 + Math.sin(time * 2 + d * 0.3) * 0.1 * integrity;
+    const s = baseScale * (0.4 + integrity * 0.6) * pulse;
+    tempScale.set(s, s, s);
+    tempMatrix.compose(tempPos, tempQuat, tempScale);
+    mesh.setMatrixAt(d, tempMatrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+}
+
+// ---- Audio System ----
+let audioCtx = null;
+let audioGain = null;
+const activeOscs = { left: [], right: [], connection: null };
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioGain = audioCtx.createGain();
+  audioGain.gain.value = 0.06;
+  audioGain.connect(audioCtx.destination);
+}
+
+function playRingTone(side, ring, intensity, duration) {
+  if (!audioCtx) initAudio();
+  const hz = RING_HZ[ring] * (side === 1 ? 1.003 : 1); // slight detune for right
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = hz;
+  gain.gain.setValueAtTime(0.03 * intensity, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (duration || 1));
+  osc.connect(gain);
+  gain.connect(audioGain);
+  osc.start();
+  osc.stop(audioCtx.currentTime + (duration || 1));
+}
+
+function playConnectionChime() {
+  if (!audioCtx) initAudio();
+  [330, 440, 550, 660].forEach((hz, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+    gain.gain.setValueAtTime(0, audioCtx.currentTime + i * 0.1);
+    gain.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + i * 0.1 + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.1 + 1.5);
+    osc.connect(gain);
+    gain.connect(audioGain);
+    osc.start(audioCtx.currentTime + i * 0.1);
+    osc.stop(audioCtx.currentTime + i * 0.1 + 1.5);
+  });
+}
+
+function playHarmonicChord() {
+  if (!audioCtx) initAudio();
+  // major chord resolution: C E G B
+  [261.63, 329.63, 392.00, 493.88, 523.25].forEach((hz, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3);
+    osc.connect(gain);
+    gain.connect(audioGain);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 3);
+  });
+}
+
+function playBreachSound(side) {
+  if (!audioCtx) initAudio();
+  // dissonant cluster
+  const baseHz = side === 0 ? 100 : 103;
+  [baseHz, baseHz * 1.07, baseHz * 2.13, baseHz * 3.41].forEach(hz => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = hz;
+    gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+    osc.connect(gain);
+    gain.connect(audioGain);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.8);
+  });
+}
+
+// ---- Controls ----
+function triggerFortress(side) {
+  initAudio();
+  const shield = side === 0 ? shieldA : shieldB;
+  shield.mode = 'fortress';
+  for (let r = 0; r < 7; r++) {
+    shield.targetIntegrity[r] = 1.0;
+    playRingTone(side, r, 0.7, 0.6);
+  }
+}
+
+function triggerBreach(side) {
+  initAudio();
+  const shield = side === 0 ? shieldA : shieldB;
+  shield.mode = 'breach';
+  fullCoherenceAchieved = false;
+  mm7Displayed = false;
+  // random ring damage
+  for (let r = 0; r < 7; r++) {
+    shield.targetIntegrity[r] = Math.random() * 0.3;
+  }
+  playBreachSound(side);
+}
+
+function triggerSync() {
+  initAudio();
+  shieldA.mode = 'fortress';
+  shieldB.mode = 'fortress';
+  for (let r = 0; r < 7; r++) {
+    shieldA.targetIntegrity[r] = 1.0;
+    shieldB.targetIntegrity[r] = 1.0;
+  }
+  playConnectionChime();
+}
+
+function toggleEyeGaze() {
+  initAudio();
+  eyeGazeMode = !eyeGazeMode;
+  document.getElementById('btn-eye').classList.toggle('active', eyeGazeMode);
+  if (eyeGazeMode) {
+    shieldA.mode = 'eyegaze';
+    shieldB.mode = 'eyegaze';
+  } else {
+    shieldA.mode = 'idle';
+    shieldB.mode = 'idle';
+  }
+}
+
+let llCascadeActive = false;
+let llTimer = 0;
+function triggerLLCascade() {
+  initAudio();
+  shieldA.llStep = -1;
+  shieldB.llStep = -1;
+  shieldA.llRunning = false;
+  shieldB.llRunning = false;
+  llCascadeActive = true;
+  llTimer = 0;
+  fullCoherenceAchieved = false;
+  mm7Displayed = false;
+  shieldA.mode = 'llcascade';
+  shieldB.mode = 'llcascade';
+  // start from low
+  for (let r = 0; r < 7; r++) {
+    shieldA.targetIntegrity[r] = 0.1;
+    shieldB.targetIntegrity[r] = 0.1;
+    shieldA.ringIntegrity[r] = 0.1;
+    shieldB.ringIntegrity[r] = 0.1;
+  }
+}
+
+// make controls available globally
+window.triggerFortress = triggerFortress;
+window.triggerBreach = triggerBreach;
+window.triggerSync = triggerSync;
+window.toggleEyeGaze = toggleEyeGaze;
+window.triggerLLCascade = triggerLLCascade;
+
+// ---- Camera Controls ----
+let camTheta = 0, camPhi = 0.4, camDist = 16;
+let isDragging = false, lastMX = 0, lastMY = 0;
+let autoOrbit = true;
+
+renderer.domElement.addEventListener('mousedown', e => {
+  isDragging = true;
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+  autoOrbit = false;
+});
+renderer.domElement.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  camTheta -= (e.clientX - lastMX) * 0.005;
+  camPhi = Math.max(-0.8, Math.min(1.2, camPhi + (e.clientY - lastMY) * 0.005));
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+});
+renderer.domElement.addEventListener('mouseup', () => { isDragging = false; });
+renderer.domElement.addEventListener('wheel', e => {
+  camDist = Math.max(6, Math.min(30, camDist + e.deltaY * 0.01));
+  e.preventDefault();
+}, { passive: false });
+
+// touch
+renderer.domElement.addEventListener('touchstart', e => {
+  isDragging = true;
+  lastMX = e.touches[0].clientX;
+  lastMY = e.touches[0].clientY;
+  autoOrbit = false;
+}, { passive: true });
+renderer.domElement.addEventListener('touchmove', e => {
+  if (!isDragging || !e.touches.length) return;
+  camTheta -= (e.touches[0].clientX - lastMX) * 0.005;
+  camPhi = Math.max(-0.8, Math.min(1.2, camPhi + (e.touches[0].clientY - lastMY) * 0.005));
+  lastMX = e.touches[0].clientX;
+  lastMY = e.touches[0].clientY;
+}, { passive: true });
+renderer.domElement.addEventListener('touchend', () => { isDragging = false; });
+
+// ---- Resize ----
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---- Update HUD ----
+function updateHUD() {
+  for (let r = 0; r < 7; r++) {
+    const hue = RING_BASE_HUES[r];
+    const barL = document.getElementById('rings-left-r' + r);
+    const barR = document.getElementById('rings-right-r' + r);
+    barL.style.width = (shieldA.ringIntegrity[r] * 100) + '%';
+    barR.style.width = (shieldB.ringIntegrity[r] * 100) + '%';
+    const lumL = 30 + shieldA.ringIntegrity[r] * 40;
+    const lumR = 30 + shieldB.ringIntegrity[r] * 40;
+    barL.style.background = `hsl(${hue},70%,${lumL}%)`;
+    barR.style.background = `hsl(${hue},70%,${lumR}%)`;
+  }
+
+  document.getElementById('coh-left').textContent = (shieldA.coherence * 100).toFixed(1) + '%';
+  document.getElementById('coh-right').textContent = (shieldB.coherence * 100).toFixed(1) + '%';
+
+  const connStr = Math.min(shieldA.coherence, shieldB.coherence);
+  document.getElementById('conn-str').textContent = (connStr * 100).toFixed(1) + '%';
+  document.getElementById('fiber-count-display').textContent = 'FIBERS: ' + activeFibers.length;
+
+  const r7El = document.getElementById('r7-status');
+  if (connStr > 0.9) {
+    r7El.textContent = 'R7 \u00B7 COHERENT';
+    r7El.style.color = '#fc0';
+  } else if (connStr > 0.3) {
+    r7El.textContent = 'R7 \u00B7 PARTIAL';
+    r7El.style.color = '#886';
+  } else {
+    r7El.textContent = 'R7 \u00B7 OFFLINE';
+    r7El.style.color = '#666';
+  }
+}
+
+// ---- Manage Fibers ----
+function manageFibers(targetCount) {
+  // remove excess
+  while (activeFibers.length > targetCount) {
+    const f = activeFibers.pop();
+    fiberGroup.remove(f.mesh);
+    f.mesh.geometry.dispose();
+    f.mesh.material.dispose();
+  }
+  // add needed
+  while (activeFibers.length < targetCount) {
+    const f = createFiber(activeFibers.length, targetCount);
+    fiberGroup.add(f.mesh);
+    activeFibers.push(f);
+  }
+}
+
+// ---- Main Loop ----
+let prevTime = performance.now();
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime = now;
+  const time = clock.getElapsedTime();
+
+  // ---- Eye Gaze mode: slow convergence ----
+  if (eyeGazeMode) {
+    for (let r = 0; r < 7; r++) {
+      shieldA.targetIntegrity[r] = Math.min(1, shieldA.targetIntegrity[r] + dt * 0.04 * (1 + r * 0.02));
+      shieldB.targetIntegrity[r] = Math.min(1, shieldB.targetIntegrity[r] + dt * 0.04 * (1 + r * 0.02));
+    }
+  }
+
+  // ---- LL Cascade ----
+  if (llCascadeActive) {
+    llTimer += dt;
+    if (llTimer > 0.03) {
+      llTimer = 0;
+      const rA = shieldA.stepLL();
+      const rB = shieldB.stepLL();
+      if (rA !== null || rB !== null) {
+        llCascadeActive = false;
+        if (rA === true && rB === true) {
+          // both reached S5=0 (M127 is prime)
+          for (let r = 0; r < 7; r++) {
+            shieldA.targetIntegrity[r] = 1.0;
+            shieldB.targetIntegrity[r] = 1.0;
+            playRingTone(0, r, 1, 1.5);
+            playRingTone(1, r, 1, 1.5);
+          }
+        }
+      }
+    }
+  }
+
+  // ---- Update shield states ----
+  shieldA.update(dt);
+  shieldB.update(dt);
+
+  // ---- Orb rotation ----
+  orbGroupA.rotation.y += dt * 0.15;
+  orbGroupA.rotation.x = Math.sin(time * 0.3) * 0.1;
+  orbGroupB.rotation.y -= dt * 0.15;
+  orbGroupB.rotation.x = Math.sin(time * 0.3 + 1) * 0.1;
+
+  // ---- Update orb visuals ----
+  updateOrbVisuals(orbMeshA, shieldA, time);
+  updateOrbVisuals(orbMeshB, shieldB, time);
+
+  // ---- Core glow ----
+  coreA.material.opacity = 0.1 + shieldA.coherence * 0.3;
+  coreA.scale.setScalar(0.8 + shieldA.coherence * 0.8 + Math.sin(time * 3) * 0.1);
+  coreB.material.opacity = 0.1 + shieldB.coherence * 0.3;
+  coreB.scale.setScalar(0.8 + shieldB.coherence * 0.8 + Math.sin(time * 3 + 1.5) * 0.1);
+
+  // ---- Fiber management ----
+  const connStrength = Math.min(shieldA.coherence, shieldB.coherence);
+  const targetFiberCount = Math.floor(connStrength * connStrength * MAX_FIBERS);
+  manageFibers(targetFiberCount);
+
+  // ---- Fiber animation ----
+  for (let i = 0; i < activeFibers.length; i++) {
+    const f = activeFibers[i];
+    const pulse = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * f.speed + f.phase));
+    f.mesh.material.opacity = connStrength * pulse * 0.8;
+
+    // color shift: more gold when strong, white at peak
+    const whiteness = connStrength * connStrength;
+    const r = 1.0;
+    const g = 0.8 + whiteness * 0.2;
+    const b = 0.0 + whiteness * 0.8;
+    f.mesh.material.color.setRGB(r, g, b);
+  }
+
+  // ---- Particles along fibers ----
+  let aliveCount = 0;
+  const maxAlive = Math.floor(connStrength * PARTICLE_COUNT);
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const p = particleData[i];
+    if (aliveCount < maxAlive && activeFibers.length > 0) {
+      p.alive = true;
+      p.fiberIdx = p.fiberIdx % activeFibers.length;
+      p.t += p.speed * dt;
+      if (p.t > 1) {
+        p.t -= 1;
+        p.fiberIdx = Math.floor(Math.random() * activeFibers.length);
+      }
+      const fiber = activeFibers[p.fiberIdx];
+      if (fiber) {
+        const pt = fiber.curve.getPoint(p.t);
+        particlePositions[i * 3] = pt.x;
+        particlePositions[i * 3 + 1] = pt.y;
+        particlePositions[i * 3 + 2] = pt.z;
+      }
+      aliveCount++;
+    } else {
+      p.alive = false;
+      particlePositions[i * 3] = 0;
+      particlePositions[i * 3 + 1] = -100; // hide
+      particlePositions[i * 3 + 2] = 0;
+    }
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+  particleMat.opacity = connStrength * 0.9;
+
+  // ---- Full coherence check ----
+  if (shieldA.coherence > 0.98 && shieldB.coherence > 0.98 && !fullCoherenceAchieved) {
+    fullCoherenceAchieved = true;
+    syncFlashTime = time;
+    playHarmonicChord();
+
+    // golden flash
+    const flashEl = document.getElementById('golden-flash');
+    flashEl.style.opacity = '1';
+    setTimeout(() => { flashEl.style.opacity = '0'; }, 800);
+
+    // M(M7) display
+    if (!mm7Displayed) {
+      mm7Displayed = true;
+      const mm7El = document.getElementById('mm7-flash');
+      mm7El.style.opacity = '1';
+      setTimeout(() => { mm7El.style.opacity = '0'; }, 3000);
+    }
+  }
+
+  // reset coherence flag if either drops
+  if (shieldA.coherence < 0.9 || shieldB.coherence < 0.9) {
+    fullCoherenceAchieved = false;
+    mm7Displayed = false;
+  }
+
+  // ---- Point lights follow coherence ----
+  pointLight1.intensity = 0.3 + shieldA.coherence * 1.5;
+  pointLight1.color.setHSL(0.12, 0.8, 0.3 + shieldA.coherence * 0.3);
+  pointLight2.intensity = 0.3 + shieldB.coherence * 1.5;
+  pointLight2.color.setHSL(0.12, 0.8, 0.3 + shieldB.coherence * 0.3);
+
+  // ---- Camera ----
+  if (autoOrbit) {
+    camTheta += dt * 0.08;
+  }
+  camera.position.set(
+    Math.sin(camTheta) * Math.cos(camPhi) * camDist,
+    Math.sin(camPhi) * camDist,
+    Math.cos(camTheta) * Math.cos(camPhi) * camDist
+  );
+  camera.lookAt(0, 0, 0);
+
+  // ---- Update HUD ----
+  updateHUD();
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ---- Initial slow build ----
+setTimeout(() => {
+  for (let r = 0; r < 7; r++) {
+    shieldA.targetIntegrity[r] = 0.3 + Math.random() * 0.3;
+    shieldB.targetIntegrity[r] = 0.3 + Math.random() * 0.3;
+  }
+}, 500);
+</script>
+</body>
+</html>

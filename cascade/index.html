@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-CASCADE - Lucas-Lehmer Recursion Visualizer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0d8f0;font-family:'Courier New',monospace;overflow:hidden;width:100vw;height:100vh}
+#top-bar{position:fixed;top:0;left:0;right:0;height:44px;background:linear-gradient(180deg,rgba(10,14,30,0.95),rgba(6,6,16,0.9));border-bottom:1px solid rgba(80,160,255,0.2);display:flex;align-items:center;justify-content:center;z-index:100;letter-spacing:2px;font-size:13px;color:#7ab8f0;text-shadow:0 0 12px rgba(80,160,255,0.4)}
+#top-bar span.sep{color:rgba(80,160,255,0.3);margin:0 10px}
+#bottom-bar{position:fixed;bottom:0;left:0;right:0;height:36px;background:linear-gradient(0deg,rgba(10,14,30,0.95),rgba(6,6,16,0.9));border-top:1px solid rgba(80,160,255,0.15);display:flex;align-items:center;justify-content:center;z-index:100;font-size:11px;color:rgba(120,160,200,0.5);letter-spacing:3px}
+#canvas-container{position:fixed;top:44px;left:0;right:0;bottom:36px}
+canvas{display:block}
+
+#left-panel{position:fixed;top:60px;left:16px;width:280px;z-index:50;pointer-events:none}
+.panel-box{background:rgba(8,12,24,0.85);border:1px solid rgba(80,160,255,0.15);border-radius:6px;padding:14px 16px;margin-bottom:10px;backdrop-filter:blur(8px);pointer-events:auto}
+.panel-title{font-size:10px;letter-spacing:3px;color:rgba(120,180,255,0.5);margin-bottom:10px;text-transform:uppercase}
+.ll-step{display:flex;align-items:center;padding:5px 8px;margin:2px 0;border-radius:4px;font-size:13px;transition:all 0.3s ease}
+.ll-step.active{background:rgba(80,160,255,0.15);color:#fff;text-shadow:0 0 8px rgba(100,180,255,0.5)}
+.ll-step.completed{color:rgba(100,200,140,0.8)}
+.ll-step.completed .check{color:#50d890;margin-right:6px}
+.ll-step.pending{color:rgba(120,140,170,0.4)}
+.ll-step .idx{color:rgba(80,160,255,0.6);margin-right:8px;min-width:24px}
+.ll-step .val{flex:1}
+.ll-step .tag{font-size:10px;color:#f0c040;margin-left:6px;opacity:0;transition:opacity 0.5s}
+.ll-step.coherent .tag{opacity:1;text-shadow:0 0 10px rgba(240,192,64,0.6)}
+
+#math-display{position:fixed;top:60px;right:16px;width:300px;z-index:50;pointer-events:none}
+.math-box{background:rgba(8,12,24,0.85);border:1px solid rgba(80,160,255,0.15);border-radius:6px;padding:14px 16px;backdrop-filter:blur(8px)}
+.math-line{font-size:12px;padding:3px 0;color:rgba(160,190,220,0.7);transition:all 0.3s}
+.math-line.active{color:#e0f0ff;text-shadow:0 0 6px rgba(100,180,255,0.3)}
+.math-line.result{color:#f0c040;text-shadow:0 0 8px rgba(240,192,64,0.3)}
+.math-formula{font-size:14px;color:rgba(120,180,255,0.8);padding:6px 0;margin-bottom:8px;border-bottom:1px solid rgba(80,160,255,0.1)}
+
+#binary-overlay{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) translateY(160px);z-index:50;font-size:22px;letter-spacing:4px;color:rgba(80,200,255,0.7);text-shadow:0 0 15px rgba(80,200,255,0.3);opacity:0;transition:opacity 0.4s;pointer-events:none}
+#binary-overlay.visible{opacity:1}
+
+#controls{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);z-index:100;display:flex;align-items:center;gap:10px;background:rgba(8,12,24,0.9);border:1px solid rgba(80,160,255,0.15);border-radius:8px;padding:8px 16px;backdrop-filter:blur(8px)}
+.ctrl-btn{background:rgba(40,60,100,0.3);border:1px solid rgba(80,160,255,0.25);color:#7ab8f0;padding:5px 12px;border-radius:4px;font-family:'Courier New',monospace;font-size:11px;cursor:pointer;transition:all 0.2s;letter-spacing:1px}
+.ctrl-btn:hover{background:rgba(60,100,160,0.3);border-color:rgba(80,160,255,0.5)}
+.ctrl-btn.active{background:rgba(80,160,255,0.2);border-color:rgba(80,160,255,0.6);color:#fff}
+.ctrl-label{font-size:10px;color:rgba(120,160,200,0.5);letter-spacing:1px}
+#speed-slider{-webkit-appearance:none;width:100px;height:3px;background:rgba(80,160,255,0.2);border-radius:2px;outline:none}
+#speed-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#4090d0;border-radius:50%;cursor:pointer}
+#speed-val{font-size:11px;color:#7ab8f0;min-width:32px;text-align:center}
+
+#flash-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(circle,rgba(255,240,180,0.6),rgba(255,200,60,0.1),transparent 70%);opacity:0;pointer-events:none;z-index:200;transition:opacity 0.1s}
+
+#status-indicator{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:50;font-size:11px;letter-spacing:3px;padding:4px 16px;border-radius:12px;background:rgba(8,12,24,0.8);border:1px solid rgba(80,160,255,0.2);transition:all 0.5s}
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  SHIELD-CASCADE<span class="sep">&middot;</span>LUCAS-LEHMER RECURSION<span class="sep">&middot;</span>M&#x2087; = 2&#x2077;-1
+</div>
+
+<div id="bottom-bar">510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</div>
+
+<div id="canvas-container"></div>
+
+<div id="left-panel">
+  <div class="panel-box">
+    <div class="panel-title">Lucas-Lehmer Sequence</div>
+    <div id="ll-steps"></div>
+  </div>
+</div>
+
+<div id="math-display">
+  <div class="math-box">
+    <div class="panel-title">Primality Computation</div>
+    <div class="math-formula">S(n+1) = S(n)&sup2; - 2 mod 127</div>
+    <div id="math-steps"></div>
+  </div>
+</div>
+
+<div id="binary-overlay"></div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="btn-play" title="Play/Pause">&#9654; PLAY</button>
+  <button class="ctrl-btn" id="btn-step" title="Step mode">STEP</button>
+  <button class="ctrl-btn" id="btn-reset" title="Reset">RESET</button>
+  <div style="width:1px;height:20px;background:rgba(80,160,255,0.15);margin:0 4px"></div>
+  <span class="ctrl-label">SPEED</span>
+  <input type="range" id="speed-slider" min="0.25" max="4" step="0.25" value="1">
+  <span id="speed-val">1.0x</span>
+  <div style="width:1px;height:20px;background:rgba(80,160,255,0.15);margin:0 4px"></div>
+  <button class="ctrl-btn" id="btn-binary" title="Binary overlay">BIN</button>
+</div>
+
+<div id="flash-overlay"></div>
+<div id="status-indicator">INITIALIZING</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+// ── Constants ──
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = 2 * Math.PI;
+const LL_SEQUENCE = [4, 14, 67, 42, 111, 0];
+const RING_BASE_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+const TOTAL_DIMS = 127;
+
+// ── State ──
+let playing = true;
+let stepMode = false;
+let stepRequested = false;
+let speedMultiplier = 1.0;
+let showBinary = false;
+let currentPhase = 'expand';  // expand | cascade | coherence | pause
+let expandProgress = 0;
+let cascadeStep = -1;
+let cascadeStepTimer = 0;
+let waveTime = 0;
+let coherenceTimer = 0;
+let pauseTimer = 0;
+let globalTime = 0;
+let audioCtx = null;
+let audioStarted = false;
+let droneGain = null;
+let droneOscs = [];
+
+// ── Wave state ──
+const waves = [];
+
+// ── DOM refs ──
+const container = document.getElementById('canvas-container');
+const flashOverlay = document.getElementById('flash-overlay');
+const statusEl = document.getElementById('status-indicator');
+const binaryEl = document.getElementById('binary-overlay');
+const speedSlider = document.getElementById('speed-slider');
+const speedVal = document.getElementById('speed-val');
+const btnPlay = document.getElementById('btn-play');
+const btnStep = document.getElementById('btn-step');
+const btnReset = document.getElementById('btn-reset');
+const btnBinary = document.getElementById('btn-binary');
+const llStepsEl = document.getElementById('ll-steps');
+const mathStepsEl = document.getElementById('math-steps');
+
+// ── Build LL step display ──
+function buildLLDisplay() {
+  llStepsEl.innerHTML = '';
+  for (let i = 0; i < LL_SEQUENCE.length; i++) {
+    const div = document.createElement('div');
+    div.className = 'll-step pending';
+    div.id = 'll-step-' + i;
+    const subscript = String.fromCharCode(0x2080 + i);
+    div.innerHTML = '<span class="check">&nbsp;</span>' +
+      '<span class="idx">S' + subscript + '</span>' +
+      '<span class="val">= ' + LL_SEQUENCE[i] + '</span>' +
+      '<span class="tag">' + (i === 5 ? '&#8592; COHERENT' : '') + '</span>';
+    llStepsEl.appendChild(div);
+  }
+}
+buildLLDisplay();
+
+function updateLLDisplay(activeIdx) {
+  for (let i = 0; i < LL_SEQUENCE.length; i++) {
+    const el = document.getElementById('ll-step-' + i);
+    el.className = 'll-step';
+    const checkEl = el.querySelector('.check');
+    if (i < activeIdx) {
+      el.classList.add('completed');
+      checkEl.innerHTML = '&#10003;';
+    } else if (i === activeIdx) {
+      el.classList.add('active');
+      checkEl.innerHTML = '&#9654;';
+      if (i === 5 && LL_SEQUENCE[i] === 0) el.classList.add('coherent');
+    } else {
+      el.classList.add('pending');
+      checkEl.innerHTML = '&nbsp;';
+    }
+  }
+}
+
+function updateMathDisplay(stepIdx) {
+  mathStepsEl.innerHTML = '';
+  if (stepIdx < 0) return;
+
+  for (let i = 0; i <= Math.min(stepIdx, 4); i++) {
+    const sn = LL_SEQUENCE[i];
+    const sq = sn * sn;
+    const minus2 = sq - 2;
+    const result = LL_SEQUENCE[i + 1];
+    const isActive = (i === stepIdx || (stepIdx >= 5 && i === 4));
+
+    const lines = [
+      { text: `S(${i}) = ${sn}`, cls: '' },
+      { text: `S(${i})\u00B2 = ${sn}\u00B2 = ${sq}`, cls: '' },
+      { text: `${sq} - 2 = ${minus2}`, cls: '' },
+      { text: `${minus2} mod 127 = ${result}`, cls: result === 0 ? 'result' : '' },
+    ];
+
+    lines.forEach(l => {
+      const div = document.createElement('div');
+      div.className = 'math-line' + (isActive ? ' active' : '') + (l.cls ? ' ' + l.cls : '');
+      div.textContent = l.text;
+      mathStepsEl.appendChild(div);
+    });
+
+    if (i <= 3 && i < stepIdx) {
+      const spacer = document.createElement('div');
+      spacer.style.height = '6px';
+      mathStepsEl.appendChild(spacer);
+    }
+  }
+
+  if (stepIdx >= 5) {
+    const div = document.createElement('div');
+    div.className = 'math-line result';
+    div.style.marginTop = '10px';
+    div.style.fontSize = '13px';
+    div.textContent = 'S\u2085 = 0  \u2234  M\u2087 = 127 is PRIME';
+    mathStepsEl.appendChild(div);
+  }
+}
+
+function updateBinaryOverlay(stepIdx) {
+  if (!showBinary || stepIdx < 0 || stepIdx >= LL_SEQUENCE.length) {
+    binaryEl.classList.remove('visible');
+    return;
+  }
+  const val = LL_SEQUENCE[stepIdx];
+  const bin = val.toString(2).padStart(7, '0');
+  const colored = bin.split('').map(b =>
+    b === '1' ? '<span style="color:#60d0ff">' + b + '</span>'
+              : '<span style="color:rgba(80,120,160,0.4)">' + b + '</span>'
+  ).join('');
+  binaryEl.innerHTML = colored;
+  binaryEl.classList.add('visible');
+}
+
+// ── Three.js Setup ──
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x060610, 0.06);
+
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+camera.position.set(0, 0.5, 6.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x060610, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+// ── Lighting ──
+const ambientLight = new THREE.AmbientLight(0x1a2a4a, 0.6);
+scene.add(ambientLight);
+
+const pointLight1 = new THREE.PointLight(0x4080ff, 1.5, 20);
+pointLight1.position.set(3, 3, 3);
+scene.add(pointLight1);
+
+const pointLight2 = new THREE.PointLight(0x2060c0, 1.0, 20);
+pointLight2.position.set(-3, -2, 2);
+scene.add(pointLight2);
+
+const coreLight = new THREE.PointLight(0x80c0ff, 2.0, 8);
+coreLight.position.set(0, 0, 0);
+scene.add(coreLight);
+
+// ── Shell geometry (InstancedMesh) ──
+const shellGeometry = new THREE.IcosahedronGeometry(1, 2);
+const shellMaterial = new THREE.MeshPhongMaterial({
+  transparent: true,
+  opacity: 0.15,
+  wireframe: true,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+
+const instancedShells = new THREE.InstancedMesh(shellGeometry, shellMaterial, TOTAL_DIMS);
+scene.add(instancedShells);
+
+// Shell data arrays
+const shellBaseRadius = new Float32Array(TOTAL_DIMS);
+const shellCurrentRadius = new Float32Array(TOTAL_DIMS);
+const shellHue = new Float32Array(TOTAL_DIMS);
+const shellIntensity = new Float32Array(TOTAL_DIMS);
+const shellVisible = new Float32Array(TOTAL_DIMS);
+const dummy = new THREE.Object3D();
+const tempColor = new THREE.Color();
+
+for (let i = 0; i < TOTAL_DIMS; i++) {
+  const ring = i % 7;
+  const hue = (RING_BASE_HUES[ring] + (Math.floor(i / 7) / 18) * 25) % 360;
+  shellHue[i] = hue;
+  shellBaseRadius[i] = 0.6 + (i / 127) * 3.0;
+  shellCurrentRadius[i] = shellBaseRadius[i];
+  shellIntensity[i] = 0;
+  shellVisible[i] = 0;
+}
+
+// Core glow sphere
+const coreGeom = new THREE.SphereGeometry(0.35, 32, 32);
+const coreMat = new THREE.MeshBasicMaterial({
+  color: 0x3070c0,
+  transparent: true,
+  opacity: 0.4,
+  blending: THREE.AdditiveBlending
+});
+const coreMesh = new THREE.Mesh(coreGeom, coreMat);
+scene.add(coreMesh);
+
+// Inner glow
+const glowGeom = new THREE.SphereGeometry(0.55, 32, 32);
+const glowMat = new THREE.MeshBasicMaterial({
+  color: 0x2050a0,
+  transparent: true,
+  opacity: 0.15,
+  blending: THREE.AdditiveBlending
+});
+const glowMesh = new THREE.Mesh(glowGeom, glowMat);
+scene.add(glowMesh);
+
+// ── Particle ring ──
+const particleCount = 2000;
+const particleGeom = new THREE.BufferGeometry();
+const particlePositions = new Float32Array(particleCount * 3);
+const particleSpeeds = new Float32Array(particleCount);
+const particleRadii = new Float32Array(particleCount);
+const particleAngles = new Float32Array(particleCount);
+const particleYs = new Float32Array(particleCount);
+
+for (let i = 0; i < particleCount; i++) {
+  particleRadii[i] = 0.8 + Math.random() * 3.5;
+  particleAngles[i] = Math.random() * TAU;
+  particleYs[i] = (Math.random() - 0.5) * 2.5;
+  particleSpeeds[i] = (0.1 + Math.random() * 0.3) * (Math.random() > 0.5 ? 1 : -1);
+  const a = particleAngles[i];
+  const r = particleRadii[i];
+  particlePositions[i * 3] = Math.cos(a) * r;
+  particlePositions[i * 3 + 1] = particleYs[i];
+  particlePositions[i * 3 + 2] = Math.sin(a) * r;
+}
+
+particleGeom.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+const particleMat = new THREE.PointsMaterial({
+  size: 0.02,
+  color: 0x4080c0,
+  transparent: true,
+  opacity: 0.4,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+const particleSystem = new THREE.Points(particleGeom, particleMat);
+scene.add(particleSystem);
+
+// ── Update instanced shells ──
+function updateShells() {
+  for (let i = 0; i < TOTAL_DIMS; i++) {
+    const r = shellCurrentRadius[i];
+    const vis = shellVisible[i];
+
+    dummy.position.set(0, 0, 0);
+    dummy.scale.setScalar(vis > 0.01 ? r : 0.001);
+    dummy.rotation.set(
+      globalTime * 0.05 + i * 0.02,
+      globalTime * 0.03 + i * 0.015,
+      i * 0.01
+    );
+    dummy.updateMatrix();
+    instancedShells.setMatrixAt(i, dummy.matrix);
+
+    const h = shellHue[i] / 360;
+    const intensity = shellIntensity[i];
+    const baseSat = 0.7;
+    const baseLight = 0.15 + intensity * 0.5;
+    tempColor.setHSL(h, baseSat, Math.min(baseLight, 0.9));
+    instancedShells.setColorAt(i, tempColor);
+  }
+  instancedShells.instanceMatrix.needsUpdate = true;
+  if (instancedShells.instanceColor) instancedShells.instanceColor.needsUpdate = true;
+}
+
+// ── Audio ──
+function initAudio() {
+  if (audioStarted) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioStarted = true;
+
+  // Ambient drone
+  droneGain = audioCtx.createGain();
+  droneGain.gain.value = 0.015;
+  droneGain.connect(audioCtx.destination);
+
+  [55, 82.5].forEach(freq => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.5;
+    osc.connect(g);
+    g.connect(droneGain);
+    osc.start();
+    droneOscs.push(osc);
+  });
+}
+
+function playLLChord(stepIdx) {
+  if (!audioCtx) return;
+  const val = LL_SEQUENCE[stepIdx];
+  const now = audioCtx.currentTime;
+  const masterGain = audioCtx.createGain();
+  masterGain.gain.setValueAtTime(0.08, now);
+  masterGain.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+  masterGain.connect(audioCtx.destination);
+
+  if (val === 0) {
+    // Coherence chord: all ring fundamentals
+    RING_HZ.forEach((hz, idx) => {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.12, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+      osc.start(now + idx * 0.04);
+      osc.stop(now + 3.5);
+    });
+  } else {
+    // Chord based on S value
+    const baseHz = RING_HZ[stepIdx % 7];
+    const ratio = val / 127;
+    [1, 1.5, 2, 2.5].forEach((mult, idx) => {
+      const osc = audioCtx.createOscillator();
+      osc.type = idx === 0 ? 'sine' : 'triangle';
+      osc.frequency.value = baseHz * mult * (1 + ratio * 0.5);
+      osc.connect(masterGain);
+      osc.start(now);
+      osc.stop(now + 2.0);
+    });
+  }
+}
+
+function playCoherenceFlash() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  // Bright sweep
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(200, now);
+  osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+  osc.frequency.exponentialRampToValueAtTime(400, now + 1.5);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.15, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+  osc.connect(g);
+  g.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 2.5);
+}
+
+// ── Wave system ──
+function spawnWave(stepIdx) {
+  const val = LL_SEQUENCE[stepIdx];
+  const hue = (val / 127) * 360;
+  const amplitude = 0.3 + (val / 127) * 1.2;
+  waves.push({
+    progress: 0,        // 0..1 = inner to outer shell
+    hue: hue,
+    amplitude: amplitude,
+    speed: 0.6,
+    alive: true,
+    stepIdx: stepIdx
+  });
+}
+
+function updateWaves(dt) {
+  for (let w = waves.length - 1; w >= 0; w--) {
+    const wave = waves[w];
+    wave.progress += dt * wave.speed;
+    if (wave.progress > 1.5) {
+      waves.splice(w, 1);
+      continue;
+    }
+
+    // Affect shells
+    for (let i = 0; i < TOTAL_DIMS; i++) {
+      if (shellVisible[i] < 0.01) continue;
+      const shellNorm = i / TOTAL_DIMS;
+      const dist = Math.abs(shellNorm - wave.progress);
+      if (dist < 0.12) {
+        const influence = (1 - dist / 0.12) * wave.amplitude;
+        shellIntensity[i] = Math.max(shellIntensity[i], influence);
+        shellCurrentRadius[i] = shellBaseRadius[i] * (1 + influence * 0.08);
+      }
+    }
+  }
+}
+
+// ── Coherence effect ──
+let coherenceFlashTriggered = false;
+
+function applyCoherence(t) {
+  // t: 0..1 over coherence duration
+  const pulse = Math.sin(t * TAU * 3) * 0.5 + 0.5;
+  const flash = t < 0.15 ? (1 - t / 0.15) : 0;
+
+  flashOverlay.style.opacity = flash * 0.8;
+
+  for (let i = 0; i < TOTAL_DIMS; i++) {
+    if (shellVisible[i] < 0.01) continue;
+    // Gold pulse
+    const goldIntensity = pulse * 0.8 * (1 - t * 0.5);
+    shellIntensity[i] = Math.max(shellIntensity[i], goldIntensity);
+    // Expand and contract
+    const expand = t < 0.3 ? (t / 0.3) * 0.15 : 0.15 * Math.max(0, 1 - (t - 0.3) / 0.7);
+    shellCurrentRadius[i] = shellBaseRadius[i] * (1 + expand);
+    // Override hue to gold
+    shellHue[i] = 45 + pulse * 10;
+  }
+
+  coreLight.intensity = 2.0 + flash * 8;
+  coreLight.color.setHSL(0.12, 0.8, 0.6);
+  coreMat.color.setHSL(0.12, 0.7, 0.4 + pulse * 0.3);
+}
+
+function restoreShellHues() {
+  for (let i = 0; i < TOTAL_DIMS; i++) {
+    const ring = i % 7;
+    shellHue[i] = (RING_BASE_HUES[ring] + (Math.floor(i / 7) / 18) * 25) % 360;
+  }
+  coreLight.intensity = 2.0;
+  coreLight.color.setHSL(0.6, 0.5, 0.5);
+  coreMat.color.set(0x3070c0);
+  flashOverlay.style.opacity = 0;
+}
+
+// ── Phase logic ──
+const EXPAND_DURATION = 3.0;       // seconds to expand all 127 dims
+const CASCADE_STEP_DURATION = 2.5; // seconds per LL step
+const COHERENCE_DURATION = 3.5;    // golden flash duration
+const PAUSE_DURATION = 1.5;        // pause before repeat
+
+function resetState() {
+  currentPhase = 'expand';
+  expandProgress = 0;
+  cascadeStep = -1;
+  cascadeStepTimer = 0;
+  waveTime = 0;
+  coherenceTimer = 0;
+  coherenceFlashTriggered = false;
+  pauseTimer = 0;
+  waves.length = 0;
+
+  for (let i = 0; i < TOTAL_DIMS; i++) {
+    shellVisible[i] = 0;
+    shellIntensity[i] = 0;
+    shellCurrentRadius[i] = shellBaseRadius[i];
+  }
+  restoreShellHues();
+  updateLLDisplay(-1);
+  updateMathDisplay(-1);
+  updateBinaryOverlay(-1);
+  statusEl.textContent = 'EXPANDING';
+  statusEl.style.borderColor = 'rgba(80,160,255,0.3)';
+  statusEl.style.color = '#7ab8f0';
+}
+
+function tick(dt) {
+  if (!playing && !stepRequested) return;
+
+  const sDt = dt * speedMultiplier;
+
+  switch (currentPhase) {
+    case 'expand': {
+      expandProgress += sDt / EXPAND_DURATION;
+      if (expandProgress > 1) expandProgress = 1;
+      const dimsToShow = Math.floor(expandProgress * TOTAL_DIMS);
+      for (let i = 0; i < TOTAL_DIMS; i++) {
+        if (i <= dimsToShow) {
+          shellVisible[i] = Math.min(1, shellVisible[i] + dt * 3);
+        }
+      }
+      statusEl.textContent = 'EXPANDING ' + Math.min(dimsToShow, 127) + '/127';
+      if (expandProgress >= 1) {
+        currentPhase = 'cascade';
+        cascadeStep = -1;
+        cascadeStepTimer = 0;
+        statusEl.textContent = 'CASCADE';
+        statusEl.style.color = '#60c0f0';
+        if (stepMode) {
+          stepRequested = false;
+        }
+      }
+      break;
+    }
+    case 'cascade': {
+      if (stepMode && !stepRequested && cascadeStep >= 0) break;
+
+      cascadeStepTimer += sDt;
+      if (cascadeStepTimer >= CASCADE_STEP_DURATION || cascadeStep < 0) {
+        cascadeStep++;
+        cascadeStepTimer = 0;
+
+        if (cascadeStep >= LL_SEQUENCE.length) {
+          currentPhase = 'coherence';
+          coherenceTimer = 0;
+          coherenceFlashTriggered = false;
+          statusEl.textContent = 'COHERENT';
+          statusEl.style.color = '#f0c040';
+          statusEl.style.borderColor = 'rgba(240,192,64,0.4)';
+          break;
+        }
+
+        updateLLDisplay(cascadeStep);
+        updateMathDisplay(cascadeStep);
+        updateBinaryOverlay(cascadeStep);
+        spawnWave(cascadeStep);
+        playLLChord(cascadeStep);
+        statusEl.textContent = 'CASCADE S' + String.fromCharCode(0x2080 + cascadeStep) + ' = ' + LL_SEQUENCE[cascadeStep];
+
+        if (stepMode) stepRequested = false;
+      }
+      break;
+    }
+    case 'coherence': {
+      coherenceTimer += sDt;
+      const t = coherenceTimer / COHERENCE_DURATION;
+      if (t <= 1) {
+        applyCoherence(t);
+        if (!coherenceFlashTriggered) {
+          coherenceFlashTriggered = true;
+          playCoherenceFlash();
+        }
+      } else {
+        restoreShellHues();
+        currentPhase = 'pause';
+        pauseTimer = 0;
+        statusEl.textContent = 'PRIME VERIFIED';
+        statusEl.style.color = '#50d890';
+        if (stepMode) stepRequested = false;
+      }
+      break;
+    }
+    case 'pause': {
+      pauseTimer += sDt;
+      if (pauseTimer >= PAUSE_DURATION) {
+        resetState();
+        if (stepMode) stepRequested = false;
+      }
+      break;
+    }
+  }
+}
+
+// ── Decay and ambient animation ──
+function decayAndAnimate(dt) {
+  for (let i = 0; i < TOTAL_DIMS; i++) {
+    // Decay intensity
+    shellIntensity[i] *= Math.pow(0.05, dt);
+    if (shellIntensity[i] < 0.01) shellIntensity[i] = 0;
+
+    // Gentle ambient pulse
+    if (shellVisible[i] > 0.01 && currentPhase !== 'coherence') {
+      const ambientPulse = Math.sin(globalTime * 0.8 + i * 0.15) * 0.03;
+      shellIntensity[i] = Math.max(shellIntensity[i], ambientPulse + 0.03);
+      shellCurrentRadius[i] = shellBaseRadius[i] * (1 + shellIntensity[i] * 0.05);
+    }
+  }
+
+  // Core breathing
+  const corePulse = Math.sin(globalTime * 1.2) * 0.05 + 1.0;
+  coreMesh.scale.setScalar(corePulse);
+  glowMesh.scale.setScalar(corePulse * 1.3);
+  coreMat.opacity = 0.35 + Math.sin(globalTime * 0.8) * 0.1;
+
+  // Update particles
+  const positions = particleSystem.geometry.attributes.position.array;
+  for (let i = 0; i < particleCount; i++) {
+    particleAngles[i] += particleSpeeds[i] * dt * 0.2;
+    const a = particleAngles[i];
+    const r = particleRadii[i];
+    positions[i * 3] = Math.cos(a) * r;
+    positions[i * 3 + 1] = particleYs[i] + Math.sin(globalTime * 0.5 + i) * 0.1;
+    positions[i * 3 + 2] = Math.sin(a) * r;
+  }
+  particleSystem.geometry.attributes.position.needsUpdate = true;
+
+  // Camera gentle orbit
+  const camAngle = globalTime * 0.08;
+  camera.position.x = Math.sin(camAngle) * 0.8;
+  camera.position.y = 0.5 + Math.sin(globalTime * 0.15) * 0.3;
+  camera.lookAt(0, 0, 0);
+}
+
+// ── Resize ──
+function onResize() {
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ── Animation loop ──
+let lastTime = performance.now();
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const rawDt = (now - lastTime) / 1000;
+  lastTime = now;
+  const dt = Math.min(rawDt, 0.1);
+  globalTime += dt;
+
+  tick(dt);
+  updateWaves(dt * speedMultiplier);
+  decayAndAnimate(dt);
+  updateShells();
+
+  renderer.render(scene, camera);
+}
+
+// ── Controls ──
+btnPlay.addEventListener('click', () => {
+  initAudio();
+  playing = !playing;
+  btnPlay.innerHTML = playing ? '&#9646;&#9646; PAUSE' : '&#9654; PLAY';
+  btnPlay.classList.toggle('active', playing);
+});
+
+btnStep.addEventListener('click', () => {
+  initAudio();
+  stepMode = !stepMode;
+  btnStep.classList.toggle('active', stepMode);
+  if (stepMode) {
+    playing = true;
+    btnPlay.innerHTML = '&#9646;&#9646; PAUSE';
+    btnPlay.classList.add('active');
+  }
+});
+
+btnReset.addEventListener('click', () => {
+  resetState();
+});
+
+btnBinary.addEventListener('click', () => {
+  showBinary = !showBinary;
+  btnBinary.classList.toggle('active', showBinary);
+  if (!showBinary) binaryEl.classList.remove('visible');
+  else if (cascadeStep >= 0) updateBinaryOverlay(cascadeStep);
+});
+
+speedSlider.addEventListener('input', () => {
+  speedMultiplier = parseFloat(speedSlider.value);
+  speedVal.textContent = speedMultiplier.toFixed(speedMultiplier < 1 ? 2 : 1) + 'x';
+});
+
+// Step advance on canvas click or spacebar when in step mode
+container.addEventListener('click', () => {
+  initAudio();
+  if (stepMode) stepRequested = true;
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    initAudio();
+    if (stepMode) {
+      stepRequested = true;
+    } else {
+      playing = !playing;
+      btnPlay.innerHTML = playing ? '&#9646;&#9646; PAUSE' : '&#9654; PLAY';
+      btnPlay.classList.toggle('active', playing);
+    }
+  }
+});
+
+// ── Start ──
+resetState();
+playing = true;
+btnPlay.innerHTML = '&#9646;&#9646; PAUSE';
+btnPlay.classList.add('active');
+animate(performance.now());
+
+})();
+</script>
+</body>
+</html>
