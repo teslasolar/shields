@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-QUADRUPLET</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; color: #aab; }
+canvas { display: block; cursor: grab; }
+canvas:active { cursor: grabbing; }
+
+#stats {
+  position: fixed; top: 12px; left: 12px;
+  background: rgba(6,6,16,.92); border: 1px solid rgba(0,170,255,.15);
+  padding: 14px 18px; font-size: 11px; line-height: 1.8;
+  pointer-events: none; z-index: 10; min-width: 220px;
+}
+#stats .title { color: #0af; font-size: 13px; letter-spacing: 3px; margin-bottom: 6px; }
+#stats .val { color: #5cf; }
+
+#tooltip {
+  position: fixed; display: none;
+  background: rgba(6,6,16,.95); border: 1px solid rgba(0,170,255,.25);
+  padding: 12px 16px; font-size: 11px; line-height: 1.7;
+  pointer-events: none; z-index: 20; max-width: 280px;
+}
+#tooltip .tt-title { color: #0af; font-size: 12px; letter-spacing: 2px; margin-bottom: 4px; }
+#tooltip .tt-primes { color: #7df; font-size: 13px; }
+#tooltip .tt-gaps { color: #5a8; }
+#tooltip .tt-pos { color: #888; }
+
+#expanded {
+  position: fixed; display: none;
+  background: rgba(6,6,16,.97); border: 1px solid rgba(0,170,255,.3);
+  padding: 20px 28px; font-size: 12px; line-height: 1.8;
+  z-index: 30; min-width: 320px; max-width: 420px;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+}
+#expanded .ex-title { color: #0af; font-size: 15px; letter-spacing: 3px; margin-bottom: 10px; }
+#expanded .ex-close {
+  position: absolute; top: 8px; right: 12px; cursor: pointer;
+  color: #556; font-size: 16px;
+}
+#expanded .ex-close:hover { color: #0af; }
+#expanded canvas { margin: 10px auto; display: block; cursor: default; }
+#expanded .ex-row { display: flex; justify-content: space-between; margin: 3px 0; }
+#expanded .ex-label { color: #667; }
+#expanded .ex-val { color: #5cf; }
+#expanded .ex-gap-diagram { margin: 12px 0; text-align: center; }
+#expanded .ex-gap-bar {
+  display: inline-block; height: 4px; background: rgba(0,170,255,.3);
+  vertical-align: middle; margin: 0 2px; border-radius: 2px;
+}
+#expanded .ex-gap-num { color: #5a8; font-size: 10px; }
+#expanded .ex-prime-node {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #0af; vertical-align: middle; margin: 0 2px;
+  box-shadow: 0 0 6px #0af;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">PRIME QUADRUPLETS</div>
+  <div>Found: <span class="val" id="st-count">0</span></div>
+  <div>Range: <span class="val">2 — 10,000</span></div>
+  <div>Avg spacing: <span class="val" id="st-avgsp">—</span></div>
+  <div>Density: <span class="val" id="st-density">—</span></div>
+  <div>Pattern: <span class="val">{p, p+2, p+6, p+8}</span></div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-title">QUADRUPLET</div>
+  <div class="tt-primes" id="tt-primes"></div>
+  <div class="tt-gaps" id="tt-gaps"></div>
+  <div class="tt-pos" id="tt-pos"></div>
+</div>
+
+<div id="expanded">
+  <div class="ex-close" id="ex-close">&times;</div>
+  <div class="ex-title" id="ex-title">QUADRUPLET</div>
+  <div id="ex-body"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const expanded = document.getElementById('expanded');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Prime sieve ---
+function sieve(max) {
+  const s = new Uint8Array(max + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= max; i++) {
+    if (!s[i]) for (let j = i * i; j <= max; j += i) s[j] = 1;
+  }
+  return s;
+}
+
+const MAX = 10000;
+const composite = sieve(MAX + 8);
+
+function isPrime(n) { return n >= 2 && !composite[n]; }
+
+// --- Find quadruplets ---
+const quadruplets = [];
+for (let p = 2; p <= MAX; p++) {
+  if (isPrime(p) && isPrime(p + 2) && isPrime(p + 6) && isPrime(p + 8)) {
+    quadruplets.push([p, p + 2, p + 6, p + 8]);
+  }
+}
+
+// --- Stats ---
+const totalQ = quadruplets.length;
+document.getElementById('st-count').textContent = totalQ;
+
+let avgSpacing = 0;
+if (totalQ > 1) {
+  let sum = 0;
+  for (let i = 1; i < totalQ; i++) sum += quadruplets[i][0] - quadruplets[i - 1][0];
+  avgSpacing = (sum / (totalQ - 1)).toFixed(1);
+}
+document.getElementById('st-avgsp').textContent = avgSpacing || '—';
+document.getElementById('st-density').textContent =
+  totalQ > 0 ? (totalQ / (MAX / 1000)).toFixed(2) + ' per 1000' : '—';
+
+// --- Layout: grid ---
+const COLS = Math.ceil(Math.sqrt(totalQ * (W / H)));
+const ROWS = Math.ceil(totalQ / COLS);
+const CELL_W = 140;
+const CELL_H = 140;
+const GRID_W = COLS * CELL_W;
+const GRID_H = ROWS * CELL_H;
+
+function quadPos(i) {
+  const col = i % COLS;
+  const row = Math.floor(i / COLS);
+  return {
+    x: col * CELL_W + CELL_W / 2 - GRID_W / 2 + W / 2,
+    y: row * CELL_H + CELL_H / 2 - GRID_H / 2 + H / 2 + 40
+  };
+}
+
+// Diamond size based on magnitude of smallest prime
+function diamondSize(q) {
+  return 16 + Math.sqrt(q[0]) * 1.1;
+}
+
+// --- Camera ---
+let camX = 0, camY = 0, zoom = 1;
+let dragging = false, dragX, dragY;
+
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) { dragging = true; dragX = e.clientX; dragY = e.clientY; }
+});
+window.addEventListener('mousemove', e => {
+  if (dragging) {
+    camX += (e.clientX - dragX) / zoom;
+    camY += (e.clientY - dragY) / zoom;
+    dragX = e.clientX; dragY = e.clientY;
+  }
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.92 : 1.08;
+  zoom = Math.max(0.2, Math.min(5, zoom * factor));
+}, { passive: false });
+
+// --- Animation state ---
+let crystallized = 0;
+let crystallizeTimer = 0;
+const CRYSTALLIZE_INTERVAL = 80;
+let startTime = performance.now();
+
+// --- Hover / click ---
+let hovered = -1;
+let expandedIdx = -1;
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / zoom + W / 2 - camX,
+    y: (sy - H / 2) / zoom + H / 2 - camY
+  };
+}
+
+canvas.addEventListener('mousemove', e => {
+  if (dragging) { tooltip.style.display = 'none'; hovered = -1; return; }
+  const wp = screenToWorld(e.clientX, e.clientY);
+  hovered = -1;
+  for (let i = 0; i < Math.min(crystallized, quadruplets.length); i++) {
+    const pos = quadPos(i);
+    const sz = diamondSize(quadruplets[i]);
+    const dx = wp.x - pos.x, dy = wp.y - pos.y;
+    if (Math.abs(dx) + Math.abs(dy) < sz + 8) {
+      hovered = i;
+      break;
+    }
+  }
+  if (hovered >= 0) {
+    const q = quadruplets[hovered];
+    document.getElementById('tt-primes').textContent = `{ ${q.join(', ')} }`;
+    document.getElementById('tt-gaps').textContent = `Gaps: +2, +4, +2  (pattern 2-4-2)`;
+    document.getElementById('tt-pos').textContent = `#${hovered + 1} of ${totalQ}`;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 16) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    // keep on screen
+    const r = tooltip.getBoundingClientRect();
+    if (r.right > W) tooltip.style.left = (e.clientX - r.width - 10) + 'px';
+    if (r.bottom > H - 40) tooltip.style.top = (e.clientY - r.height - 10) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('click', e => {
+  if (hovered >= 0) {
+    showExpanded(hovered);
+  }
+});
+
+document.getElementById('ex-close').addEventListener('click', () => {
+  expanded.style.display = 'none';
+  expandedIdx = -1;
+});
+
+function showExpanded(idx) {
+  expandedIdx = idx;
+  const q = quadruplets[idx];
+  document.getElementById('ex-title').textContent = `QUADRUPLET #${idx + 1}`;
+
+  let html = '';
+  html += `<div class="ex-row"><span class="ex-label">Primes</span><span class="ex-val" style="color:#7df;font-size:14px">{ ${q.join(', ')} }</span></div>`;
+  html += `<div class="ex-row"><span class="ex-label">Smallest</span><span class="ex-val">${q[0]}</span></div>`;
+  html += `<div class="ex-row"><span class="ex-label">Largest</span><span class="ex-val">${q[3]}</span></div>`;
+  html += `<div class="ex-row"><span class="ex-label">Sum</span><span class="ex-val">${q[0]+q[1]+q[2]+q[3]}</span></div>`;
+  html += `<div class="ex-row"><span class="ex-label">Product mod 10</span><span class="ex-val">${(q[0]*q[1]*q[2]*q[3]) % 10}</span></div>`;
+  html += `<div class="ex-row"><span class="ex-label">Pattern</span><span class="ex-val">p, p+2, p+6, p+8</span></div>`;
+  html += `<div class="ex-row"><span class="ex-label">Position</span><span class="ex-val">#${idx+1} of ${totalQ}</span></div>`;
+
+  // Gap to neighbors
+  if (idx > 0) {
+    html += `<div class="ex-row"><span class="ex-label">Gap to prev</span><span class="ex-val">${q[0] - quadruplets[idx-1][0]}</span></div>`;
+  }
+  if (idx < totalQ - 1) {
+    html += `<div class="ex-row"><span class="ex-label">Gap to next</span><span class="ex-val">${quadruplets[idx+1][0] - q[0]}</span></div>`;
+  }
+
+  // Gap diagram
+  html += `<div style="margin-top:14px;color:#556;font-size:10px;letter-spacing:1px">GAP STRUCTURE</div>`;
+  html += `<div class="ex-gap-diagram">`;
+  const gaps = [2, 4, 2];
+  for (let g = 0; g < 4; g++) {
+    html += `<span class="ex-prime-node" title="${q[g]}"></span>`;
+    if (g < 3) {
+      const barW = gaps[g] * 18;
+      html += `<span class="ex-gap-bar" style="width:${barW}px"></span>`;
+    }
+  }
+  html += `</div>`;
+  html += `<div class="ex-gap-diagram" style="margin-top:2px">`;
+  for (let g = 0; g < 4; g++) {
+    html += `<span style="color:#5cf;font-size:10px;margin:0 4px">${q[g]}</span>`;
+    if (g < 3) {
+      html += `<span class="ex-gap-num" style="margin:0 ${gaps[g]*5}px">+${gaps[g]}</span>`;
+    }
+  }
+  html += `</div>`;
+
+  // Diamond canvas
+  html += `<canvas id="ex-canvas" width="260" height="180" style="margin:14px auto 4px;display:block;background:rgba(0,0,0,.3);border:1px solid rgba(0,170,255,.1)"></canvas>`;
+
+  document.getElementById('ex-body').innerHTML = html;
+  expanded.style.display = 'block';
+
+  drawExpandedDiamond(q);
+}
+
+function drawExpandedDiamond(q) {
+  const ec = document.getElementById('ex-canvas');
+  if (!ec) return;
+  const ectx = ec.getContext('2d');
+  const cw = ec.width, ch = ec.height;
+  const cx = cw / 2, cy = ch / 2;
+  const sz = 50;
+
+  ectx.clearRect(0, 0, cw, ch);
+
+  // Diamond vertices: top, right, bottom, left
+  const verts = [
+    { x: cx, y: cy - sz, label: q[0] },        // top = p
+    { x: cx + sz, y: cy, label: q[1] },         // right = p+2
+    { x: cx, y: cy + sz, label: q[2] },         // bottom = p+6
+    { x: cx - sz, y: cy, label: q[3] }          // left = p+8
+  ];
+
+  // edges
+  ectx.strokeStyle = 'rgba(0,170,255,.3)';
+  ectx.lineWidth = 1.5;
+  ectx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const v = verts[i];
+    const nv = verts[(i + 1) % 4];
+    ectx.moveTo(v.x, v.y);
+    ectx.lineTo(nv.x, nv.y);
+  }
+  // diagonals
+  ectx.moveTo(verts[0].x, verts[0].y); ectx.lineTo(verts[2].x, verts[2].y);
+  ectx.moveTo(verts[1].x, verts[1].y); ectx.lineTo(verts[3].x, verts[3].y);
+  ectx.stroke();
+
+  // vertices
+  for (const v of verts) {
+    ectx.beginPath();
+    ectx.arc(v.x, v.y, 5, 0, Math.PI * 2);
+    ectx.fillStyle = '#0af';
+    ectx.shadowColor = '#0af';
+    ectx.shadowBlur = 10;
+    ectx.fill();
+    ectx.shadowBlur = 0;
+
+    ectx.fillStyle = '#adf';
+    ectx.font = '10px Courier New';
+    ectx.textAlign = 'center';
+    const offY = v.y < cy ? -12 : 16;
+    const offX = v.x < cx ? -8 : v.x > cx ? 8 : 0;
+    ectx.fillText(v.label, v.x + offX, v.y + offY);
+  }
+
+  // gap labels on edges
+  const edgeGaps = ['+2', '+4', '+2', 'span 8'];
+  const edgeMids = [];
+  for (let i = 0; i < 4; i++) {
+    const v = verts[i], nv = verts[(i + 1) % 4];
+    edgeMids.push({ x: (v.x + nv.x) / 2, y: (v.y + nv.y) / 2 });
+  }
+  ectx.fillStyle = '#5a8';
+  ectx.font = '9px Courier New';
+  ectx.textAlign = 'center';
+  const offsets = [{ x: 18, y: -4 }, { x: 18, y: 4 }, { x: -22, y: 4 }, { x: -22, y: -4 }];
+  for (let i = 0; i < 4; i++) {
+    ectx.fillText(edgeGaps[i], edgeMids[i].x + offsets[i].x, edgeMids[i].y + offsets[i].y);
+  }
+}
+
+// --- Render ---
+function draw(t) {
+  const elapsed = t - startTime;
+
+  // Crystallize animation
+  if (crystallized < quadruplets.length) {
+    crystallizeTimer += 16;
+    while (crystallizeTimer >= CRYSTALLIZE_INTERVAL && crystallized < quadruplets.length) {
+      crystallizeTimer -= CRYSTALLIZE_INTERVAL;
+      crystallized++;
+    }
+  }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Title
+  ctx.save();
+  ctx.fillStyle = '#0af';
+  ctx.font = '13px Courier New';
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.6;
+  ctx.fillText('SHIELD-QUADRUPLET', W / 2, 24);
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = '#556';
+  ctx.fillText('Prime Quadruplets {p, p+2, p+6, p+8} up to 10,000', W / 2, 40);
+  ctx.restore();
+
+  // Apply camera
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-W / 2 + camX, -H / 2 + camY);
+
+  for (let i = 0; i < Math.min(crystallized, quadruplets.length); i++) {
+    const q = quadruplets[i];
+    const pos = quadPos(i);
+    const sz = diamondSize(q);
+    const isHovered = i === hovered;
+
+    // Rotation and pulse
+    const baseAngle = elapsed * 0.0004 + i * 0.3;
+    const pulse = 1 + Math.sin(elapsed * 0.002 + i * 0.5) * 0.06;
+    const r = sz * pulse;
+
+    // Crystallize entrance
+    let alpha = 1;
+    if (i === crystallized - 1) {
+      const prog = crystallizeTimer / CRYSTALLIZE_INTERVAL;
+      alpha = prog;
+    }
+
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(baseAngle);
+    ctx.globalAlpha = alpha;
+
+    // Diamond vertices
+    const verts = [
+      { x: 0, y: -r },
+      { x: r, y: 0 },
+      { x: 0, y: r },
+      { x: -r, y: 0 }
+    ];
+
+    // Glow
+    if (isHovered) {
+      ctx.shadowColor = '#0af';
+      ctx.shadowBlur = 20;
+    }
+
+    // Fill
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let v = 1; v < 4; v++) ctx.lineTo(verts[v].x, verts[v].y);
+    ctx.closePath();
+    const fillAlpha = isHovered ? 0.15 : 0.06;
+    ctx.fillStyle = `rgba(0,170,255,${fillAlpha})`;
+    ctx.fill();
+
+    // Edges
+    ctx.strokeStyle = isHovered ? 'rgba(0,200,255,.7)' : 'rgba(0,170,255,.3)';
+    ctx.lineWidth = isHovered ? 1.8 : 0.8;
+    ctx.stroke();
+
+    // Diagonals
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y); ctx.lineTo(verts[2].x, verts[2].y);
+    ctx.moveTo(verts[1].x, verts[1].y); ctx.lineTo(verts[3].x, verts[3].y);
+    ctx.strokeStyle = isHovered ? 'rgba(0,200,255,.3)' : 'rgba(0,170,255,.12)';
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    // Vertex dots
+    for (let v = 0; v < 4; v++) {
+      ctx.beginPath();
+      ctx.arc(verts[v].x, verts[v].y, isHovered ? 3.5 : 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = isHovered ? '#5df' : '#0af';
+      ctx.shadowColor = '#0af';
+      ctx.shadowBlur = isHovered ? 12 : 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+
+    // Label below (unrotated)
+    ctx.save();
+    ctx.globalAlpha = alpha * (isHovered ? 1 : 0.5);
+    ctx.fillStyle = isHovered ? '#adf' : '#446';
+    ctx.font = `${isHovered ? 10 : 8}px Courier New`;
+    ctx.textAlign = 'center';
+    ctx.fillText(q[0], pos.x, pos.y + r + 14);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

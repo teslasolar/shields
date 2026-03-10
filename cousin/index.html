@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-COUSIN | Cousin Prime Constellation Map</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#060610; font-family:'Courier New',monospace; color:#aac; }
+canvas { display:block; cursor:crosshair; }
+#stats {
+  position:fixed; top:14px; right:14px; background:rgba(6,6,16,.92);
+  border:1px solid rgba(0,170,255,.15); border-radius:4px; padding:14px 18px;
+  font-size:11px; line-height:1.8; z-index:10; min-width:220px;
+  pointer-events:auto;
+}
+#stats h2 { font-size:12px; letter-spacing:3px; color:#4af; margin-bottom:6px; border-bottom:1px solid rgba(0,170,255,.15); padding-bottom:6px; }
+#stats .highlight { color:#ff6; font-weight:bold; }
+#stats .label { color:#668; }
+#stats .val { color:#aac; }
+#stats .shield-pair { color:#ff6; text-shadow:0 0 8px rgba(255,255,100,.4); font-size:12px; margin:6px 0; }
+#tooltip {
+  position:fixed; display:none; background:rgba(6,6,16,.95);
+  border:1px solid rgba(0,170,255,.25); border-radius:3px; padding:8px 12px;
+  font-size:10px; line-height:1.7; z-index:20; pointer-events:none;
+  max-width:220px;
+}
+#tooltip .pair { color:#4af; font-size:12px; font-weight:bold; }
+#tooltip .info { color:#889; }
+#back-btn {
+  position:fixed; top:14px; left:14px; display:none; background:rgba(0,170,255,.12);
+  border:1px solid rgba(0,170,255,.3); color:#4af; font-family:'Courier New',monospace;
+  font-size:10px; letter-spacing:2px; padding:6px 14px; cursor:pointer; z-index:10;
+  border-radius:3px;
+}
+#back-btn:hover { background:rgba(0,170,255,.25); }
+#title {
+  position:fixed; top:14px; left:50%; transform:translateX(-50%);
+  font-size:13px; letter-spacing:5px; color:#4af; z-index:10;
+  text-shadow:0 0 20px rgba(0,170,255,.3);
+}
+</style>
+</head>
+<body>
+<div id="title">SHIELD-COUSIN</div>
+<canvas id="c"></canvas>
+<div id="stats"></div>
+<div id="tooltip"></div>
+<button id="back-btn" onclick="exitZoom()">[ ESC ] BACK</button>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#8327; = 2&#8311; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+// --- Cousin Primes Engine ---
+function sieve(n) {
+  const s = new Uint8Array(n + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= n; i++) if (!s[i]) for (let j = i * i; j <= n; j += i) s[j] = 1;
+  const primes = [];
+  for (let i = 2; i <= n; i++) if (!s[i]) primes.push(i);
+  return primes;
+}
+
+const primes = sieve(1000);
+const primeSet = new Set(primes);
+const cousinPairs = [];
+for (const p of primes) if (primeSet.has(p + 4)) cousinPairs.push([p, p + 4]);
+
+// Twin primes for density comparison
+const twinPairs = [];
+for (const p of primes) if (primeSet.has(p + 2)) twinPairs.push([p, p + 2]);
+
+const shieldIdx = cousinPairs.findIndex(p => p[0] === 127 && p[1] === 131);
+
+// --- Canvas Setup ---
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// --- Camera ---
+let camX = 0, camY = 0, camZoom = 1;
+let dragStart = null, dragCamStart = null;
+let zoomedPair = null;
+let zoomTransition = 0;
+let targetCamX = 0, targetCamY = 0, targetZoom = 1;
+
+// --- Starfield background ---
+const bgStars = [];
+for (let i = 0; i < 400; i++) {
+  bgStars.push({
+    x: (Math.random() - 0.5) * 4000,
+    y: (Math.random() - 0.5) * 3000,
+    r: Math.random() * 1.2 + 0.2,
+    b: Math.random() * 0.4 + 0.1,
+    twinkleSpeed: Math.random() * 2 + 1,
+    twinklePhase: Math.random() * Math.PI * 2
+  });
+}
+
+// --- Layout: cluster cousin pairs in a constellation ---
+function layoutPairs() {
+  const systems = [];
+  const cols = Math.ceil(Math.sqrt(cousinPairs.length) * 1.4);
+  const spacingX = 120;
+  const spacingY = 110;
+  for (let i = 0; i < cousinPairs.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = (col - cols / 2) * spacingX + (Math.random() - 0.5) * 30;
+    const y = (row - Math.floor(cousinPairs.length / cols) / 2) * spacingY + (Math.random() - 0.5) * 30;
+    const pair = cousinPairs[i];
+    const isShield = (pair[0] === 127 && pair[1] === 131);
+    const orbitRadius = 18 + (pair[0] % 7) * 2;
+    const orbitSpeed = 0.3 + (pair[0] % 5) * 0.08;
+    const starSize1 = 2.5 + (pair[0] % 5) * 0.4;
+    const starSize2 = 2.5 + (pair[1] % 5) * 0.4;
+    systems.push({
+      x, y, pair, isShield, orbitRadius, orbitSpeed, starSize1, starSize2,
+      appeared: false, appearTime: 0, twinkle: 0,
+      hue1: isShield ? 50 : 200 + (pair[0] % 60),
+      hue2: isShield ? 45 : 190 + (pair[1] % 70),
+      index: i
+    });
+  }
+  return systems;
+}
+
+const systems = layoutPairs();
+
+// --- Animation state ---
+let time = 0;
+let revealIndex = 0;
+let revealTimer = 0;
+const REVEAL_INTERVAL = 80; // ms between reveals
+let hoveredSystem = null;
+
+// --- Stats panel ---
+function updateStats() {
+  const el = document.getElementById('stats');
+  // Density: count pairs in ranges
+  const ranges = [[0,100],[100,200],[200,500],[500,1000]];
+  let densityHtml = '';
+  for (const [lo, hi] of ranges) {
+    const cc = cousinPairs.filter(p => p[0] >= lo && p[0] < hi).length;
+    const tc = twinPairs.filter(p => p[0] >= lo && p[0] < hi).length;
+    densityHtml += `<div><span class="label">[${lo}-${hi})</span> <span class="val">C:${cc} T:${tc}</span></div>`;
+  }
+  el.innerHTML = `
+    <h2>COUSIN PRIMES</h2>
+    <div><span class="label">Total pairs (p,p+4):</span> <span class="val">${cousinPairs.length}</span></div>
+    <div><span class="label">Twin pairs  (p,p+2):</span> <span class="val">${twinPairs.length}</span></div>
+    <div><span class="label">Range:</span> <span class="val">2 &ndash; 1000</span></div>
+    <div class="shield-pair">&#9733; 127 &#8596; 131 &#9733;</div>
+    <div><span class="label">Shield pair index:</span> <span class="val">#${shieldIdx + 1}</span></div>
+    <div style="margin-top:6px;border-top:1px solid rgba(0,170,255,.1);padding-top:6px">
+      <div style="color:#668;font-size:9px;letter-spacing:1px;margin-bottom:3px">DENSITY (Cousin vs Twin)</div>
+      ${densityHtml}
+    </div>
+  `;
+}
+updateStats();
+
+// --- Tooltip ---
+const tooltip = document.getElementById('tooltip');
+function showTooltip(sys, mx, my) {
+  const p = sys.pair;
+  tooltip.style.display = 'block';
+  tooltip.style.left = (mx + 16) + 'px';
+  tooltip.style.top = (my - 10) + 'px';
+  tooltip.innerHTML = `
+    <div class="pair">${p[0]} &#8596; ${p[1]}${sys.isShield ? ' &#9733;' : ''}</div>
+    <div class="info">Gap: 4</div>
+    <div class="info">Pair #${sys.index + 1} of ${cousinPairs.length}</div>
+    <div class="info">Orbit radius: ${sys.orbitRadius.toFixed(1)}</div>
+    ${sys.isShield ? '<div style="color:#ff6;margin-top:4px">Shield Prime Cousin Pair</div>' : ''}
+  `;
+}
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+// --- Interaction ---
+let mouseX = 0, mouseY = 0;
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (dragStart) {
+    camX = dragCamStart.x + (e.clientX - dragStart.x) / camZoom;
+    camY = dragCamStart.y + (e.clientY - dragStart.y) / camZoom;
+    targetCamX = camX;
+    targetCamY = camY;
+    return;
+  }
+  // Hit test
+  const wx = (e.clientX - W / 2) / camZoom - camX;
+  const wy = (e.clientY - H / 2) / camZoom - camY;
+  hoveredSystem = null;
+  for (const sys of systems) {
+    if (!sys.appeared) continue;
+    const dx = wx - sys.x;
+    const dy = wy - sys.y;
+    if (dx * dx + dy * dy < 900) {
+      hoveredSystem = sys;
+      break;
+    }
+  }
+  if (hoveredSystem) {
+    showTooltip(hoveredSystem, e.clientX, e.clientY);
+    canvas.style.cursor = 'pointer';
+  } else {
+    hideTooltip();
+    canvas.style.cursor = 'crosshair';
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (hoveredSystem && !zoomedPair) {
+    zoomToPair(hoveredSystem);
+    return;
+  }
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragCamStart = { x: camX, y: camY };
+});
+
+canvas.addEventListener('mouseup', () => { dragStart = null; });
+canvas.addEventListener('mouseleave', () => { dragStart = null; hideTooltip(); });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  targetZoom = Math.max(0.2, Math.min(8, targetZoom * factor));
+}, { passive: false });
+
+function zoomToPair(sys) {
+  zoomedPair = sys;
+  targetCamX = -sys.x;
+  targetCamY = -sys.y;
+  targetZoom = 5;
+  document.getElementById('back-btn').style.display = 'block';
+}
+
+function exitZoom() {
+  zoomedPair = null;
+  targetCamX = 0;
+  targetCamY = 0;
+  targetZoom = 1;
+  document.getElementById('back-btn').style.display = 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && zoomedPair) exitZoom();
+});
+
+// --- Rendering ---
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx + camX) * camZoom + W / 2,
+    y: (wy + camY) * camZoom + H / 2
+  };
+}
+
+function drawStar(sx, sy, radius, hue, brightness, twinkle) {
+  const b = brightness * (0.7 + 0.3 * twinkle);
+  const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 6 * camZoom);
+  glow.addColorStop(0, `hsla(${hue},80%,${70 * b}%,${0.9 * b})`);
+  glow.addColorStop(0.3, `hsla(${hue},60%,${50 * b}%,${0.3 * b})`);
+  glow.addColorStop(1, `hsla(${hue},60%,${30 * b}%,0)`);
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius * 6 * camZoom, 0, Math.PI * 2);
+  ctx.fillStyle = glow;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius * camZoom, 0, Math.PI * 2);
+  ctx.fillStyle = `hsla(${hue},70%,${80 * b}%,${b})`;
+  ctx.fill();
+}
+
+function drawOrbitPath(cx, cy, radius) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * camZoom, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,170,255,0.06)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+}
+
+function drawSystem(sys, t) {
+  if (!sys.appeared) return;
+  const age = (t - sys.appearTime) / 1000;
+  const fadeIn = Math.min(1, age * 2);
+  const twinkle1 = Math.sin(t * 0.003 * sys.orbitSpeed + sys.pair[0]) * 0.5 + 0.5;
+  const twinkle2 = Math.sin(t * 0.003 * sys.orbitSpeed + sys.pair[1] + 1) * 0.5 + 0.5;
+
+  const angle = t * 0.001 * sys.orbitSpeed;
+  const orbitR = sys.orbitRadius;
+
+  const wx1 = sys.x + Math.cos(angle) * orbitR;
+  const wy1 = sys.y + Math.sin(angle) * orbitR;
+  const wx2 = sys.x + Math.cos(angle + Math.PI) * orbitR;
+  const wy2 = sys.y + Math.sin(angle + Math.PI) * orbitR;
+
+  const center = worldToScreen(sys.x, sys.y);
+  const s1 = worldToScreen(wx1, wy1);
+  const s2 = worldToScreen(wx2, wy2);
+
+  // Orbit path
+  drawOrbitPath(center.x, center.y, orbitR);
+
+  // Connection line
+  ctx.beginPath();
+  ctx.moveTo(s1.x, s1.y);
+  ctx.lineTo(s2.x, s2.y);
+  ctx.strokeStyle = sys.isShield
+    ? `rgba(255,255,100,${0.12 * fadeIn})`
+    : `rgba(0,170,255,${0.06 * fadeIn})`;
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Stars
+  const sizeScale = sys.isShield ? 1.6 : 1;
+  drawStar(s1.x, s1.y, sys.starSize1 * sizeScale, sys.hue1, fadeIn, twinkle1);
+  drawStar(s2.x, s2.y, sys.starSize2 * sizeScale, sys.hue2, fadeIn, twinkle2);
+
+  // Shield highlight ring
+  if (sys.isShield) {
+    const pulse = Math.sin(t * 0.002) * 0.3 + 0.7;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, (orbitR + 10) * camZoom, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,100,${0.15 * pulse * fadeIn})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Labels (only when zoomed enough)
+  if (camZoom > 1.5 || sys.isShield) {
+    const fontSize = Math.max(8, 10 * camZoom);
+    ctx.font = `${fontSize}px 'Courier New'`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = sys.isShield
+      ? `rgba(255,255,100,${0.8 * fadeIn})`
+      : `rgba(120,150,200,${0.6 * fadeIn})`;
+    ctx.fillText(sys.pair[0], s1.x, s1.y - (sys.starSize1 * 6 + 4) * camZoom);
+    ctx.fillText(sys.pair[1], s2.x, s2.y - (sys.starSize2 * 6 + 4) * camZoom);
+  }
+
+  // Hover highlight
+  if (hoveredSystem === sys) {
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, (orbitR + 14) * camZoom, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,170,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawBgStars(t) {
+  for (const s of bgStars) {
+    const twinkle = Math.sin(t * 0.001 * s.twinkleSpeed + s.twinklePhase) * 0.5 + 0.5;
+    const sc = worldToScreen(s.x, s.y);
+    if (sc.x < -10 || sc.x > W + 10 || sc.y < -10 || sc.y > H + 10) continue;
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, s.r * Math.max(0.5, camZoom * 0.5), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(150,170,210,${s.b * (0.5 + 0.5 * twinkle)})`;
+    ctx.fill();
+  }
+}
+
+function drawZoomedDetail(sys, t) {
+  const center = worldToScreen(sys.x, sys.y);
+  const angle = t * 0.001 * sys.orbitSpeed;
+  const orbitR = sys.orbitRadius;
+
+  // Gap label
+  const midAngle = angle + Math.PI / 2;
+  const lx = center.x + Math.cos(midAngle) * orbitR * camZoom * 0.5;
+  const ly = center.y + Math.sin(midAngle) * orbitR * camZoom * 0.5;
+  ctx.font = "10px 'Courier New'";
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,170,255,0.5)';
+  ctx.fillText('gap = 4', lx, ly);
+
+  // Pair title
+  ctx.font = "14px 'Courier New'";
+  ctx.fillStyle = sys.isShield ? 'rgba(255,255,100,0.9)' : 'rgba(0,170,255,0.8)';
+  ctx.fillText(`( ${sys.pair[0]} , ${sys.pair[1]} )`, center.x, center.y - (orbitR + 30) * camZoom);
+
+  ctx.font = "10px 'Courier New'";
+  ctx.fillStyle = 'rgba(120,150,200,0.5)';
+  ctx.fillText(`Cousin Pair #${sys.index + 1}`, center.x, center.y + (orbitR + 25) * camZoom);
+
+  if (sys.isShield) {
+    ctx.fillStyle = 'rgba(255,255,100,0.5)';
+    ctx.fillText('Shield Prime Cousin Pair', center.x, center.y + (orbitR + 40) * camZoom);
+  }
+}
+
+// --- Main Loop ---
+let lastTime = 0;
+function frame(ts) {
+  const dt = ts - lastTime;
+  lastTime = ts;
+  time = ts;
+
+  // Reveal pairs one by one
+  revealTimer += dt;
+  while (revealTimer > REVEAL_INTERVAL && revealIndex < systems.length) {
+    systems[revealIndex].appeared = true;
+    systems[revealIndex].appearTime = ts;
+    revealIndex++;
+    revealTimer -= REVEAL_INTERVAL;
+  }
+
+  // Smooth camera
+  camX += (targetCamX - camX) * 0.08;
+  camY += (targetCamY - camY) * 0.08;
+  camZoom += (targetZoom - camZoom) * 0.08;
+
+  // Clear
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  const gridAlpha = Math.min(0.04, 0.02 * camZoom);
+  if (gridAlpha > 0.005) {
+    ctx.strokeStyle = `rgba(0,170,255,${gridAlpha})`;
+    ctx.lineWidth = 0.5;
+    const gridSize = 100;
+    const startX = Math.floor((-camX - W / 2 / camZoom) / gridSize) * gridSize;
+    const startY = Math.floor((-camY - H / 2 / camZoom) / gridSize) * gridSize;
+    const endX = startX + W / camZoom + gridSize * 2;
+    const endY = startY + H / camZoom + gridSize * 2;
+    for (let gx = startX; gx < endX; gx += gridSize) {
+      const sx = (gx + camX) * camZoom + W / 2;
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+    }
+    for (let gy = startY; gy < endY; gy += gridSize) {
+      const sy = (gy + camY) * camZoom + H / 2;
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+    }
+  }
+
+  // Background stars
+  drawBgStars(ts);
+
+  // Draw systems
+  for (const sys of systems) drawSystem(sys, ts);
+
+  // Zoomed detail overlay
+  if (zoomedPair && Math.abs(camZoom - targetZoom) < 0.3) {
+    drawZoomedDetail(zoomedPair, ts);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
