@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-WILSON</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; color: #aab; }
+canvas { display: block; cursor: crosshair; }
+#stats {
+  position: fixed; top: 12px; right: 12px; background: rgba(6,6,16,.92);
+  border: 1px solid rgba(255,200,60,.15); border-radius: 6px; padding: 14px 18px;
+  font-size: 11px; line-height: 1.7; color: #99a; min-width: 220px;
+  pointer-events: none; z-index: 10;
+}
+#stats .label { color: #556; }
+#stats .val { color: #dda; }
+#stats .prime-val { color: #ffd700; }
+#stats .title { color: #ffd700; font-size: 13px; letter-spacing: 3px; margin-bottom: 6px; }
+#hover-info {
+  position: fixed; top: 12px; left: 12px; background: rgba(6,6,16,.92);
+  border: 1px solid rgba(255,200,60,.12); border-radius: 6px; padding: 14px 18px;
+  font-size: 11px; line-height: 1.8; color: #99a; min-width: 280px;
+  pointer-events: none; z-index: 10; display: none;
+}
+#hover-info .hl { color: #ffd700; }
+#hover-info .dim { color: #445; }
+#factorial-panel {
+  position: fixed; bottom: 42px; left: 50%; transform: translateX(-50%);
+  background: rgba(6,6,16,.95); border: 1px solid rgba(255,200,60,.12);
+  border-radius: 6px; padding: 12px 20px; font-size: 11px; color: #99a;
+  pointer-events: none; z-index: 10; display: none; max-width: 90vw;
+  text-align: center; white-space: nowrap; overflow: hidden;
+}
+#factorial-panel .step { color: #778; }
+#factorial-panel .active-step { color: #ffd700; font-size: 13px; }
+#factorial-panel .result { color: #4f8; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">WILSON'S THEOREM</div>
+  <div><span class="label">Status: </span><span id="st-status" class="val">Initializing...</span></div>
+  <div><span class="label">Range: </span><span id="st-range" class="val">2 - 200</span></div>
+  <div><span class="label">Primes (Wilson): </span><span id="st-wilson" class="prime-val">0</span></div>
+  <div><span class="label">Primes (Trial): </span><span id="st-trial" class="prime-val">0</span></div>
+  <div><span class="label">Match: </span><span id="st-match" class="val">--</span></div>
+  <div style="margin-top:6px;font-size:9px;color:#445">(p-1)! ≡ -1 (mod p) ⟺ p is prime</div>
+  <div style="margin-top:4px;font-size:9px;color:#445">Click cell to animate factorial</div>
+  <div style="font-size:9px;color:#445">Scroll to zoom</div>
+</div>
+
+<div id="hover-info"></div>
+<div id="factorial-panel"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const N_MIN = 2, N_MAX = 200;
+const TOTAL = N_MAX - N_MIN + 1;
+
+let W, H, cellSize, cols, rows;
+let zoom = 1, panX = 0, panY = 0;
+let mouseX = -1, mouseY = -1;
+let hoveredN = -1;
+let animProgress = 0;
+let animSpeed = 0.6;
+let animDone = false;
+let time = 0;
+
+// Factorial animation state
+let factAnim = { active: false, n: -1, step: 0, maxStep: 0, timer: 0, chain: [], remainders: [] };
+
+// Precompute Wilson data
+const wilsonData = [];
+const primesByWilson = [];
+const primesByTrial = [];
+
+function computeFactorialMod(n) {
+  let result = 1;
+  const chain = [1];
+  const remainders = [1];
+  for (let i = 1; i <= n - 1; i++) {
+    result = (result * i) % n;
+    chain.push(i);
+    remainders.push(result);
+  }
+  return { remainder: result, chain, remainders };
+}
+
+function isPrimeTrial(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+for (let n = N_MIN; n <= N_MAX; n++) {
+  const data = computeFactorialMod(n);
+  const isPrimeW = data.remainder === n - 1;
+  const isPrimeT = isPrimeTrial(n);
+  wilsonData.push({ n, remainder: data.remainder, isPrimeW, isPrimeT, chain: data.chain, remainders: data.remainders });
+  if (isPrimeW) primesByWilson.push(n);
+  if (isPrimeT) primesByTrial.push(n);
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cols = Math.ceil(Math.sqrt(TOTAL * (W / H)));
+  rows = Math.ceil(TOTAL / cols);
+  cellSize = Math.min((W - 40) / cols, (H - 80) / rows);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Zoom
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const oldZoom = zoom;
+  zoom *= e.deltaY < 0 ? 1.1 : 0.9;
+  zoom = Math.max(0.5, Math.min(5, zoom));
+  const mx = e.clientX, my = e.clientY;
+  panX = mx - (mx - panX) * (zoom / oldZoom);
+  panY = my - (my - panY) * (zoom / oldZoom);
+}, { passive: false });
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouseX = mouseY = -1;
+  hoveredN = -1;
+  document.getElementById('hover-info').style.display = 'none';
+});
+
+canvas.addEventListener('click', e => {
+  if (hoveredN >= N_MIN) {
+    const idx = hoveredN - N_MIN;
+    const d = wilsonData[idx];
+    factAnim = {
+      active: true, n: hoveredN, step: 0,
+      maxStep: d.chain.length - 1,
+      timer: 0, chain: d.chain, remainders: d.remainders
+    };
+    document.getElementById('factorial-panel').style.display = 'block';
+  }
+});
+
+function getGridPos(index) {
+  const totalW = cols * cellSize;
+  const totalH = rows * cellSize;
+  const ox = (W - totalW) / 2;
+  const oy = (H - totalH - 28) / 2;
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  return {
+    x: (ox + col * cellSize) * zoom + panX,
+    y: (oy + row * cellSize) * zoom + panY,
+    w: cellSize * zoom,
+    h: cellSize * zoom
+  };
+}
+
+function getCellAtMouse() {
+  if (mouseX < 0) return -1;
+  for (let i = 0; i < TOTAL; i++) {
+    const p = getGridPos(i);
+    if (mouseX >= p.x && mouseX < p.x + p.w && mouseY >= p.y && mouseY < p.y + p.h) {
+      return i + N_MIN;
+    }
+  }
+  return -1;
+}
+
+function drawCell(idx, d, pos, t) {
+  const { x, y, w, h } = pos;
+  const pad = Math.max(1, w * 0.06);
+  const ix = x + pad, iy = y + pad, iw = w - pad * 2, ih = h - pad * 2;
+
+  if (d.isPrimeW) {
+    // Golden glow for primes
+    const pulse = 0.7 + 0.3 * Math.sin(t * 2 + d.n * 0.3);
+    const glow = Math.min(1, pulse);
+    ctx.shadowColor = `rgba(255,210,50,${0.4 * glow})`;
+    ctx.shadowBlur = 12 * zoom;
+    ctx.fillStyle = `rgba(255,210,50,${0.12 + 0.08 * glow})`;
+    ctx.fillRect(ix, iy, iw, ih);
+    ctx.shadowBlur = 0;
+
+    // Border glow
+    ctx.strokeStyle = `rgba(255,210,50,${0.5 + 0.3 * glow})`;
+    ctx.lineWidth = Math.max(1, 1.5 * zoom);
+    ctx.strokeRect(ix, iy, iw, ih);
+
+    // Number
+    const fs = Math.max(6, Math.min(14, iw * 0.38));
+    ctx.font = `bold ${fs}px 'Courier New', monospace`;
+    ctx.fillStyle = `rgba(255,215,0,${0.85 + 0.15 * glow})`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.n, ix + iw / 2, iy + ih / 2);
+  } else {
+    // Composite - dim
+    ctx.fillStyle = 'rgba(20,20,40,.6)';
+    ctx.fillRect(ix, iy, iw, ih);
+    ctx.strokeStyle = 'rgba(60,60,100,.3)';
+    ctx.lineWidth = Math.max(0.5, 0.8 * zoom);
+    ctx.strokeRect(ix, iy, iw, ih);
+
+    const fs = Math.max(5, Math.min(10, iw * 0.3));
+    ctx.font = `${fs}px 'Courier New', monospace`;
+    ctx.fillStyle = 'rgba(80,80,130,.6)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.remainder, ix + iw / 2, iy + ih / 2);
+  }
+
+  // Highlight hovered
+  if (d.n === hoveredN) {
+    ctx.strokeStyle = 'rgba(100,200,255,.7)';
+    ctx.lineWidth = Math.max(1, 2 * zoom);
+    ctx.strokeRect(ix, iy, iw, ih);
+  }
+
+  // Highlight factorial-animated cell
+  if (factAnim.active && d.n === factAnim.n) {
+    ctx.strokeStyle = 'rgba(255,150,50,.8)';
+    ctx.lineWidth = Math.max(1, 2.5 * zoom);
+    ctx.strokeRect(ix - 1, iy - 1, iw + 2, ih + 2);
+  }
+}
+
+function drawDigitWaterfall(t) {
+  // Decorative cascading digits in background
+  ctx.globalAlpha = 0.04;
+  const fs = 10;
+  ctx.font = `${fs}px 'Courier New', monospace`;
+  ctx.fillStyle = '#ffd700';
+  const colsW = Math.floor(W / 14);
+  for (let c = 0; c < colsW; c++) {
+    const speed = 30 + (c * 17) % 50;
+    const yOff = (t * speed) % (H + 200) - 100;
+    const digit = ((c * 7 + Math.floor(t * 3)) % 10).toString();
+    ctx.fillText(digit, c * 14, yOff);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function updateHoverInfo() {
+  const info = document.getElementById('hover-info');
+  hoveredN = getCellAtMouse();
+  if (hoveredN < N_MIN) {
+    info.style.display = 'none';
+    return;
+  }
+  const d = wilsonData[hoveredN - N_MIN];
+  const status = d.isPrimeW ? '<span class="hl">PRIME (Wilson confirmed)</span>' : '<span class="dim">COMPOSITE</span>';
+
+  // Build multiplication chain display (abbreviated if long)
+  let chainStr = '';
+  const maxShow = 12;
+  if (d.n - 1 <= maxShow) {
+    chainStr = d.chain.slice(1).join(' × ');
+  } else {
+    chainStr = d.chain.slice(1, 7).join(' × ') + ' × ... × ' + d.chain.slice(-3).join(' × ');
+  }
+
+  info.innerHTML = `
+    <div><span class="dim">n = </span><span class="hl">${d.n}</span></div>
+    <div><span class="dim">(${d.n}-1)! mod ${d.n} = </span><span class="hl">${d.remainder}</span></div>
+    <div>${status}</div>
+    <div style="margin-top:4px;font-size:9px;color:#556">Chain: ${chainStr}</div>
+    <div style="font-size:9px;color:#556">≡ ${d.remainder} (mod ${d.n})</div>
+    ${d.isPrimeW ? '<div style="margin-top:4px;font-size:9px;color:#ffd700">' + (d.n - 1) + '! ≡ -1 (mod ' + d.n + ') ✓</div>' : ''}
+  `;
+  info.style.display = 'block';
+}
+
+function updateFactorialPanel(t) {
+  const panel = document.getElementById('factorial-panel');
+  if (!factAnim.active) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  factAnim.timer += 0.016;
+  if (factAnim.timer > 0.15) {
+    factAnim.timer = 0;
+    if (factAnim.step < factAnim.maxStep) {
+      factAnim.step++;
+    }
+  }
+
+  const n = factAnim.n;
+  const step = factAnim.step;
+  let html = `<div style="color:#ffd700;margin-bottom:6px">Computing (${n}-1)! mod ${n}</div>`;
+
+  // Show steps
+  const showStart = Math.max(0, step - 8);
+  const showEnd = Math.min(factAnim.maxStep, step + 2);
+
+  let parts = [];
+  for (let s = showStart; s <= showEnd; s++) {
+    if (s === 0) continue;
+    const multiplier = factAnim.chain[s];
+    const rem = factAnim.remainders[s];
+    if (s < step) {
+      parts.push(`<span class="step">${multiplier}→${rem}</span>`);
+    } else if (s === step) {
+      parts.push(`<span class="active-step">${multiplier}→${rem}</span>`);
+    } else {
+      parts.push(`<span class="step" style="color:#333">${multiplier}→?</span>`);
+    }
+  }
+  html += parts.join(' <span style="color:#333">·</span> ');
+
+  if (step === factAnim.maxStep) {
+    const d = wilsonData[n - N_MIN];
+    const verdict = d.isPrimeW ? '<span style="color:#ffd700">PRIME ✓</span>' : '<span style="color:#556">COMPOSITE</span>';
+    html += `<div style="margin-top:6px" class="result">(${n}-1)! ≡ ${d.remainder} (mod ${n}) → ${verdict}</div>`;
+  }
+
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+}
+
+function updateStats() {
+  const revealed = Math.min(TOTAL, Math.floor(animProgress));
+  const wCount = primesByWilson.filter(p => p - N_MIN < revealed).length;
+  const tCount = primesByTrial.filter(p => p - N_MIN < revealed).length;
+
+  document.getElementById('st-wilson').textContent = wCount;
+  document.getElementById('st-trial').textContent = tCount;
+  document.getElementById('st-match').textContent = wCount === tCount ? 'PERFECT ✓' : 'Verifying...';
+  document.getElementById('st-status').textContent = revealed >= TOTAL ? 'Complete' : `Scanning ${revealed + N_MIN}...`;
+}
+
+function draw() {
+  time += 0.016;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Digit waterfall background
+  drawDigitWaterfall(time);
+
+  // Title
+  ctx.save();
+  ctx.font = 'bold 16px "Courier New", monospace';
+  ctx.fillStyle = 'rgba(255,215,0,.25)';
+  ctx.textAlign = 'center';
+  ctx.fillText('WILSON\'S THEOREM — (p-1)! ≡ -1 (mod p)', W / 2, 22);
+  ctx.restore();
+
+  // Animate grid fill
+  if (!animDone) {
+    animProgress += animSpeed;
+    if (animProgress >= TOTAL) {
+      animProgress = TOTAL;
+      animDone = true;
+    }
+  }
+
+  const revealed = Math.min(TOTAL, Math.floor(animProgress));
+
+  // Draw cells
+  for (let i = 0; i < revealed; i++) {
+    const pos = getGridPos(i);
+    // Cull offscreen
+    if (pos.x + pos.w < 0 || pos.x > W || pos.y + pos.h < 0 || pos.y > H) continue;
+    drawCell(i, wilsonData[i], pos, time);
+  }
+
+  // Entrance animation flash for latest cell
+  if (!animDone && revealed > 0) {
+    const lastIdx = revealed - 1;
+    const pos = getGridPos(lastIdx);
+    const flash = 1 - (animProgress - Math.floor(animProgress));
+    ctx.fillStyle = `rgba(255,255,255,${flash * 0.15})`;
+    ctx.fillRect(pos.x, pos.y, pos.w, pos.h);
+  }
+
+  updateHoverInfo();
+  updateFactorialPanel(time);
+  updateStats();
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
