@@ -109,6 +109,50 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <a href="#harmony" data-id="harmony"><span class="dot" style="background:#f4a"></span><span style="color:#f4a">HARMONY</span></a>
     </div>
   </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#f48">PRIME TYPES <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#mersenne" data-id="mersenne"><span class="dot" style="background:#48f"></span><span style="color:#48f">MERSENNE</span></a>
+      <a href="#fermat" data-id="fermat"><span class="dot" style="background:#f84"></span><span style="color:#f84">FERMAT</span></a>
+      <a href="#sophie" data-id="sophie"><span class="dot" style="background:#c6f"></span><span style="color:#c6f">SOPHIE</span></a>
+      <a href="#emirp" data-id="emirp"><span class="dot" style="background:#0fc"></span><span style="color:#0fc">EMIRP</span></a>
+      <a href="#palindrome" data-id="palindrome"><span class="dot" style="background:#f8f"></span><span style="color:#f8f">PALINDROME</span></a>
+      <a href="#chen" data-id="chen"><span class="dot" style="background:#8f8"></span><span style="color:#8f8">CHEN</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#8af">PRIME PAIRS <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#sexy" data-id="sexy"><span class="dot" style="background:#f4c"></span><span style="color:#f4c">SEXY</span></a>
+      <a href="#cousin" data-id="cousin"><span class="dot" style="background:#4af"></span><span style="color:#4af">COUSIN</span></a>
+      <a href="#quadruplet" data-id="quadruplet"><span class="dot" style="background:#fa4"></span><span style="color:#fa4">QUADRUPLET</span></a>
+      <a href="#cunningham" data-id="cunningham"><span class="dot" style="background:#4fc"></span><span style="color:#4fc">CUNNINGHAM</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#af4">ANALYSIS <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#gaps" data-id="gaps"><span class="dot" style="background:#f64"></span><span style="color:#f64">GAPS</span></a>
+      <a href="#riemann" data-id="riemann"><span class="dot" style="background:#84f"></span><span style="color:#84f">RIEMANN</span></a>
+      <a href="#gaussian" data-id="gaussian"><span class="dot" style="background:#4f8"></span><span style="color:#4f8">GAUSSIAN</span></a>
+      <a href="#pi" data-id="pi"><span class="dot" style="background:#0ff"></span><span style="color:#0ff">PI</span></a>
+      <a href="#wilson" data-id="wilson"><span class="dot" style="background:#ff8"></span><span style="color:#ff8">WILSON</span></a>
+      <a href="#primorial" data-id="primorial"><span class="dot" style="background:#f80"></span><span style="color:#f80">PRIMORIAL</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#fa8">STRUCTURES <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#factor" data-id="factor"><span class="dot" style="background:#8f4"></span><span style="color:#8f4">FACTOR</span></a>
+      <a href="#collatz" data-id="collatz"><span class="dot" style="background:#f48"></span><span style="color:#f48">COLLATZ</span></a>
+      <a href="#modular" data-id="modular"><span class="dot" style="background:#48f"></span><span style="color:#48f">MODULAR</span></a>
+      <a href="#lattice" data-id="lattice"><span class="dot" style="background:#fa8"></span><span style="color:#fa8">LATTICE</span></a>
+    </div>
+  </div>
 </nav>
 
 <div id="content">
@@ -117,7 +161,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div id="gallery">
     <div class="header">
       <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">18 SHIELDS · 4 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
+      <div class="sub">38 SHIELDS · 8 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
     </div>
 
     <div class="category">
@@ -154,6 +198,42 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
         <span class="cat-count">3 SHIELDS</span>
       </div>
       <div class="grid" id="grid-systems"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#f48">PRIME TYPES</span>
+        <div class="cat-line" style="background:#f48"></div>
+        <span class="cat-count">6 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-primetypes"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#8af">PRIME PAIRS</span>
+        <div class="cat-line" style="background:#8af"></div>
+        <span class="cat-count">4 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-primepairs"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#af4">ANALYSIS</span>
+        <div class="cat-line" style="background:#af4"></div>
+        <span class="cat-count">6 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-analysis"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#fa8">STRUCTURES</span>
+        <div class="cat-line" style="background:#fa8"></div>
+        <span class="cat-count">4 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-structures"></div>
     </div>
 
     <div class="footer">
@@ -202,6 +282,46 @@ const CATEGORIES = {
       { id:'drug',    name:'SHIELD-DRUG',     desc:'Open Gate circuit overlay. Input medications, see which shield dimensions are under attack. Drug effects as colored projectiles.', tag:'OPEN GATE', tagColor:'#f44', colors:['#f44','#fa0','#ff0','#0af','#4a4','#a4f','#fff'] },
       { id:'network', name:'SHIELD-NETWORK',  desc:'R7 — two shields connected. When both coherent, golden fibers link them. LIGHT TO LIGHT. The double Mersenne M(M₇).', tag:'R7 DUAL', tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'] },
       { id:'harmony', name:'SHIELD-HARMONY',  desc:'7 prime-frequency waveforms in harmonic superposition. Lissajous figures, standing waves, interference patterns. Visual music.', tag:'HARMONICS', tagColor:'#f4a', colors:['#f4a','#f28','#f06','#e04','#c02','#a00','#fff'] },
+    ]
+  },
+  primetypes: {
+    grid: 'grid-primetypes',
+    variants: [
+      { id:'mersenne',    name:'SHIELD-MERSENNE',    desc:'Mersenne primes 2^p-1. Power tower visualization with binary cascades. M₇=127 highlighted gold. Discovery timeline.', tag:'MERSENNE', tagColor:'#48f', colors:['#48f','#28f','#08f','#06f','#04f','#02f','#fff'] },
+      { id:'fermat',      name:'SHIELD-FERMAT',      desc:'Fermat numbers F_n = 2^(2^n)+1. Only 5 known Fermat primes. Constructible polygons. 17 is shield+Fermat prime.', tag:'FERMAT', tagColor:'#f84', colors:['#f84','#f62','#f40','#d20','#b00','#900','#fff'] },
+      { id:'sophie',      name:'SHIELD-SOPHIE',      desc:'Sophie Germain primes: p where 2p+1 is also prime. Cunningham chains as branching trees. Chain length coloring.', tag:'GERMAIN', tagColor:'#c6f', colors:['#c6f','#a4f','#84f','#64f','#44f','#24f','#fff'] },
+      { id:'emirp',       name:'SHIELD-EMIRP',       desc:'Emirps: primes whose digit reversal is a different prime. 13↔31, 17↔71. Double helix of mirror pairs.', tag:'MIRROR', tagColor:'#0fc', colors:['#0fc','#0ec','#0dc','#0cc','#0bc','#0ac','#fff'] },
+      { id:'palindrome',  name:'SHIELD-PALINDROME',  desc:'Palindromic primes: same forwards and backwards. 101, 131, 151... Concentric rings by digit count with mirror shimmer.', tag:'PALINDROME', tagColor:'#f8f', colors:['#f8f','#f6f','#f4f','#f2f','#f0f','#e0f','#fff'] },
+      { id:'chen',        name:'SHIELD-CHEN',        desc:'Chen primes: p where p+2 is prime or semiprime. Golden arcs for twins, silver for semiprimes. Chen\'s theorem visualized.', tag:'CHEN', tagColor:'#8f8', colors:['#8f8','#6f6','#4f4','#2f2','#0f0','#0e0','#fff'] },
+    ]
+  },
+  primepairs: {
+    grid: 'grid-primepairs',
+    variants: [
+      { id:'sexy',       name:'SHIELD-SEXY',        desc:'Sexy primes: pairs differing by 6. Triplets (p,p+6,p+12) and quadruplets. Arcing connections on a number line.', tag:'SEXY', tagColor:'#f4c', colors:['#f4c','#f2a','#f08','#e06','#c04','#a02','#fff'] },
+      { id:'cousin',     name:'SHIELD-COUSIN',      desc:'Cousin primes: pairs differing by 4. Binary star constellations. 127↔131 highlighted as the shield cousin pair.', tag:'COUSIN', tagColor:'#4af', colors:['#4af','#2af','#0af','#08f','#06f','#04f','#fff'] },
+      { id:'quadruplet', name:'SHIELD-QUADRUPLET',   desc:'Prime quadruplets {p,p+2,p+6,p+8}: densest possible clusters. Diamond/rhombus shapes. Crystallizing animation.', tag:'QUADRUPLET', tagColor:'#fa4', colors:['#fa4','#f82','#f60','#d40','#b20','#900','#fff'] },
+      { id:'cunningham', name:'SHIELD-CUNNINGHAM',   desc:'Cunningham chains: sequences where each prime is 2p+1 or 2p-1 of the previous. Cascading waterfalls by chain kind.', tag:'CHAINS', tagColor:'#4fc', colors:['#4fc','#2fc','#0fc','#0ec','#0dc','#0cc','#fff'] },
+    ]
+  },
+  analysis: {
+    grid: 'grid-analysis',
+    variants: [
+      { id:'gaps',       name:'SHIELD-GAPS',        desc:'Prime gaps: differences between consecutive primes. Color-coded histogram. Record gaps explode. Twin gap golden arcs.', tag:'GAPS', tagColor:'#f64', colors:['#f64','#f42','#f20','#d00','#b00','#900','#fff'] },
+      { id:'riemann',    name:'SHIELD-RIEMANN',     desc:'Riemann zeta function zeros on the critical line Re(s)=1/2. 30+ non-trivial zeros with pulsing concentric circles.', tag:'ZETA', tagColor:'#84f', colors:['#84f','#64f','#44f','#24f','#04f','#02f','#fff'] },
+      { id:'gaussian',   name:'SHIELD-GAUSSIAN',    desc:'Gaussian primes in the complex plane ℤ[i]. Four-fold symmetry. Click to highlight associates. Conjugate pair arcs.', tag:'COMPLEX', tagColor:'#4f8', colors:['#4f8','#2f6','#0f4','#0e2','#0d0','#0c0','#fff'] },
+      { id:'pi',         name:'SHIELD-PI',          desc:'Prime counting function π(x): step function vs x/ln(x) vs Li(x). Prime Number Theorem convergence visualized.', tag:'π(x)', tagColor:'#0ff', colors:['#0ff','#0ef','#0df','#0cf','#0bf','#0af','#fff'] },
+      { id:'wilson',     name:'SHIELD-WILSON',      desc:'Wilson\'s theorem: (p-1)! ≡ -1 (mod p) iff p is prime. Animated grid computing factorials. Primes flash golden.', tag:'THEOREM', tagColor:'#ff8', colors:['#ff8','#ff6','#ff4','#ff2','#ff0','#fe0','#fff'] },
+      { id:'primorial',  name:'SHIELD-PRIMORIAL',   desc:'Primorial numbers p# = product of primes ≤ p. Nested rings multiplying by each prime. 17# = 510,510 golden finale.', tag:'PRIMORIAL', tagColor:'#f80', colors:['#f80','#f60','#f40','#f20','#f00','#e00','#fff'] },
+    ]
+  },
+  structures: {
+    grid: 'grid-structures',
+    variants: [
+      { id:'factor',    name:'SHIELD-FACTOR',      desc:'Interactive prime factorization trees. Numbers decompose into branching trees. 510,510 = 2×3×5×7×11×13×17 pre-loaded.', tag:'FACTOR TREE', tagColor:'#8f4', colors:['#8f4','#6f2','#4f0','#2e0','#0d0','#0c0','#fff'] },
+      { id:'collatz',   name:'SHIELD-COLLATZ',      desc:'Collatz conjecture & primes. If even n/2, if odd 3n+1. Branching tree from root=1. Prime nodes pulse bright.', tag:'COLLATZ', tagColor:'#f48', colors:['#f48','#f26','#f04','#e02','#c00','#a00','#fff'] },
+      { id:'modular',   name:'SHIELD-MODULAR',      desc:'Modular arithmetic clocks for the 7 shield primes. Multiplication table chords. Primitive roots. No zero divisors.', tag:'MOD CLOCK', tagColor:'#48f', colors:['#48f','#28f','#08f','#06f','#04f','#02f','#fff'] },
+      { id:'lattice',   name:'SHIELD-LATTICE',      desc:'Divisibility Hasse diagram for 1-120. Primes on level 1, products on higher levels. Edge colors match prime factors.', tag:'LATTICE', tagColor:'#fa8', colors:['#fa8','#f86','#f64','#f42','#f20','#f00','#fff'] },
     ]
   }
 };
