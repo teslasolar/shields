@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SEXY</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#ccc; }
+canvas { display:block; cursor:grab; }
+canvas:active { cursor:grabbing; }
+#stats {
+  position:fixed; top:16px; right:16px; background:rgba(6,6,16,.92);
+  border:1px solid rgba(255,0,180,.15); padding:14px 20px; font-size:12px;
+  line-height:1.8; letter-spacing:1px; pointer-events:none; z-index:10;
+  min-width:220px;
+}
+#stats .title { color:#ff00b4; font-size:14px; margin-bottom:6px; letter-spacing:3px; }
+#stats .pair { color:#ff00b4; }
+#stats .trip { color:#ffd700; }
+#stats .quad { color:#00e5ff; }
+#stats .dens { color:#667; }
+#tooltip {
+  position:fixed; display:none; background:rgba(6,6,16,.95);
+  border:1px solid rgba(255,0,180,.3); padding:10px 14px; font-size:11px;
+  line-height:1.7; pointer-events:none; z-index:20; max-width:280px;
+  letter-spacing:1px;
+}
+#title-bar {
+  position:fixed; top:16px; left:16px; font-size:18px; letter-spacing:6px;
+  color:#ff00b4; pointer-events:none; z-index:10; text-shadow:0 0 20px rgba(255,0,180,.3);
+}
+#title-bar .sub { font-size:9px; color:#556; letter-spacing:3px; margin-top:4px; }
+</style>
+</head>
+<body>
+<div id="title-bar">SHIELD-SEXY<div class="sub">PRIMES DIFFERING BY 6</div></div>
+<div id="stats"></div>
+<div id="tooltip"></div>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statsEl = document.getElementById('stats');
+const tooltipEl = document.getElementById('tooltip');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Prime sieve ---
+function sieve(max) {
+  const s = new Uint8Array(max + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= max; i++) {
+    if (!s[i]) for (let j = i * i; j <= max; j += i) s[j] = 1;
+  }
+  const primes = [];
+  for (let i = 2; i <= max; i++) if (!s[i]) primes.push(i);
+  return { primes, is: (n) => n <= max && !s[n] };
+}
+
+const MAX = 1000;
+const { primes, is: isPrime } = sieve(MAX + 20);
+const primeSet = new Set(primes);
+
+// --- Find sexy pairs, triplets, quadruplets ---
+const pairs = [];
+const triplets = [];
+const quadruplets = [];
+const pairMap = new Map(); // prime -> list of pairs it belongs to
+const tripMap = new Map();
+const quadMap = new Map();
+
+for (let i = 0; i < primes.length; i++) {
+  const p = primes[i];
+  if (p > MAX) break;
+  if (isPrime(p + 6) && p + 6 <= MAX + 6) {
+    pairs.push([p, p + 6]);
+  }
+}
+
+for (let i = 0; i < primes.length; i++) {
+  const p = primes[i];
+  if (p > MAX) break;
+  if (isPrime(p + 6) && isPrime(p + 12)) {
+    triplets.push([p, p + 6, p + 12]);
+  }
+}
+
+for (let i = 0; i < primes.length; i++) {
+  const p = primes[i];
+  if (p > MAX) break;
+  if (isPrime(p + 6) && isPrime(p + 12) && isPrime(p + 18)) {
+    quadruplets.push([p, p + 6, p + 12, p + 18]);
+  }
+}
+
+// Map primes to their groups
+pairs.forEach(pr => pr.forEach(v => {
+  if (!pairMap.has(v)) pairMap.set(v, []);
+  pairMap.get(v).push(pr);
+}));
+triplets.forEach(tr => tr.forEach(v => {
+  if (!tripMap.has(v)) tripMap.set(v, []);
+  tripMap.get(v).push(tr);
+}));
+quadruplets.forEach(qu => qu.forEach(v => {
+  if (!quadMap.has(v)) quadMap.set(v, []);
+  quadMap.get(v).push(qu);
+}));
+
+// --- View state ---
+let offsetX = 80;
+let scale = 3.0; // pixels per unit
+let dragging = false;
+let dragStartX = 0;
+let dragOffsetX = 0;
+let mouseX = 0, mouseY = 0;
+let hoveredPrime = null;
+let selectedGroup = null; // { type, members }
+
+// Animation
+let animProgress = 0; // 0..1 how much of number line revealed
+const ANIM_DURATION = 4000; // ms
+let startTime = performance.now();
+
+// --- Input ---
+canvas.addEventListener('mousedown', (e) => {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragOffsetX = offsetX;
+});
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (dragging) {
+    offsetX = dragOffsetX + (e.clientX - dragStartX);
+  }
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const worldX = (mouseX - offsetX) / scale;
+  scale *= zoomFactor;
+  scale = Math.max(0.3, Math.min(20, scale));
+  offsetX = mouseX - worldX * scale;
+}, { passive: false });
+
+canvas.addEventListener('click', (e) => {
+  if (Math.abs(e.clientX - dragStartX) > 5) return; // was drag
+  const hp = findHoveredPrime(e.clientX, e.clientY);
+  if (hp !== null) {
+    // Find best group
+    if (quadMap.has(hp)) {
+      selectedGroup = { type: 'quad', members: quadMap.get(hp)[0] };
+    } else if (tripMap.has(hp)) {
+      selectedGroup = { type: 'trip', members: tripMap.get(hp)[0] };
+    } else if (pairMap.has(hp)) {
+      selectedGroup = { type: 'pair', members: pairMap.get(hp)[0] };
+    } else {
+      selectedGroup = null;
+    }
+  } else {
+    selectedGroup = null;
+  }
+});
+
+function worldToScreen(x) { return offsetX + x * scale; }
+function screenToWorld(sx) { return (sx - offsetX) / scale; }
+
+const NUMBER_LINE_Y_RATIO = 0.72;
+
+function findHoveredPrime(mx, my) {
+  const lineY = H * NUMBER_LINE_Y_RATIO;
+  const threshold = Math.max(8, scale * 1.5);
+  let closest = null;
+  let closestDist = Infinity;
+  for (const p of primes) {
+    if (p > MAX) break;
+    const sx = worldToScreen(p);
+    if (sx < -50 || sx > W + 50) continue;
+    const dx = mx - sx;
+    const dy = my - lineY;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < threshold + 6 && d < closestDist) {
+      closestDist = d;
+      closest = p;
+    }
+  }
+  return closest;
+}
+
+// --- Stats ---
+function updateStats() {
+  const density = (pairs.length / (MAX / 2) * 100).toFixed(1);
+  statsEl.innerHTML = `
+    <div class="title">SEXY PRIMES</div>
+    <div class="pair">PAIRS: ${pairs.length}</div>
+    <div class="trip">TRIPLETS: ${triplets.length}</div>
+    <div class="quad">QUADRUPLETS: ${quadruplets.length}</div>
+    <div class="dens">DENSITY: ${density}% (per ${MAX/2} intervals)</div>
+    <div class="dens" style="margin-top:6px;font-size:9px">RANGE: 2 .. ${MAX}</div>
+  `;
+}
+updateStats();
+
+// --- Tooltip ---
+function updateTooltip() {
+  const hp = findHoveredPrime(mouseX, mouseY);
+  hoveredPrime = hp;
+  if (hp === null) {
+    tooltipEl.style.display = 'none';
+    return;
+  }
+  let html = `<div style="color:#ff00b4;font-size:13px;margin-bottom:4px">${hp}</div>`;
+  const isSexy = pairMap.has(hp);
+  if (!isSexy) {
+    html += `<div style="color:#556">Prime (not sexy)</div>`;
+  } else {
+    const partners = new Set();
+    (pairMap.get(hp) || []).forEach(pr => pr.forEach(v => { if (v !== hp) partners.add(v); }));
+    html += `<div>Partners: ${[...partners].join(', ')}</div>`;
+    if (quadMap.has(hp)) {
+      html += `<div style="color:#00e5ff">QUADRUPLET: (${quadMap.get(hp)[0].join(', ')})</div>`;
+    } else if (tripMap.has(hp)) {
+      html += `<div style="color:#ffd700">TRIPLET: (${tripMap.get(hp)[0].join(', ')})</div>`;
+    } else {
+      html += `<div style="color:#ff00b4">PAIR</div>`;
+    }
+  }
+  tooltipEl.innerHTML = html;
+  tooltipEl.style.display = 'block';
+  let tx = mouseX + 16, ty = mouseY - 10;
+  if (tx + 280 > W) tx = mouseX - 290;
+  if (ty < 10) ty = 10;
+  tooltipEl.style.left = tx + 'px';
+  tooltipEl.style.top = ty + 'px';
+}
+
+// --- Render ---
+function draw(time) {
+  requestAnimationFrame(draw);
+  ctx.clearRect(0, 0, W, H);
+
+  const elapsed = time - startTime;
+  animProgress = Math.min(1, elapsed / ANIM_DURATION);
+  const eased = 1 - Math.pow(1 - animProgress, 3); // ease out cubic
+  const revealMax = eased * MAX;
+
+  const lineY = H * NUMBER_LINE_Y_RATIO;
+  const sinPulse = Math.sin(time * 0.002) * 0.15 + 0.85;
+
+  // Number line
+  const x0 = worldToScreen(0);
+  const x1 = worldToScreen(revealMax);
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0, lineY);
+  ctx.lineTo(x1, lineY);
+  ctx.stroke();
+
+  // Tick marks
+  const tickInterval = scale > 5 ? 5 : scale > 2 ? 10 : scale > 1 ? 25 : 50;
+  for (let i = 0; i <= revealMax; i += tickInterval) {
+    const sx = worldToScreen(i);
+    if (sx < -10 || sx > W + 10) continue;
+    const isMajor = i % (tickInterval * 5) === 0 || i % 100 === 0;
+    ctx.strokeStyle = isMajor ? '#2a2a4e' : '#141428';
+    ctx.lineWidth = isMajor ? 1 : 0.5;
+    ctx.beginPath();
+    ctx.moveTo(sx, lineY - (isMajor ? 8 : 4));
+    ctx.lineTo(sx, lineY + (isMajor ? 8 : 4));
+    ctx.stroke();
+    if (isMajor && scale > 0.8) {
+      ctx.fillStyle = '#334';
+      ctx.font = '9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(i, sx, lineY + 22);
+    }
+  }
+
+  // Prime dots on number line
+  for (const p of primes) {
+    if (p > revealMax || p > MAX) break;
+    const sx = worldToScreen(p);
+    if (sx < -20 || sx > W + 20) continue;
+
+    let color = '#335';
+    let radius = 2.5;
+    const isInSelected = selectedGroup && selectedGroup.members.includes(p);
+    const isHovered = hoveredPrime === p;
+
+    if (quadMap.has(p)) { color = '#00e5ff'; radius = 3.5; }
+    else if (tripMap.has(p)) { color = '#ffd700'; radius = 3; }
+    else if (pairMap.has(p)) { color = '#ff00b4'; radius = 3; }
+
+    if (isInSelected) { radius = 5; }
+    if (isHovered) { radius = 6; }
+
+    ctx.beginPath();
+    ctx.arc(sx, lineY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    if (isHovered || isInSelected) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(sx, lineY, radius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Label visible primes when zoomed in
+    if (scale > 3 || isHovered || isInSelected) {
+      ctx.fillStyle = isHovered || isInSelected ? '#fff' : '#556';
+      ctx.font = (isHovered || isInSelected ? '11' : '8') + 'px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(p, sx, lineY + 34);
+    }
+  }
+
+  // Draw arcs
+  function drawArc(a, b, heightMul, color, alpha) {
+    if (b > revealMax) return;
+    const sa = worldToScreen(a);
+    const sb = worldToScreen(b);
+    if (sb < -50 || sa > W + 50) return;
+
+    const midX = (sa + sb) / 2;
+    const halfW = (sb - sa) / 2;
+    const arcH = Math.max(20, halfW * 0.6) * heightMul;
+
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha * sinPulse;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(midX, lineY, halfW, arcH, 0, Math.PI, 0);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Pairs (magenta) - bottom layer
+  for (const [a, b] of pairs) {
+    const isInSel = selectedGroup && selectedGroup.members.includes(a) && selectedGroup.members.includes(b);
+    const isHov = hoveredPrime !== null && (a === hoveredPrime || b === hoveredPrime);
+    let alpha = 0.25;
+    if (isHov) alpha = 0.7;
+    if (isInSel) alpha = 0.9;
+    drawArc(a, b, 1.0, '#ff00b4', alpha);
+  }
+
+  // Triplets (gold) - second arcs
+  for (const [a, b, c] of triplets) {
+    const isInSel = selectedGroup && selectedGroup.type !== 'pair' &&
+      selectedGroup.members.includes(a) && selectedGroup.members.includes(c);
+    const isHov = hoveredPrime !== null && ([a, b, c].includes(hoveredPrime));
+    let alpha = 0.3;
+    if (isHov) alpha = 0.75;
+    if (isInSel) alpha = 0.95;
+    drawArc(a, c, 1.5, '#ffd700', alpha);
+  }
+
+  // Quadruplets (cyan) - triple arcs
+  for (const [a, b, c, d] of quadruplets) {
+    const isInSel = selectedGroup && selectedGroup.type === 'quad' &&
+      selectedGroup.members.includes(a) && selectedGroup.members.includes(d);
+    const isHov = hoveredPrime !== null && ([a, b, c, d].includes(hoveredPrime));
+    let alpha = 0.35;
+    if (isHov) alpha = 0.8;
+    if (isInSel) alpha = 1.0;
+    drawArc(a, d, 2.0, '#00e5ff', alpha);
+  }
+
+  // Selected group highlight glow
+  if (selectedGroup) {
+    const m = selectedGroup.members;
+    const sa = worldToScreen(m[0]);
+    const sb = worldToScreen(m[m.length - 1]);
+    const col = selectedGroup.type === 'quad' ? '#00e5ff' :
+                selectedGroup.type === 'trip' ? '#ffd700' : '#ff00b4';
+    const grad = ctx.createLinearGradient(sa - 10, 0, sb + 10, 0);
+    grad.addColorStop(0, 'transparent');
+    grad.addColorStop(0.2, col);
+    grad.addColorStop(0.8, col);
+    grad.addColorStop(1, 'transparent');
+    ctx.globalAlpha = 0.06 + Math.sin(time * 0.003) * 0.03;
+    ctx.fillStyle = grad;
+    ctx.fillRect(sa - 10, lineY - 100, sb - sa + 20, 120);
+    ctx.globalAlpha = 1;
+  }
+
+  updateTooltip();
+}
+
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

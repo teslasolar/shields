@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-GAUSSIAN</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; color: #aab; }
+canvas { display: block; cursor: crosshair; }
+#stats {
+  position: fixed; top: 12px; right: 12px;
+  background: rgba(6,6,16,.92); border: 1px solid rgba(0,170,255,.15);
+  padding: 14px 18px; font-size: 11px; line-height: 1.7;
+  color: #8af; border-radius: 4px; min-width: 220px;
+  pointer-events: none; letter-spacing: 1px;
+}
+#stats .label { color: #556; }
+#stats .val { color: #adf; }
+#stats .title { color: #0af; font-size: 13px; margin-bottom: 6px; letter-spacing: 3px; }
+#tooltip {
+  position: fixed; display: none;
+  background: rgba(6,6,16,.95); border: 1px solid rgba(0,170,255,.3);
+  padding: 10px 14px; font-size: 11px; line-height: 1.6;
+  color: #cdf; border-radius: 4px; pointer-events: none;
+  letter-spacing: 1px; max-width: 300px;
+}
+#tooltip .prime-yes { color: #0f8; }
+#tooltip .prime-no { color: #f55; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats"></div>
+<div id="tooltip"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statsEl = document.getElementById('stats');
+const tooltipEl = document.getElementById('tooltip');
+
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// View state
+let viewX = 0, viewY = 0, zoom = 1;
+let dragging = false, dragStartX, dragStartY, dragViewX, dragViewY;
+let mouseX = -1, mouseY = -1;
+let selectedAssociates = null;
+let animRadius = 0;
+const ANIM_SPEED = 0.04;
+const RANGE = 30;
+
+// Primality test
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+// Gaussian prime test
+function isGaussianPrime(a, b) {
+  if (a === 0 && b === 0) return false;
+  const aa = Math.abs(a), ab = Math.abs(b);
+  if (a === 0) return isPrime(ab) && ab % 4 === 3;
+  if (b === 0) return isPrime(aa) && aa % 4 === 3;
+  return isPrime(a * a + b * b);
+}
+
+// Precompute grid
+const gridData = [];
+let primeCount = 0;
+for (let a = -RANGE; a <= RANGE; a++) {
+  for (let b = -RANGE; b <= RANGE; b++) {
+    const gp = isGaussianPrime(a, b);
+    if (gp) primeCount++;
+    gridData.push({ a, b, prime: gp, norm: a * a + b * b });
+  }
+}
+
+// Factor an integer for display
+function factorize(n) {
+  if (n === 0) return '0';
+  if (n === 1) return '1';
+  let neg = n < 0;
+  n = Math.abs(n);
+  if (n === 1) return neg ? '-1' : '1';
+  const factors = [];
+  let d = 2;
+  let tmp = n;
+  while (d * d <= tmp) {
+    let count = 0;
+    while (tmp % d === 0) { count++; tmp /= d; }
+    if (count > 0) factors.push(count > 1 ? d + '^' + count : '' + d);
+    d++;
+  }
+  if (tmp > 1) factors.push('' + tmp);
+  return (neg ? '-' : '') + factors.join(' x ');
+}
+
+// Gaussian factorization description
+function gaussianFactorDesc(a, b) {
+  if (a === 0 && b === 0) return '0';
+  if (isGaussianPrime(a, b)) return 'Gaussian prime (irreducible)';
+  const norm = a * a + b * b;
+  if (norm === 0) return '0';
+  if (norm === 1) return 'unit';
+  return 'Composite, norm = ' + factorize(norm);
+}
+
+// Get associates (rotations by i)
+function getAssociates(a, b) {
+  return [
+    [a, b], [-b, a], [-a, -b], [b, -a]
+  ];
+}
+
+// Find conjugate pairs: primes p≡1(mod4) split into a+bi, a-bi
+function findConjugatePairs() {
+  const pairs = [];
+  const seen = new Set();
+  for (const pt of gridData) {
+    if (!pt.prime || pt.a === 0 || pt.b === 0) continue;
+    const key1 = pt.a + ',' + pt.b;
+    const key2 = pt.a + ',' + (-pt.b);
+    const pairKey = pt.a + ',' + Math.abs(pt.b);
+    if (seen.has(pairKey)) continue;
+    // Check if conjugate exists in range
+    if (Math.abs(pt.b) <= RANGE) {
+      seen.add(pairKey);
+      pairs.push({ a: pt.a, b1: pt.b, b2: -pt.b });
+    }
+  }
+  return pairs;
+}
+const conjugatePairs = findConjugatePairs();
+
+// World to screen
+function w2sX(wx) { return W / 2 + (wx - viewX) * zoom; }
+function w2sY(wy) { return H / 2 - (wy - viewY) * zoom; }
+function s2wX(sx) { return (sx - W / 2) / zoom + viewX; }
+function s2wY(sy) { return viewY - (sy - H / 2) / zoom; }
+
+// HSL to hex
+function hsl(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  return `rgb(${Math.round((r+m)*255)},${Math.round((g+m)*255)},${Math.round((b+m)*255)})`;
+}
+
+function primeColor(a, b, alpha) {
+  const angle = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
+  return hsl(angle, 85, 58);
+}
+
+function draw() {
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const cellSize = zoom;
+
+  // Draw crosshair axes
+  ctx.strokeStyle = 'rgba(0,170,255,.12)';
+  ctx.lineWidth = 1;
+  const axisX = w2sX(0);
+  const axisY = w2sY(0);
+  ctx.beginPath();
+  ctx.moveTo(axisX, 0); ctx.lineTo(axisX, H);
+  ctx.moveTo(0, axisY); ctx.lineTo(W, axisY);
+  ctx.stroke();
+
+  // Finer grid lines
+  if (zoom > 12) {
+    ctx.strokeStyle = 'rgba(0,170,255,.03)';
+    ctx.lineWidth = 0.5;
+    const startA = Math.floor(s2wX(0)) - 1;
+    const endA = Math.ceil(s2wX(W)) + 1;
+    const startB = Math.floor(s2wY(H)) - 1;
+    const endB = Math.ceil(s2wY(0)) + 1;
+    for (let a = startA; a <= endA; a++) {
+      const sx = w2sX(a);
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+    }
+    for (let b = startB; b <= endB; b++) {
+      const sy = w2sY(b);
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+    }
+  }
+
+  // Draw conjugate pair arcs
+  ctx.lineWidth = 0.6;
+  for (const pair of conjugatePairs) {
+    const dist = Math.sqrt(pair.a * pair.a + pair.b1 * pair.b1);
+    if (dist > animRadius) continue;
+    const sx1 = w2sX(pair.a);
+    const sy1 = w2sY(pair.b1);
+    const sy2 = w2sY(pair.b2);
+    const midY = (sy1 + sy2) / 2;
+    const arcWidth = Math.abs(pair.b1) * zoom * 0.4;
+    ctx.strokeStyle = 'rgba(0,170,255,.08)';
+    ctx.beginPath();
+    ctx.moveTo(sx1, sy1);
+    ctx.quadraticCurveTo(sx1 + arcWidth, midY, sx1, sy2);
+    ctx.stroke();
+  }
+
+  // Draw points
+  const dotRadius = Math.max(1.5, Math.min(zoom * 0.28, 8));
+
+  // Selected associates set
+  const assocSet = new Set();
+  if (selectedAssociates) {
+    for (const [sa, sb] of selectedAssociates) {
+      assocSet.add(sa + ',' + sb);
+    }
+  }
+
+  let visiblePrimes = 0;
+  let totalVisible = 0;
+
+  for (const pt of gridData) {
+    const dist = Math.max(Math.abs(pt.a), Math.abs(pt.b));
+    if (dist > animRadius) continue;
+
+    const sx = w2sX(pt.a);
+    const sy = w2sY(pt.b);
+    if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+
+    totalVisible++;
+    const isAssoc = assocSet.has(pt.a + ',' + pt.b);
+
+    if (pt.prime) {
+      visiblePrimes++;
+      const col = primeColor(pt.a, pt.b);
+      ctx.fillStyle = col;
+      ctx.globalAlpha = isAssoc ? 1.0 : 0.85;
+      ctx.beginPath();
+      ctx.arc(sx, sy, isAssoc ? dotRadius * 1.6 : dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glow for primes
+      if (zoom > 6 || isAssoc) {
+        ctx.globalAlpha = isAssoc ? 0.4 : 0.15;
+        ctx.beginPath();
+        ctx.arc(sx, sy, dotRadius * (isAssoc ? 3 : 2), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Highlight ring for associates
+      if (isAssoc) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, dotRadius * 2.2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else {
+      // Composite: dim dot
+      ctx.fillStyle = isAssoc ? 'rgba(150,150,200,.5)' : 'rgba(60,60,90,.3)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, isAssoc ? dotRadius * 0.9 : dotRadius * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Draw labels at zoom
+  if (zoom > 22) {
+    ctx.font = Math.max(7, zoom * 0.25) + 'px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const pt of gridData) {
+      const dist = Math.max(Math.abs(pt.a), Math.abs(pt.b));
+      if (dist > animRadius) continue;
+      if (!pt.prime) continue;
+      const sx = w2sX(pt.a);
+      const sy = w2sY(pt.b);
+      if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+      ctx.fillStyle = 'rgba(170,200,255,.5)';
+      const label = pt.b === 0 ? '' + pt.a : pt.b > 0 ? pt.a + '+' + pt.b + 'i' : pt.a + '' + pt.b + 'i';
+      ctx.fillText(label, sx, sy + dotRadius + 3);
+    }
+  }
+
+  // Title
+  ctx.font = '14px Courier New';
+  ctx.fillStyle = '#0af';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.globalAlpha = 0.8;
+  ctx.fillText('SHIELD-GAUSSIAN', 16, 16);
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#446';
+  ctx.fillText('Gaussian Primes in Z[i]', 16, 36);
+  ctx.fillText('Range: -' + RANGE + ' \u2264 a,b \u2264 ' + RANGE, 16, 50);
+  ctx.globalAlpha = 1;
+
+  // Stats panel
+  const density = totalVisible > 0 ? (visiblePrimes / totalVisible * 100).toFixed(1) : '0.0';
+  statsEl.innerHTML = `
+    <div class="title">STATISTICS</div>
+    <span class="label">Gaussian primes:</span> <span class="val">${visiblePrimes}</span><br>
+    <span class="label">Total points:</span> <span class="val">${totalVisible}</span><br>
+    <span class="label">Density:</span> <span class="val">${density}%</span><br>
+    <span class="label">Symmetry:</span> <span class="val">D\u2084 (4-fold)</span><br>
+    <span class="label">Conjugate pairs:</span> <span class="val">${conjugatePairs.length}</span><br>
+    <span class="label">Zoom:</span> <span class="val">${zoom.toFixed(1)}x</span><br>
+    <span class="label">Anim radius:</span> <span class="val">${Math.floor(animRadius)}</span>
+  `;
+}
+
+// Hover
+function findPoint(mx, my) {
+  const wx = s2wX(mx);
+  const wy = s2wY(my);
+  const a = Math.round(wx);
+  const b = Math.round(wy);
+  if (Math.abs(a) > RANGE || Math.abs(b) > RANGE) return null;
+  const dist = Math.max(Math.abs(a), Math.abs(b));
+  if (dist > animRadius) return null;
+  // Check screen distance
+  const sx = w2sX(a);
+  const sy = w2sY(b);
+  const dx = mx - sx, dy = my - sy;
+  if (dx * dx + dy * dy > 400) return null;
+  return { a, b };
+}
+
+canvas.addEventListener('mousemove', function(e) {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+
+  if (dragging) {
+    viewX = dragViewX - (e.clientX - dragStartX) / zoom;
+    viewY = dragViewY + (e.clientY - dragStartY) / zoom;
+    tooltipEl.style.display = 'none';
+    return;
+  }
+
+  const pt = findPoint(e.clientX, e.clientY);
+  if (pt) {
+    const gp = isGaussianPrime(pt.a, pt.b);
+    const norm = pt.a * pt.a + pt.b * pt.b;
+    const bStr = pt.b >= 0 ? '+' + pt.b + 'i' : '' + pt.b + 'i';
+    const zStr = pt.a + bStr;
+    const primeClass = gp ? 'prime-yes' : 'prime-no';
+    const primeText = gp ? 'YES (Gaussian prime)' : 'NO (composite)';
+    const factDesc = gaussianFactorDesc(pt.a, pt.b);
+
+    let extra = '';
+    if (gp && pt.a === 0) extra = '<br>Axis prime: |b| = ' + Math.abs(pt.b) + ' \u2261 3 (mod 4)';
+    else if (gp && pt.b === 0) extra = '<br>Axis prime: |a| = ' + Math.abs(pt.a) + ' \u2261 3 (mod 4)';
+    else if (gp) extra = '<br>a\u00b2+b\u00b2 = ' + norm + ' is prime (splits from p \u2261 1 mod 4)';
+
+    tooltipEl.innerHTML = `
+      <b>z = ${zStr}</b><br>
+      Norm: a\u00b2+b\u00b2 = ${norm}<br>
+      Prime: <span class="${primeClass}">${primeText}</span><br>
+      ${factDesc}${extra}
+    `;
+    tooltipEl.style.display = 'block';
+    const tx = e.clientX + 18;
+    const ty = e.clientY - 10;
+    tooltipEl.style.left = Math.min(tx, W - 310) + 'px';
+    tooltipEl.style.top = Math.max(ty, 10) + 'px';
+  } else {
+    tooltipEl.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mousedown', function(e) {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragViewX = viewX;
+  dragViewY = viewY;
+});
+
+canvas.addEventListener('mouseup', function(e) {
+  const dx = e.clientX - dragStartX;
+  const dy = e.clientY - dragStartY;
+  dragging = false;
+  // Click (not drag)
+  if (dx * dx + dy * dy < 9) {
+    const pt = findPoint(e.clientX, e.clientY);
+    if (pt) {
+      selectedAssociates = getAssociates(pt.a, pt.b);
+    } else {
+      selectedAssociates = null;
+    }
+  }
+});
+
+canvas.addEventListener('mouseleave', function() {
+  tooltipEl.style.display = 'none';
+});
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  const wx = s2wX(e.clientX);
+  const wy = s2wY(e.clientY);
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  zoom = Math.max(2, Math.min(200, zoom * factor));
+  // Keep point under cursor
+  viewX = wx - (e.clientX - W / 2) / zoom;
+  viewY = wy + (e.clientY - H / 2) / zoom;
+}, { passive: false });
+
+// Initial zoom to fit range
+function fitView() {
+  zoom = Math.min(W, H) / (RANGE * 2 + 4);
+  viewX = 0; viewY = 0;
+}
+fitView();
+window.addEventListener('resize', function() { resize(); fitView(); });
+
+// Animation loop
+function animate() {
+  if (animRadius < RANGE + 2) {
+    animRadius += ANIM_SPEED + animRadius * 0.02;
+    if (animRadius > RANGE + 1) animRadius = RANGE + 1;
+  }
+  draw();
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xd7;3&#xd7;5&#xd7;7&#xd7;11&#xd7;13&#xd7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

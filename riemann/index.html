@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-RIEMANN</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #aab; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#ui { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 10; }
+#title {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  font-size: 13px; letter-spacing: 6px; color: #0af; text-transform: uppercase;
+  text-shadow: 0 0 20px rgba(0,170,255,.4);
+}
+#subtitle {
+  position: fixed; top: 40px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; letter-spacing: 4px; color: #445;
+}
+#stats {
+  position: fixed; top: 80px; right: 24px; width: 260px;
+  background: rgba(6,6,16,.92); border: 1px solid rgba(0,170,255,.12);
+  padding: 16px; font-size: 10px; line-height: 1.8; color: #778;
+  pointer-events: auto;
+}
+#stats .label { color: #556; }
+#stats .value { color: #0af; }
+#stats .heading { color: #0af; font-size: 11px; letter-spacing: 3px; margin-bottom: 8px; border-bottom: 1px solid rgba(0,170,255,.1); padding-bottom: 6px; }
+#stats .prime-note { color: #445; font-size: 8px; margin-top: 10px; line-height: 1.6; border-top: 1px solid rgba(0,170,255,.06); padding-top: 8px; }
+#tooltip {
+  position: fixed; display: none; background: rgba(6,6,16,.95);
+  border: 1px solid rgba(0,170,255,.3); padding: 10px 14px;
+  font-size: 10px; color: #aab; pointer-events: none; z-index: 20;
+  line-height: 1.7; min-width: 160px;
+  box-shadow: 0 0 20px rgba(0,170,255,.15);
+}
+#tooltip .tn { color: #0af; font-size: 12px; }
+#tooltip .tv { color: #0df; }
+#legend {
+  position: fixed; bottom: 50px; left: 24px;
+  font-size: 8px; color: #445; line-height: 1.8; letter-spacing: 1px;
+}
+#zoom-info {
+  position: fixed; bottom: 50px; right: 24px;
+  font-size: 8px; color: #334; letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">SHIELD-RIEMANN</div>
+  <div id="subtitle">NON-TRIVIAL ZEROS OF THE RIEMANN ZETA FUNCTION</div>
+  <div id="stats">
+    <div class="heading">ZETA ANALYSIS</div>
+    <div><span class="label">ZEROS FOUND: </span><span class="value" id="s-found">0</span><span class="label"> / 30</span></div>
+    <div><span class="label">CURRENT t: </span><span class="value" id="s-t">0.000</span></div>
+    <div><span class="label">AVG SPACING: </span><span class="value" id="s-spacing">--</span></div>
+    <div><span class="label">LAST ZERO: </span><span class="value" id="s-last">--</span></div>
+    <div><span class="label">CRITICAL LINE: </span><span class="value">Re(s) = 1/2</span></div>
+    <div><span class="label">HYPOTHESIS: </span><span class="value" style="color:#0f8">UNPROVEN</span></div>
+    <div class="prime-note">
+      PRIME CONNECTION:<br>
+      <span style="color:#556">The zeros of zeta encode the distribution of primes via the explicit formula:</span><br>
+      <span style="color:#079">pi(x) ~ Li(x) - SUM over zeros</span><br>
+      <span style="color:#556">Each zero corrects the prime counting approximation.</span>
+    </div>
+  </div>
+</div>
+<div id="tooltip"></div>
+<div id="legend">
+  PHASE: <span style="color:#f44">0</span> <span style="color:#fa0">pi/3</span> <span style="color:#ff0">2pi/3</span> <span style="color:#0f8">pi</span> <span style="color:#08f">4pi/3</span> <span style="color:#a0f">5pi/3</span><br>
+  SCROLL TO ZOOM &middot; HOVER ZEROS FOR INFO
+</div>
+<div id="zoom-info">ZOOM: <span id="z-level">1.00</span>x</div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+// Known non-trivial zeros (imaginary parts, on critical line Re(s) = 1/2)
+const ZEROS = [
+  14.134725, 21.022040, 25.010858, 30.424876, 32.935062,
+  37.586178, 40.918719, 43.327073, 48.005151, 49.773832,
+  52.970321, 56.446247, 59.347044, 60.831779, 65.112544,
+  67.079811, 69.546402, 72.067158, 75.704691, 77.144840,
+  79.337375, 82.910381, 84.735493, 87.425275, 88.809111,
+  92.491899, 94.651344, 95.870634, 98.831194, 101.317851
+];
+
+let W, H;
+let zoom = 1.0;
+let panY = 0;
+let animT = 0;
+let discoveredCount = 0;
+let discoveredZeros = [];
+let mouseX = 0, mouseY = 0;
+let hoveredZero = -1;
+let time = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Approximate |zeta(s)| using Dirichlet series (first N terms) — rough but visual
+function zetaApprox(re, im, N) {
+  let sumRe = 0, sumIm = 0;
+  for (let n = 1; n <= N; n++) {
+    const logn = Math.log(n);
+    const mag = Math.pow(n, -re);
+    const angle = -im * logn;
+    sumRe += mag * Math.cos(angle);
+    sumIm += mag * Math.sin(angle);
+  }
+  return { re: sumRe, im: sumIm, abs: Math.sqrt(sumRe * sumRe + sumIm * sumIm), phase: Math.atan2(sumIm, sumRe) };
+}
+
+// Better approximation for the critical line using Riemann-Siegel-like approach
+function zetaCriticalLine(t, N) {
+  if (N === undefined) N = Math.max(30, Math.floor(Math.sqrt(t / (2 * Math.PI))) + 10);
+  let sumRe = 0, sumIm = 0;
+  for (let n = 1; n <= N; n++) {
+    const logn = Math.log(n);
+    const mag = 1.0 / Math.sqrt(n);
+    const angle = -t * logn;
+    sumRe += mag * Math.cos(angle);
+    sumIm += mag * Math.sin(angle);
+  }
+  return Math.sqrt(sumRe * sumRe + sumIm * sumIm);
+}
+
+// Coordinate transforms
+function tToY(t) {
+  const centerT = 55 + panY;
+  const scale = (H - 160) / (110 / zoom);
+  return H / 2 - (t - centerT) * scale;
+}
+
+function yToT(y) {
+  const centerT = 55 + panY;
+  const scale = (H - 160) / (110 / zoom);
+  return centerT - (y - H / 2) / scale;
+}
+
+function reToX(re) {
+  const centerX = W * 0.38;
+  const scale = (W * 0.25) * zoom;
+  return centerX + (re - 0.5) * scale;
+}
+
+function xToRe(x) {
+  const centerX = W * 0.38;
+  const scale = (W * 0.25) * zoom;
+  return (x - centerX) / scale + 0.5;
+}
+
+// Phase to color
+function phaseColor(phase, alpha) {
+  const h = ((phase + Math.PI) / (2 * Math.PI)) * 360;
+  alpha = alpha || 1;
+  return `hsla(${h}, 80%, 55%, ${alpha})`;
+}
+
+// Draw heatmap of |zeta(s)| in the critical strip
+function drawHeatmap() {
+  const step = Math.max(4, Math.floor(8 / zoom));
+  const terms = 20;
+
+  for (let px = 0; px < W * 0.76; px += step) {
+    for (let py = 60; py < H - 40; py += step) {
+      const re = xToRe(px);
+      const im = yToT(py);
+
+      if (re < -1 || re > 2 || im < 0) continue;
+
+      const z = zetaApprox(re, im, terms);
+      const mag = Math.min(z.abs, 4);
+      const brightness = Math.pow(mag / 4, 0.5) * 0.35;
+      const phase = z.phase;
+
+      if (brightness > 0.01) {
+        ctx.fillStyle = phaseColor(phase, brightness);
+        ctx.fillRect(px, py, step, step);
+      }
+    }
+  }
+}
+
+// Draw the critical strip band
+function drawCriticalStrip() {
+  const x0 = reToX(0);
+  const x1 = reToX(1);
+  ctx.fillStyle = 'rgba(0,170,255,0.03)';
+  ctx.fillRect(x0, 60, x1 - x0, H - 100);
+
+  ctx.strokeStyle = 'rgba(0,170,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 8]);
+  ctx.beginPath();
+  ctx.moveTo(x0, 60); ctx.lineTo(x0, H - 40);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x1, 60); ctx.lineTo(x1, H - 40);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Critical line Re(s) = 1/2
+  const xHalf = reToX(0.5);
+  ctx.strokeStyle = 'rgba(0,170,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(xHalf, 60);
+  ctx.lineTo(xHalf, H - 40);
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = '#335';
+  ctx.font = '8px Courier New';
+  ctx.fillText('Re=0', x0 - 18, 56);
+  ctx.fillText('Re=1', x1 - 18, 56);
+  ctx.fillStyle = '#0af';
+  ctx.fillText('Re=1/2', xHalf - 20, 56);
+}
+
+// Draw |zeta(1/2+it)| waveform along the critical line
+function drawWaveform() {
+  const xBase = reToX(0.5);
+  const waveScale = W * 0.04 * zoom;
+  const maxDrawT = Math.min(animT, 110);
+
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(0,170,255,0.5)';
+  ctx.lineWidth = 1.5;
+
+  let first = true;
+  for (let t = 0.5; t <= maxDrawT; t += 0.3) {
+    const y = tToY(t);
+    if (y < 60 || y > H - 40) continue;
+    const mag = zetaCriticalLine(t);
+    const z = zetaApprox(0.5, t, 20);
+    const x = xBase + mag * waveScale;
+
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Draw colored waveform with phase
+  for (let t = 0.5; t <= maxDrawT; t += 0.5) {
+    const y = tToY(t);
+    if (y < 60 || y > H - 40) continue;
+    const z = zetaApprox(0.5, t, 20);
+    const mag = z.abs;
+    const x = xBase + mag * waveScale * 0.95;
+
+    ctx.fillStyle = phaseColor(z.phase, 0.6);
+    ctx.fillRect(x - 1, y - 0.5, 2, 1);
+  }
+}
+
+// Draw zeros
+function drawZeros() {
+  const xHalf = reToX(0.5);
+
+  for (let i = 0; i < discoveredZeros.length; i++) {
+    const t = discoveredZeros[i];
+    const y = tToY(t);
+    if (y < 40 || y > H - 30) continue;
+
+    const age = time - (t / animT) * time;
+    const pulse = Math.sin(time * 2 + i * 0.7) * 0.3 + 0.7;
+
+    // Pulsing concentric circles
+    for (let r = 0; r < 3; r++) {
+      const radius = 8 + r * 12 + (time * 20 + i * 30) % 40;
+      const alpha = Math.max(0, 0.15 - radius * 0.003) * pulse;
+      if (alpha <= 0) continue;
+      ctx.beginPath();
+      ctx.arc(xHalf, y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,170,255,${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Glow
+    const grd = ctx.createRadialGradient(xHalf, y, 0, xHalf, y, 14 * pulse);
+    grd.addColorStop(0, `rgba(0,220,255,${0.6 * pulse})`);
+    grd.addColorStop(0.4, `rgba(0,170,255,${0.2 * pulse})`);
+    grd.addColorStop(1, 'rgba(0,170,255,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(xHalf - 16, y - 16, 32, 32);
+
+    // Core dot
+    ctx.beginPath();
+    ctx.arc(xHalf, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = i === hoveredZero ? '#fff' : `rgba(0,220,255,${0.8 + 0.2 * pulse})`;
+    ctx.fill();
+
+    // Zero number label
+    if (zoom > 0.7) {
+      ctx.fillStyle = '#556';
+      ctx.font = '7px Courier New';
+      ctx.fillText(`#${i + 1}`, xHalf + 10, y + 3);
+
+      if (zoom > 1.2) {
+        ctx.fillStyle = '#334';
+        ctx.fillText(`t=${t.toFixed(2)}`, xHalf + 10, y + 12);
+      }
+    }
+  }
+}
+
+// Draw discovery flash
+let flashZero = -1;
+let flashTime = 0;
+
+function drawFlash() {
+  if (flashZero < 0 || time - flashTime > 1.5) return;
+  const t = ZEROS[flashZero];
+  const y = tToY(t);
+  const xHalf = reToX(0.5);
+  const elapsed = time - flashTime;
+  const alpha = Math.max(0, 1 - elapsed / 1.5);
+  const radius = elapsed * 80;
+
+  ctx.beginPath();
+  ctx.arc(xHalf, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(0,220,255,${alpha * 0.5})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const grd = ctx.createRadialGradient(xHalf, y, 0, xHalf, y, radius * 0.5);
+  grd.addColorStop(0, `rgba(0,220,255,${alpha * 0.3})`);
+  grd.addColorStop(1, 'rgba(0,220,255,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(xHalf - radius, y - radius, radius * 2, radius * 2);
+}
+
+// Draw t-axis labels
+function drawAxis() {
+  ctx.fillStyle = '#334';
+  ctx.font = '8px Courier New';
+  const step = zoom > 2 ? 2 : zoom > 1 ? 5 : 10;
+  for (let t = 0; t <= 110; t += step) {
+    const y = tToY(t);
+    if (y < 60 || y > H - 40) continue;
+    const xHalf = reToX(0.5);
+    ctx.fillStyle = '#223';
+    ctx.fillRect(xHalf - 3, y, 6, 1);
+    ctx.fillStyle = '#334';
+    ctx.textAlign = 'right';
+    ctx.fillText(`t=${t}`, reToX(0) - 8, y + 3);
+  }
+  ctx.textAlign = 'left';
+}
+
+// Tooltip handling
+function handleHover() {
+  const xHalf = reToX(0.5);
+  hoveredZero = -1;
+  let minDist = 20;
+
+  for (let i = 0; i < discoveredZeros.length; i++) {
+    const y = tToY(discoveredZeros[i]);
+    const dx = mouseX - xHalf;
+    const dy = mouseY - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < minDist) {
+      minDist = dist;
+      hoveredZero = i;
+    }
+  }
+
+  if (hoveredZero >= 0) {
+    const t = discoveredZeros[hoveredZero];
+    const y = tToY(t);
+    const height = ((t / 110) * 100).toFixed(1);
+    const spacing = hoveredZero > 0 ? (t - discoveredZeros[hoveredZero - 1]).toFixed(3) : '--';
+    tooltip.style.display = 'block';
+    tooltip.style.left = (mouseX + 20) + 'px';
+    tooltip.style.top = (mouseY - 40) + 'px';
+    tooltip.innerHTML = `<div class="tn">ZERO #${hoveredZero + 1}</div>` +
+      `<div>t = <span class="tv">${t.toFixed(6)}</span></div>` +
+      `<div>s = <span class="tv">1/2 + ${t.toFixed(4)}i</span></div>` +
+      `<div>Height: <span class="tv">${height}%</span> of view</div>` +
+      `<div>Gap from prev: <span class="tv">${spacing}</span></div>`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+// Update stats
+function updateStats() {
+  document.getElementById('s-found').textContent = discoveredCount;
+  document.getElementById('s-t').textContent = Math.min(animT, 110).toFixed(3);
+
+  if (discoveredCount > 1) {
+    const totalSpacing = discoveredZeros[discoveredCount - 1] - discoveredZeros[0];
+    const avg = totalSpacing / (discoveredCount - 1);
+    document.getElementById('s-spacing').textContent = avg.toFixed(3);
+  }
+
+  if (discoveredCount > 0) {
+    document.getElementById('s-last').textContent = `t = ${discoveredZeros[discoveredCount - 1].toFixed(3)}`;
+  }
+}
+
+// Grid lines
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(0,170,255,0.02)';
+  ctx.lineWidth = 1;
+  for (let re = -1; re <= 3; re += 0.5) {
+    const x = reToX(re);
+    if (x < 0 || x > W) continue;
+    ctx.beginPath();
+    ctx.moveTo(x, 60); ctx.lineTo(x, H - 40);
+    ctx.stroke();
+  }
+  const step = zoom > 2 ? 2 : zoom > 1 ? 5 : 10;
+  for (let t = 0; t <= 110; t += step) {
+    const y = tToY(t);
+    if (y < 60 || y > H - 40) continue;
+    ctx.beginPath();
+    ctx.moveTo(0, y); ctx.lineTo(W * 0.76, y);
+    ctx.stroke();
+  }
+}
+
+// Main draw loop
+function draw() {
+  time += 0.016;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Animate discovery
+  if (animT < 110) {
+    animT += 0.3;
+    // Check for new zeros discovered
+    for (let i = discoveredCount; i < ZEROS.length; i++) {
+      if (ZEROS[i] <= animT) {
+        discoveredZeros.push(ZEROS[i]);
+        discoveredCount++;
+        flashZero = i;
+        flashTime = time;
+      }
+    }
+    updateStats();
+  }
+
+  drawGrid();
+  drawHeatmap();
+  drawCriticalStrip();
+  drawAxis();
+  drawWaveform();
+  drawZeros();
+  drawFlash();
+  handleHover();
+
+  // Scanline effect during animation
+  if (animT < 110) {
+    const scanY = tToY(animT);
+    if (scanY > 60 && scanY < H - 40) {
+      ctx.strokeStyle = 'rgba(0,220,255,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, scanY);
+      ctx.lineTo(W * 0.76, scanY);
+      ctx.stroke();
+
+      const grd = ctx.createLinearGradient(0, scanY - 20, 0, scanY + 20);
+      grd.addColorStop(0, 'rgba(0,170,255,0)');
+      grd.addColorStop(0.5, 'rgba(0,170,255,0.05)');
+      grd.addColorStop(1, 'rgba(0,170,255,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, scanY - 20, W * 0.76, 40);
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// Mouse events
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const oldT = yToT(e.clientY);
+  zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+  zoom = Math.max(0.3, Math.min(8, zoom));
+  const newT = yToT(e.clientY);
+  panY += oldT - newT;
+  document.getElementById('z-level').textContent = zoom.toFixed(2);
+}, { passive: false });
+
+draw();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

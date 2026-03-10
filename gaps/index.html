@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-GAPS — Prime Gap Visualization</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#aab}
+canvas{display:block;position:absolute;top:0;left:0}
+#stats{position:fixed;top:12px;right:12px;width:240px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:6px;padding:14px;font-size:11px;line-height:1.7;z-index:10;pointer-events:none}
+#stats h3{color:#0af;font-size:12px;letter-spacing:3px;margin-bottom:8px;border-bottom:1px solid rgba(0,170,255,.2);padding-bottom:6px}
+#stats .val{color:#6df;float:right}
+#stats .record{color:#f84}
+#histogram{position:fixed;top:200px;right:12px;width:240px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:6px;padding:14px;font-size:10px;z-index:10;pointer-events:none}
+#histogram h3{color:#0af;font-size:11px;letter-spacing:2px;margin-bottom:8px;border-bottom:1px solid rgba(0,170,255,.2);padding-bottom:6px}
+.hist-row{display:flex;align-items:center;margin:2px 0;height:14px}
+.hist-label{width:28px;text-align:right;margin-right:6px;color:#889;font-size:9px}
+.hist-bar{height:10px;border-radius:2px;min-width:1px;transition:width .3s}
+.hist-count{margin-left:5px;color:#667;font-size:9px}
+#tooltip{position:fixed;display:none;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.4);border-radius:5px;padding:10px 14px;font-size:11px;line-height:1.6;z-index:20;pointer-events:none;max-width:260px}
+#tooltip .prime-val{color:#6df;font-size:13px;font-weight:bold}
+#tooltip .gap-val{font-size:12px}
+#tooltip .record-label{color:#f84;font-weight:bold}
+#tooltip .twin-label{color:#ffd700;font-weight:bold}
+#title{position:fixed;top:12px;left:12px;z-index:10;pointer-events:none}
+#title h1{font-size:16px;letter-spacing:4px;color:#0af;margin-bottom:2px}
+#title p{font-size:9px;color:#556;letter-spacing:2px}
+#detail{position:fixed;bottom:42px;left:12px;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.3);border-radius:5px;padding:10px 14px;font-size:11px;line-height:1.6;z-index:15;display:none;max-width:300px}
+#detail .close{position:absolute;top:4px;right:8px;cursor:pointer;color:#556;font-size:13px;pointer-events:all}
+#staircase{position:fixed;bottom:42px;right:12px;width:240px;background:rgba(6,6,16,.92);border:1px solid rgba(100,40,10,.3);border-radius:6px;padding:14px;font-size:10px;z-index:10;pointer-events:none}
+#staircase h3{color:#f84;font-size:11px;letter-spacing:2px;margin-bottom:8px;border-bottom:1px solid rgba(255,100,50,.15);padding-bottom:6px}
+.stair-row{display:flex;justify-content:space-between;margin:2px 0;color:#a86}
+.stair-row .sg{color:#f84}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><h1>SHIELD-GAPS</h1><p>PRIME GAP VISUALIZATION — FIRST 500+ PRIMES</p></div>
+<div id="stats">
+  <h3>STATISTICS</h3>
+  <div>Primes revealed: <span class="val" id="s-count">0</span></div>
+  <div>Average gap: <span class="val" id="s-avg">—</span></div>
+  <div>Max gap found: <span class="val record" id="s-max">—</span></div>
+  <div>Twin primes (gap=2): <span class="val" id="s-twin">0</span></div>
+  <div>Cousin primes (gap=4): <span class="val" id="s-cousin">0</span></div>
+  <div>Sexy primes (gap=6): <span class="val" id="s-sexy">0</span></div>
+  <div>Largest prime: <span class="val" id="s-largest">—</span></div>
+</div>
+<div id="histogram"><h3>GAP DISTRIBUTION</h3><div id="hist-body"></div></div>
+<div id="tooltip"></div>
+<div id="detail"><span class="close" onclick="closeDetail()">×</span><div id="detail-body"></div></div>
+<div id="staircase"><h3>RECORD GAP STAIRCASE</h3><div id="stair-body"></div></div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M₇ = 2⁷ - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2×3×5×7×11×13×17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+// --- Prime generation ---
+function sievePrimes(n) {
+  const sieve = new Uint8Array(n + 1);
+  const primes = [];
+  for (let i = 2; i <= n; i++) {
+    if (!sieve[i]) {
+      primes.push(i);
+      for (let j = i * i; j <= n; j += i) sieve[j] = 1;
+    }
+  }
+  return primes;
+}
+
+const ALL_PRIMES = sievePrimes(4200);
+const NUM_PRIMES = Math.min(ALL_PRIMES.length, 550);
+
+// Precompute gaps and records
+const gaps = [];
+const recordGaps = [];
+let maxGapSoFar = 0;
+for (let i = 0; i < NUM_PRIMES - 1; i++) {
+  const g = ALL_PRIMES[i + 1] - ALL_PRIMES[i];
+  const isRecord = g > maxGapSoFar;
+  if (isRecord) maxGapSoFar = g;
+  gaps.push({ p: ALL_PRIMES[i], next: ALL_PRIMES[i + 1], gap: g, isRecord, index: i });
+  if (isRecord) recordGaps.push({ p: ALL_PRIMES[i], next: ALL_PRIMES[i + 1], gap: g, index: i });
+}
+
+// --- Canvas setup ---
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- View state ---
+let viewX = -50;
+let viewScale = 0.18;
+let targetScale = viewScale;
+let dragStart = null;
+let isDragging = false;
+
+// --- Animation state ---
+let revealedCount = 0;
+const REVEAL_RATE = 4;
+let sweepIndex = 0;
+let sweepPhase = 0;
+const barHeights = new Float32Array(NUM_PRIMES);
+const barTargets = new Float32Array(NUM_PRIMES);
+let frozenIndex = -1;
+let hoverIndex = -1;
+let mouseX = 0, mouseY = 0;
+let explosions = [];
+
+// --- Color helpers ---
+function gapColor(g, alpha) {
+  alpha = alpha || 1;
+  if (g <= 2) return `rgba(80,160,255,${alpha})`;
+  if (g <= 4) return `rgba(60,180,220,${alpha})`;
+  if (g <= 6) return `rgba(60,200,140,${alpha})`;
+  if (g <= 8) return `rgba(120,200,60,${alpha})`;
+  if (g <= 12) return `rgba(200,200,40,${alpha})`;
+  if (g <= 18) return `rgba(240,160,30,${alpha})`;
+  if (g <= 24) return `rgba(255,100,30,${alpha})`;
+  return `rgba(255,50,20,${alpha})`;
+}
+
+function gapColorBright(g) {
+  if (g <= 2) return '#6af';
+  if (g <= 4) return '#4cb8dc';
+  if (g <= 6) return '#4dca8c';
+  if (g <= 8) return '#8cc840';
+  if (g <= 12) return '#cccc30';
+  if (g <= 18) return '#f0a020';
+  if (g <= 24) return '#ff6420';
+  return '#ff3218';
+}
+
+// --- Coordinate transforms ---
+function worldToScreen(wx) { return (wx - viewX) * viewScale; }
+function screenToWorld(sx) { return sx / viewScale + viewX; }
+function numberLineY() { return H * 0.72; }
+
+// --- Explosion particles ---
+function spawnExplosion(sx, sy, color) {
+  for (let i = 0; i < 18; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    explosions.push({
+      x: sx, y: sy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1,
+      life: 1,
+      color: color,
+      size: 1 + Math.random() * 2.5
+    });
+  }
+}
+
+// --- Interaction ---
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (isDragging && dragStart) {
+    const dx = e.clientX - dragStart.x;
+    viewX -= dx / viewScale;
+    dragStart = { x: e.clientX, y: e.clientY };
+  }
+  updateHover();
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  isDragging = false;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (dragStart) {
+    const dx = Math.abs(e.clientX - dragStart.x);
+    const dy = Math.abs(e.clientY - dragStart.y);
+    if (dx > 3 || dy > 3) isDragging = true;
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (!isDragging && hoverIndex >= 0) {
+    frozenIndex = frozenIndex === hoverIndex ? -1 : hoverIndex;
+    updateDetail();
+  }
+  dragStart = null;
+  isDragging = false;
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+  const worldMouse = screenToWorld(mouseX);
+  targetScale = Math.max(0.02, Math.min(2.5, targetScale * zoomFactor));
+  viewX = worldMouse - mouseX / targetScale;
+}, { passive: false });
+
+function updateHover() {
+  const baseY = numberLineY();
+  hoverIndex = -1;
+  for (let i = 0; i < revealedCount && i < gaps.length; i++) {
+    const sx = worldToScreen(ALL_PRIMES[i]);
+    const barH = barHeights[i];
+    const barW = Math.max(3, 8 * viewScale);
+    if (mouseX >= sx - barW && mouseX <= sx + barW && mouseY >= baseY - barH && mouseY <= baseY + 6) {
+      hoverIndex = i;
+      break;
+    }
+  }
+  updateTooltip();
+}
+
+function updateTooltip() {
+  const tip = document.getElementById('tooltip');
+  const idx = hoverIndex >= 0 ? hoverIndex : frozenIndex;
+  if (idx < 0 || idx >= gaps.length) {
+    tip.style.display = 'none';
+    return;
+  }
+  const g = gaps[idx];
+  let html = `<div class="prime-val">p = ${g.p}</div>`;
+  html += `<div>Next prime: ${g.next}</div>`;
+  html += `<div class="gap-val">Gap: <b style="color:${gapColorBright(g.gap)}">${g.gap}</b></div>`;
+  if (g.isRecord) html += `<div class="record-label">★ RECORD GAP</div>`;
+  if (g.gap === 2) html += `<div class="twin-label">✦ TWIN PRIMES</div>`;
+  if (g.gap === 4) html += `<div style="color:#4cb8dc">Cousin primes</div>`;
+  if (g.gap === 6) html += `<div style="color:#4dca8c">Sexy primes</div>`;
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  let tx = mouseX + 16, ty = mouseY - 20;
+  if (tx + 260 > W) tx = mouseX - 270;
+  if (ty < 10) ty = 10;
+  tip.style.left = tx + 'px';
+  tip.style.top = ty + 'px';
+}
+
+function updateDetail() {
+  const det = document.getElementById('detail');
+  if (frozenIndex < 0 || frozenIndex >= gaps.length) {
+    det.style.display = 'none';
+    return;
+  }
+  const g = gaps[frozenIndex];
+  let html = `<div style="color:#0af;font-size:12px;letter-spacing:2px;margin-bottom:6px">GAP DETAIL</div>`;
+  html += `<div>Prime: <b style="color:#6df">${g.p}</b></div>`;
+  html += `<div>Next: <b style="color:#6df">${g.next}</b></div>`;
+  html += `<div>Gap size: <b style="color:${gapColorBright(g.gap)}">${g.gap}</b></div>`;
+  html += `<div>Index: #${g.index + 1} of ${revealedCount}</div>`;
+  if (g.isRecord) html += `<div style="color:#f84;margin-top:4px">★ This was a RECORD gap when first encountered</div>`;
+  if (g.gap === 2) html += `<div style="color:#ffd700;margin-top:4px">✦ Twin prime pair</div>`;
+  html += `<div style="color:#556;margin-top:6px;font-size:9px">Click another bar or same bar to dismiss</div>`;
+  document.getElementById('detail-body').innerHTML = html;
+  det.style.display = 'block';
+}
+
+function closeDetail() {
+  frozenIndex = -1;
+  document.getElementById('detail').style.display = 'none';
+}
+
+// --- Stats update ---
+function updateStats() {
+  document.getElementById('s-count').textContent = revealedCount;
+  if (revealedCount < 2) return;
+  let sum = 0, max = 0, twins = 0, cousins = 0, sexys = 0;
+  const dist = {};
+  for (let i = 0; i < revealedCount - 1 && i < gaps.length; i++) {
+    const g = gaps[i].gap;
+    sum += g;
+    if (g > max) max = g;
+    if (g === 2) twins++;
+    if (g === 4) cousins++;
+    if (g === 6) sexys++;
+    dist[g] = (dist[g] || 0) + 1;
+  }
+  const count = revealedCount - 1;
+  document.getElementById('s-avg').textContent = (sum / count).toFixed(2);
+  document.getElementById('s-max').textContent = max;
+  document.getElementById('s-twin').textContent = twins;
+  document.getElementById('s-cousin').textContent = cousins;
+  document.getElementById('s-sexy').textContent = sexys;
+  document.getElementById('s-largest').textContent = ALL_PRIMES[revealedCount - 1];
+
+  // Histogram
+  const sorted = Object.keys(dist).map(Number).sort((a, b) => a - b);
+  const maxCount = Math.max(...Object.values(dist));
+  let hhtml = '';
+  for (const g of sorted) {
+    const w = Math.round((dist[g] / maxCount) * 150);
+    hhtml += `<div class="hist-row"><span class="hist-label">${g}</span><div class="hist-bar" style="width:${w}px;background:${gapColor(g, 0.8)}"></div><span class="hist-count">${dist[g]}</span></div>`;
+  }
+  document.getElementById('hist-body').innerHTML = hhtml;
+
+  // Record staircase
+  let shtml = '';
+  for (const r of recordGaps) {
+    if (r.index >= revealedCount - 1) break;
+    shtml += `<div class="stair-row"><span>p=${r.p}</span><span class="sg">gap=${r.gap}</span></div>`;
+  }
+  document.getElementById('stair-body').innerHTML = shtml;
+}
+
+// --- Main render ---
+function draw(time) {
+  ctx.clearRect(0, 0, W, H);
+
+  // Smooth zoom
+  viewScale += (targetScale - viewScale) * 0.12;
+
+  // Reveal primes
+  if (revealedCount < NUM_PRIMES) {
+    revealedCount += REVEAL_RATE;
+    if (revealedCount > NUM_PRIMES) revealedCount = NUM_PRIMES;
+    // Set bar targets for newly revealed
+    for (let i = Math.max(0, revealedCount - REVEAL_RATE); i < revealedCount - 1 && i < gaps.length; i++) {
+      const g = gaps[i].gap;
+      barTargets[i] = Math.max(8, g * 12);
+      if (gaps[i].isRecord) {
+        const sx = worldToScreen(ALL_PRIMES[i]);
+        spawnExplosion(sx, numberLineY() - barTargets[i], gapColorBright(g));
+      }
+    }
+    if (revealedCount % 8 === 0) updateStats();
+  }
+
+  // Animate bars
+  for (let i = 0; i < revealedCount && i < gaps.length; i++) {
+    barHeights[i] += (barTargets[i] - barHeights[i]) * 0.08;
+  }
+
+  const baseY = numberLineY();
+
+  // Draw grid lines
+  ctx.strokeStyle = 'rgba(0,170,255,0.04)';
+  ctx.lineWidth = 1;
+  const gridStep = viewScale > 0.5 ? 10 : viewScale > 0.15 ? 50 : viewScale > 0.05 ? 200 : 500;
+  const startGrid = Math.floor(screenToWorld(0) / gridStep) * gridStep;
+  const endGrid = Math.ceil(screenToWorld(W) / gridStep) * gridStep;
+  for (let v = startGrid; v <= endGrid; v += gridStep) {
+    const sx = worldToScreen(v);
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, H);
+    ctx.stroke();
+    if (viewScale > 0.08) {
+      ctx.fillStyle = 'rgba(0,170,255,0.15)';
+      ctx.font = '9px Courier New';
+      ctx.fillText(v, sx + 2, baseY + 22);
+    }
+  }
+
+  // Number line
+  ctx.strokeStyle = 'rgba(0,170,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, baseY);
+  ctx.lineTo(W, baseY);
+  ctx.stroke();
+
+  // Draw gap bars and prime dots
+  for (let i = 0; i < revealedCount && i < gaps.length; i++) {
+    const p = ALL_PRIMES[i];
+    const sx = worldToScreen(p);
+    if (sx < -20 || sx > W + 20) continue;
+
+    const g = gaps[i].gap;
+    const bh = barHeights[i];
+    const barW = Math.max(2, Math.min(10, 6 * viewScale));
+    const isHover = i === hoverIndex || i === frozenIndex;
+
+    // Gap bar
+    const alpha = isHover ? 1 : 0.7;
+    ctx.fillStyle = gapColor(g, alpha);
+    if (isHover) {
+      ctx.shadowColor = gapColorBright(g);
+      ctx.shadowBlur = 15;
+    }
+    ctx.fillRect(sx - barW / 2, baseY - bh, barW, bh);
+    ctx.shadowBlur = 0;
+
+    // Record gap glow
+    if (gaps[i].isRecord && bh > 2) {
+      ctx.save();
+      ctx.globalAlpha = 0.15 + 0.1 * Math.sin(time * 0.003 + i);
+      ctx.strokeStyle = '#f84';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx - barW / 2 - 2, baseY - bh - 2, barW + 4, bh + 4);
+      ctx.restore();
+    }
+
+    // Twin prime golden connector
+    if (g === 2) {
+      const sx2 = worldToScreen(ALL_PRIMES[i + 1]);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,215,0,${0.4 + 0.2 * Math.sin(time * 0.004 + i)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sx, baseY + 4);
+      ctx.quadraticCurveTo((sx + sx2) / 2, baseY + 14, sx2, baseY + 4);
+      ctx.stroke();
+      // Small golden dots
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.arc(sx, baseY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(sx2, baseY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Prime dot
+    ctx.fillStyle = isHover ? '#fff' : '#0af';
+    ctx.beginPath();
+    ctx.arc(sx, baseY, isHover ? 3.5 : 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gap label on hover
+    if (isHover) {
+      ctx.fillStyle = gapColorBright(g);
+      ctx.font = 'bold 12px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(g, sx, baseY - bh - 8);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px Courier New';
+      ctx.fillText(p, sx, baseY + 16);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // Draw last revealed prime dot if within view
+  if (revealedCount > 0) {
+    const lastP = ALL_PRIMES[revealedCount - 1];
+    const lsx = worldToScreen(lastP);
+    if (lsx >= -20 && lsx <= W + 20) {
+      ctx.fillStyle = '#0af';
+      ctx.beginPath();
+      ctx.arc(lsx, baseY, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Sweep line
+  if (revealedCount < NUM_PRIMES) {
+    const sweepP = ALL_PRIMES[Math.min(revealedCount, NUM_PRIMES - 1)];
+    const sweepSx = worldToScreen(sweepP);
+    ctx.save();
+    const grad = ctx.createLinearGradient(sweepSx - 2, 0, sweepSx + 2, 0);
+    grad.addColorStop(0, 'rgba(0,170,255,0)');
+    grad.addColorStop(0.5, 'rgba(0,170,255,0.6)');
+    grad.addColorStop(1, 'rgba(0,170,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sweepSx - 15, 0, 30, H);
+
+    // Sweep line glow
+    ctx.strokeStyle = 'rgba(0,170,255,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sweepSx, 0);
+    ctx.lineTo(sweepSx, H);
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#0af';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(sweepP, sweepSx, 30);
+    ctx.textAlign = 'left';
+    ctx.restore();
+
+    // Auto-pan to follow sweep
+    if (!isDragging && revealedCount < NUM_PRIMES) {
+      const margin = W * 0.65;
+      if (sweepSx > margin) {
+        viewX += (sweepP - screenToWorld(margin)) * 0.05;
+      }
+    }
+  }
+
+  // Explosions
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const e = explosions[i];
+    e.x += e.vx;
+    e.y += e.vy;
+    e.vy += 0.04;
+    e.life -= 0.018;
+    if (e.life <= 0) {
+      explosions.splice(i, 1);
+      continue;
+    }
+    ctx.save();
+    ctx.globalAlpha = e.life;
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.size * e.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Final stats update
+  if (revealedCount >= NUM_PRIMES && revealedCount === NUM_PRIMES) {
+    updateStats();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// Initial stats
+updateStats();
+requestAnimationFrame(draw);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

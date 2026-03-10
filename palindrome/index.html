@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PALINDROME</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#aac; }
+canvas { display:block; cursor:grab; }
+canvas:active { cursor:grabbing; }
+
+#stats {
+  position:fixed; top:14px; right:14px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  border-radius:6px; padding:14px 18px; font-size:11px;
+  line-height:1.8; min-width:210px; pointer-events:auto;
+  box-shadow:0 0 20px rgba(0,170,255,.06);
+}
+#stats h3 { color:#5af; font-size:12px; letter-spacing:3px; margin-bottom:6px; text-align:center; }
+#stats .row { display:flex; justify-content:space-between; gap:12px; }
+#stats .label { color:#668; }
+#stats .val { color:#8cf; }
+#stats .highlight { color:#ff8; }
+
+#tooltip {
+  position:fixed; display:none; pointer-events:none;
+  background:rgba(6,6,16,.94); border:1px solid rgba(0,170,255,.3);
+  border-radius:4px; padding:8px 14px; font-size:12px;
+  box-shadow:0 0 16px rgba(0,170,255,.12);
+}
+#tooltip .prime { color:#5ef; font-size:16px; font-weight:bold; }
+#tooltip .info { color:#88a; font-size:11px; margin-top:3px; }
+
+#title {
+  position:fixed; top:14px; left:50%; transform:translateX(-50%);
+  font-size:14px; letter-spacing:6px; color:#5af;
+  text-shadow:0 0 20px rgba(80,170,255,.3);
+  pointer-events:none;
+}
+</style>
+</head>
+<body>
+<div id="title">SHIELD-PALINDROME</div>
+<canvas id="c"></canvas>
+<div id="stats"></div>
+<div id="tooltip"></div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statsEl = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Sieve & palindrome detection ---
+function sieve(max) {
+  const s = new Uint8Array(max + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= max; i++) {
+    if (!s[i]) for (let j = i * i; j <= max; j += i) s[j] = 1;
+  }
+  return s;
+}
+
+function isPalindrome(n) {
+  const s = String(n);
+  for (let i = 0, j = s.length - 1; i < j; i++, j--) {
+    if (s[i] !== s[j]) return false;
+  }
+  return true;
+}
+
+const MAX = 100000;
+const composites = sieve(MAX);
+const palindromicPrimes = [];
+for (let i = 2; i <= MAX; i++) {
+  if (!composites[i] && isPalindrome(i)) palindromicPrimes.push(i);
+}
+
+// Group by digit count
+const groups = {};
+palindromicPrimes.forEach((p, idx) => {
+  const d = String(p).length;
+  if (!groups[d]) groups[d] = [];
+  groups[d].push({ value: p, index: idx, digits: d });
+});
+const digitCounts = Object.keys(groups).map(Number).sort((a, b) => a - b);
+
+// --- Layout: concentric rings ---
+const items = [];
+const ringRadii = [];
+const baseRadius = 40;
+const ringGap = 80;
+
+digitCounts.forEach((dc, ri) => {
+  const r = baseRadius + ri * ringGap;
+  ringRadii.push(r);
+  const group = groups[dc];
+  const n = group.length;
+  const angleStep = (2 * Math.PI) / Math.max(n, 1);
+  const startAngle = -Math.PI / 2;
+  group.forEach((item, i) => {
+    const angle = startAngle + i * angleStep;
+    items.push({
+      value: item.value,
+      digits: item.digits,
+      seqIndex: item.index,
+      x: Math.cos(angle) * r,
+      y: Math.sin(angle) * r,
+      angle: angle,
+      ring: ri,
+      radius: r,
+      fadeIn: 0,
+      shimmerPhase: Math.random() * Math.PI * 2
+    });
+  });
+});
+
+// --- Camera ---
+let cam = { x: 0, y: 0, zoom: 1 };
+let dragStart = null;
+let camStart = null;
+let highlightDigits = null;
+let hoveredItem = null;
+
+canvas.addEventListener('mousedown', e => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  camStart = { x: cam.x, y: cam.y };
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragStart) {
+    cam.x = camStart.x + (e.clientX - dragStart.x) / cam.zoom;
+    cam.y = camStart.y + (e.clientY - dragStart.y) / cam.zoom;
+    return;
+  }
+  // Hit test
+  const mx = (e.clientX - W / 2) / cam.zoom - cam.x;
+  const my = (e.clientY - H / 2) / cam.zoom - cam.y;
+  hoveredItem = null;
+  let bestDist = 20 / cam.zoom;
+  for (const item of items) {
+    const dx = mx - item.x, dy = my - item.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      hoveredItem = item;
+    }
+  }
+  if (hoveredItem) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 16) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    tooltip.innerHTML =
+      `<div class="prime">${hoveredItem.value}</div>` +
+      `<div class="info">${hoveredItem.digits}-digit palindromic prime</div>` +
+      `<div class="info">Position #${hoveredItem.seqIndex + 1} in sequence</div>`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+canvas.addEventListener('mouseup', () => {
+  if (dragStart) {
+    const moved = camStart && (Math.abs(cam.x - camStart.x) > 2 || Math.abs(cam.y - camStart.y) > 2);
+    if (!moved && hoveredItem) {
+      highlightDigits = (highlightDigits === hoveredItem.digits) ? null : hoveredItem.digits;
+    }
+    dragStart = null;
+    camStart = null;
+  }
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  cam.zoom = Math.max(0.2, Math.min(8, cam.zoom * factor));
+}, { passive: false });
+
+// --- Stats panel ---
+function buildStats() {
+  let html = '<h3>PALINDROMIC PRIMES</h3>';
+  let total = 0;
+  digitCounts.forEach(dc => {
+    const count = groups[dc].length;
+    total += count;
+    const largest = groups[dc][groups[dc].length - 1].value;
+    html += `<div class="row"><span class="label">${dc}-digit:</span><span class="val">${count} primes (max ${largest.toLocaleString()})</span></div>`;
+  });
+  html += '<hr style="border:none;border-top:1px solid rgba(0,170,255,.1);margin:6px 0">';
+  html += `<div class="row"><span class="label">Total:</span><span class="val highlight">${total}</span></div>`;
+  html += `<div class="row"><span class="label">Largest:</span><span class="val highlight">${palindromicPrimes[palindromicPrimes.length - 1].toLocaleString()}</span></div>`;
+  const primeCount = (() => { let c = 0; for (let i = 2; i <= MAX; i++) if (!composites[i]) c++; return c; })();
+  html += `<div class="row"><span class="label">Density:</span><span class="val">${(total / primeCount * 100).toFixed(2)}% of primes</span></div>`;
+  statsEl.innerHTML = html;
+}
+buildStats();
+
+// --- Animation ---
+const startTime = performance.now();
+const ringAppearDelay = 600; // ms per ring
+
+function drawMirrorNumber(x, y, value, alpha, shimmer, isHighlighted, isHovered) {
+  const str = String(value);
+  const len = str.length;
+  const fontSize = Math.max(8, 13 - len * 0.5);
+  ctx.font = `${fontSize}px 'Courier New',monospace`;
+
+  const charW = ctx.measureText('0').width;
+  const totalW = charW * len;
+  const startX = x - totalW / 2;
+
+  // Glow
+  const glowIntensity = isHovered ? 0.6 : (isHighlighted ? 0.35 : 0.15);
+  const glowColor = isHovered ? 'rgba(80,230,255,' : (isHighlighted ? 'rgba(255,220,80,' : 'rgba(80,170,255,');
+  ctx.shadowBlur = isHovered ? 18 : (isHighlighted ? 12 : 6);
+  ctx.shadowColor = glowColor + (glowIntensity * alpha) + ')';
+
+  // Draw each character with symmetric glow from center
+  const centerIdx = (len - 1) / 2;
+  for (let i = 0; i < len; i++) {
+    const distFromCenter = Math.abs(i - centerIdx) / Math.max(centerIdx, 1);
+    const shimmerVal = Math.sin(shimmer + distFromCenter * Math.PI) * 0.3 + 0.7;
+    const charAlpha = alpha * shimmerVal;
+
+    let r, g, b;
+    if (isHovered) {
+      r = 180; g = 240; b = 255;
+    } else if (isHighlighted) {
+      r = 255; g = 220; b = 120;
+    } else {
+      // Symmetric color: center is brighter
+      const t = 1 - distFromCenter;
+      r = 100 + t * 80;
+      g = 170 + t * 60;
+      b = 220 + t * 35;
+    }
+    ctx.fillStyle = `rgba(${r|0},${g|0},${b|0},${charAlpha})`;
+    ctx.fillText(str[i], startX + i * charW, y + fontSize * 0.35);
+  }
+
+  // Mirror reflection line through center digit
+  if (alpha > 0.3) {
+    const centerX = x;
+    const lineH = fontSize * 0.6;
+    ctx.strokeStyle = `rgba(80,170,255,${alpha * 0.2})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(centerX, y - lineH);
+    ctx.lineTo(centerX, y + lineH);
+    ctx.stroke();
+  }
+
+  ctx.shadowBlur = 0;
+}
+
+function draw(t) {
+  const elapsed = t - startTime;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background subtle grid
+  ctx.save();
+  ctx.translate(W / 2 + cam.x * cam.zoom, H / 2 + cam.y * cam.zoom);
+  ctx.scale(cam.zoom, cam.zoom);
+
+  // Draw ring guides
+  ringRadii.forEach((r, ri) => {
+    const ringAlpha = Math.min(1, Math.max(0, (elapsed - ri * ringAppearDelay) / 800));
+    if (ringAlpha <= 0) return;
+    ctx.strokeStyle = `rgba(30,60,100,${0.15 * ringAlpha})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Ring label
+    const dc = digitCounts[ri];
+    ctx.font = '9px Courier New,monospace';
+    ctx.fillStyle = `rgba(60,100,160,${0.4 * ringAlpha})`;
+    ctx.fillText(`${dc}-digit`, r + 8, -4);
+  });
+
+  // Draw items
+  for (const item of items) {
+    const ringDelay = item.ring * ringAppearDelay;
+    const itemDelay = ringDelay + (item.seqIndex % (groups[item.digits].length)) * 30;
+    const fadeTarget = Math.min(1, Math.max(0, (elapsed - itemDelay) / 600));
+    item.fadeIn += (fadeTarget - item.fadeIn) * 0.08;
+
+    if (item.fadeIn < 0.01) continue;
+
+    const shimmer = item.shimmerPhase + t * 0.002;
+    const isHighlighted = highlightDigits !== null && item.digits === highlightDigits;
+    const dimmed = highlightDigits !== null && item.digits !== highlightDigits;
+    const isHovered = hoveredItem === item;
+    const alpha = item.fadeIn * (dimmed ? 0.15 : 1);
+
+    drawMirrorNumber(item.x, item.y, item.value, alpha, shimmer, isHighlighted, isHovered);
+  }
+
+  // Center marker
+  ctx.fillStyle = 'rgba(80,170,255,0.08)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

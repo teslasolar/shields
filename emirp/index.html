@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-EMIRP</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#aac; }
+canvas { display:block; cursor:crosshair; }
+#stats {
+  position:fixed; top:16px; left:16px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  padding:14px 20px; font-size:11px; line-height:1.8;
+  letter-spacing:1px; pointer-events:none; z-index:10;
+  border-radius:2px;
+}
+#stats .label { color:#556; }
+#stats .val { color:#0af; }
+#stats .title { color:#0af; font-size:13px; letter-spacing:3px; margin-bottom:6px; }
+#tooltip {
+  position:fixed; display:none;
+  background:rgba(6,6,16,.95); border:1px solid rgba(0,170,255,.25);
+  padding:10px 16px; font-size:11px; line-height:1.7;
+  letter-spacing:1px; pointer-events:none; z-index:20;
+  border-radius:2px; max-width:280px;
+}
+#tooltip .t-pair { color:#0ef; font-size:14px; letter-spacing:2px; }
+#tooltip .t-label { color:#556; }
+#tooltip .t-val { color:#8bf; }
+#selected-overlay {
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  display:none; text-align:center; pointer-events:none; z-index:15;
+}
+#selected-overlay .big-num {
+  font-size:48px; letter-spacing:6px; color:#0ef;
+  text-shadow:0 0 30px rgba(0,170,255,.5);
+}
+#selected-overlay .mirror-sym {
+  font-size:24px; color:#0af; margin:8px 0;
+}
+#selected-overlay .big-num2 {
+  font-size:48px; letter-spacing:6px; color:#f0a;
+  text-shadow:0 0 30px rgba(255,0,170,.5);
+}
+</style>
+</head>
+<body>
+<div id="stats"></div>
+<div id="tooltip"></div>
+<div id="selected-overlay">
+  <div class="big-num" id="sel-num1"></div>
+  <div class="mirror-sym">&harr;</div>
+  <div class="big-num2" id="sel-num2"></div>
+</div>
+<canvas id="c"></canvas>
+
+<script>
+// --- Emirp computation ---
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+function reverseNum(n) {
+  return parseInt(String(n).split('').reverse().join(''), 10);
+}
+
+function findEmirps(limit) {
+  const pairs = [];
+  const seen = new Set();
+  const primes = [];
+  for (let i = 2; i <= limit; i++) {
+    if (isPrime(i)) primes.push(i);
+  }
+  for (const p of primes) {
+    if (seen.has(p)) continue;
+    const r = reverseNum(p);
+    if (r === p) continue; // palindrome
+    if (!isPrime(r)) continue;
+    if (r > limit) {
+      // still count it as emirp pair if reverse is prime
+      pairs.push([p, r]);
+      seen.add(p);
+      seen.add(r);
+      continue;
+    }
+    pairs.push([Math.min(p, r), Math.max(p, r)]);
+    seen.add(p);
+    seen.add(r);
+  }
+  return { pairs, totalPrimes: primes.length };
+}
+
+const { pairs: emirpPairs, totalPrimes } = findEmirps(1000);
+emirpPairs.sort((a, b) => a[0] - b[0]);
+
+// --- Canvas setup ---
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Camera ---
+let camX = 0, camY = 0, zoom = 1;
+let dragStart = null, dragCam = null;
+let mouseX = 0, mouseY = 0;
+let hoveredPair = -1;
+let selectedPair = -1;
+let startTime = performance.now();
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.92 : 1.08;
+  zoom = Math.max(0.15, Math.min(5, zoom * factor));
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragCam = { x: camX, y: camY };
+});
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (dragStart) {
+    camX = dragCam.x + (e.clientX - dragStart.x) / zoom;
+    camY = dragCam.y + (e.clientY - dragStart.y) / zoom;
+  }
+});
+canvas.addEventListener('mouseup', e => {
+  if (dragStart && Math.abs(e.clientX - dragStart.x) < 4 && Math.abs(e.clientY - dragStart.y) < 4) {
+    // click
+    if (hoveredPair >= 0) {
+      selectedPair = selectedPair === hoveredPair ? -1 : hoveredPair;
+    } else {
+      selectedPair = -1;
+    }
+    updateSelected();
+  }
+  dragStart = null;
+});
+canvas.addEventListener('mouseleave', () => { dragStart = null; });
+
+// --- Layout: double helix ---
+function getPairPositions(index, time) {
+  const t = index / emirpPairs.length;
+  const angle = t * Math.PI * 6 + time * 0.15; // 3 full turns
+  const radius = 60 + t * 320;
+  const helixSpread = 40 + t * 25;
+  const cx = Math.cos(angle) * radius;
+  const cy = Math.sin(angle) * radius;
+  // left helix node (original)
+  const perpX = -Math.sin(angle);
+  const perpY = Math.cos(angle);
+  const lx = cx - perpX * helixSpread;
+  const ly = cy - perpY * helixSpread;
+  // right helix node (reversed)
+  const rx = cx + perpX * helixSpread;
+  const ry = cy + perpY * helixSpread;
+  return { lx, ly, rx, ry, cx, cy, angle };
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: W / 2 + (wx + camX) * zoom,
+    y: H / 2 + (wy + camY) * zoom
+  };
+}
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / zoom - camX,
+    y: (sy - H / 2) / zoom - camY
+  };
+}
+
+// --- Stats panel ---
+function updateStats() {
+  const el = document.getElementById('stats');
+  const largest = emirpPairs[emirpPairs.length - 1];
+  const emirpCount = emirpPairs.length * 2;
+  const pct = ((emirpCount / totalPrimes) * 100).toFixed(1);
+  el.innerHTML =
+    `<div class="title">SHIELD-EMIRP</div>` +
+    `<span class="label">EMIRP PAIRS:</span> <span class="val">${emirpPairs.length}</span><br>` +
+    `<span class="label">TOTAL EMIRPS:</span> <span class="val">${emirpCount}</span><br>` +
+    `<span class="label">PRIMES &le;1000:</span> <span class="val">${totalPrimes}</span><br>` +
+    `<span class="label">EMIRPS/PRIMES:</span> <span class="val">${pct}%</span><br>` +
+    `<span class="label">LARGEST PAIR:</span> <span class="val">${largest[0]} &harr; ${largest[1]}</span>`;
+}
+updateStats();
+
+// --- Tooltip ---
+function updateTooltip() {
+  const el = document.getElementById('tooltip');
+  if (hoveredPair < 0) { el.style.display = 'none'; return; }
+  const [a, b] = emirpPairs[hoveredPair];
+  const digits = String(a).length;
+  el.innerHTML =
+    `<div class="t-pair">${a} &harr; ${b}</div>` +
+    `<span class="t-label">ORIGINAL:</span> <span class="t-val">${a} = PRIME</span><br>` +
+    `<span class="t-label">REVERSED:</span> <span class="t-val">${b} = PRIME</span><br>` +
+    `<span class="t-label">DIGITS:</span> <span class="t-val">${digits}</span>`;
+  el.style.display = 'block';
+  el.style.left = Math.min(mouseX + 16, W - 260) + 'px';
+  el.style.top = Math.min(mouseY + 16, H - 120) + 'px';
+}
+
+// --- Selected overlay ---
+function updateSelected() {
+  const el = document.getElementById('selected-overlay');
+  if (selectedPair < 0) { el.style.display = 'none'; return; }
+  const [a, b] = emirpPairs[selectedPair];
+  document.getElementById('sel-num1').textContent = a;
+  document.getElementById('sel-num2').textContent = b;
+  el.style.display = 'block';
+}
+
+// --- Render ---
+function draw(now) {
+  const elapsed = (now - startTime) / 1000;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // subtle background grid
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = '#0af';
+  const gridSize = 80 * zoom;
+  const offX = (W / 2 + camX * zoom) % gridSize;
+  const offY = (H / 2 + camY * zoom) % gridSize;
+  for (let x = offX; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = offY; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Helix backbone lines
+  const leftPoints = [];
+  const rightPoints = [];
+  const centerPoints = [];
+
+  hoveredPair = -1;
+  const mWorld = screenToWorld(mouseX, mouseY);
+
+  for (let i = 0; i < emirpPairs.length; i++) {
+    const pos = getPairPositions(i, elapsed);
+    leftPoints.push(pos);
+
+    // Animation: materialize from center outward
+    const materializeTime = i * 0.12 + 0.5;
+    const alpha = Math.min(1, Math.max(0, (elapsed - materializeTime) * 1.5));
+    if (alpha <= 0) continue;
+
+    // Flip animation
+    const flipProgress = Math.min(1, Math.max(0, (elapsed - materializeTime) * 2));
+    const flipScale = Math.abs(Math.cos(flipProgress * Math.PI * 0.5));
+
+    const sl = worldToScreen(pos.lx, pos.ly);
+    const sr = worldToScreen(pos.rx, pos.ry);
+    const sc = worldToScreen(pos.cx, pos.cy);
+
+    // Check hover
+    const dlx = mouseX - sl.x, dly = mouseY - sl.y;
+    const drx = mouseX - sr.x, dry = mouseY - sr.y;
+    const nodeR = (12 + String(emirpPairs[i][0]).length * 3) * zoom;
+    if (dlx * dlx + dly * dly < nodeR * nodeR || drx * drx + dry * dry < nodeR * nodeR) {
+      hoveredPair = i;
+    }
+
+    // Mirror axis glow
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.3;
+    const grad = ctx.createLinearGradient(sl.x, sl.y, sr.x, sr.y);
+    grad.addColorStop(0, 'rgba(0,170,255,0)');
+    grad.addColorStop(0.3, 'rgba(0,170,255,0.4)');
+    grad.addColorStop(0.5, 'rgba(0,238,255,0.8)');
+    grad.addColorStop(0.7, 'rgba(255,0,170,0.4)');
+    grad.addColorStop(1, 'rgba(255,0,170,0)');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = (hoveredPair === i || selectedPair === i) ? 3 : 1.2;
+    ctx.beginPath();
+    ctx.moveTo(sl.x, sl.y);
+    ctx.lineTo(sr.x, sr.y);
+    ctx.stroke();
+    ctx.restore();
+
+    // Selected beam
+    if (selectedPair === i) {
+      ctx.save();
+      ctx.globalAlpha = 0.15 + Math.sin(elapsed * 4) * 0.1;
+      ctx.strokeStyle = '#0ef';
+      ctx.lineWidth = 6 * zoom;
+      ctx.shadowColor = '#0ef';
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.moveTo(sl.x, sl.y);
+      ctx.lineTo(sr.x, sr.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Left node (original)
+    const isHov = hoveredPair === i;
+    const isSel = selectedPair === i;
+    const nodeSize = ((isHov || isSel) ? 8 : 5) * zoom;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = isHov || isSel ? '#0ef' : '#0af';
+    ctx.shadowColor = '#0af';
+    ctx.shadowBlur = isHov || isSel ? 15 : 6;
+    ctx.beginPath();
+    ctx.arc(sl.x, sl.y, nodeSize * flipScale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Right node (reversed)
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = isHov || isSel ? '#f6a' : '#f0a';
+    ctx.shadowColor = '#f0a';
+    ctx.shadowBlur = isHov || isSel ? 15 : 6;
+    ctx.beginPath();
+    ctx.arc(sr.x, sr.y, nodeSize * flipScale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Labels
+    if (zoom > 0.4) {
+      const fontSize = Math.max(8, Math.min(13, 11 * zoom));
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.font = `${fontSize}px 'Courier New',monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // left label
+      ctx.fillStyle = '#0af';
+      ctx.fillText(String(emirpPairs[i][0]), sl.x, sl.y - nodeSize - 6 * zoom);
+
+      // right label
+      ctx.fillStyle = '#f0a';
+      ctx.fillText(String(emirpPairs[i][1]), sr.x, sr.y - nodeSize - 6 * zoom);
+      ctx.restore();
+    }
+  }
+
+  // Draw helix backbone (left)
+  if (leftPoints.length > 1) {
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.strokeStyle = '#0af';
+    ctx.lineWidth = 1.2 * zoom;
+    ctx.beginPath();
+    for (let i = 0; i < leftPoints.length; i++) {
+      const materializeTime = i * 0.12 + 0.5;
+      if (elapsed < materializeTime) break;
+      const p = worldToScreen(leftPoints[i].lx, leftPoints[i].ly);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+
+    // right backbone
+    ctx.strokeStyle = '#f0a';
+    ctx.beginPath();
+    for (let i = 0; i < leftPoints.length; i++) {
+      const materializeTime = i * 0.12 + 0.5;
+      if (elapsed < materializeTime) break;
+      const p = worldToScreen(leftPoints[i].rx, leftPoints[i].ry);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Center glow
+  const center = worldToScreen(0, 0);
+  const cGrad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, 60 * zoom);
+  cGrad.addColorStop(0, 'rgba(0,170,255,0.08)');
+  cGrad.addColorStop(1, 'rgba(0,170,255,0)');
+  ctx.fillStyle = cGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  updateTooltip();
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SOPHIE</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#aab; }
+canvas { display:block; cursor:grab; }
+canvas:active { cursor:grabbing; }
+
+#stats {
+  position:fixed; top:16px; left:16px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  padding:14px 18px; font-size:11px; line-height:1.7;
+  pointer-events:none; z-index:10; min-width:240px;
+  border-radius:2px;
+}
+#stats .title {
+  font-size:13px; color:#0af; letter-spacing:3px; margin-bottom:8px;
+  border-bottom:1px solid rgba(0,170,255,.15); padding-bottom:6px;
+}
+#stats .label { color:#556; }
+#stats .val { color:#8cf; }
+#stats .hi { color:#fc4; }
+
+#tooltip {
+  position:fixed; display:none;
+  background:rgba(6,6,16,.95); border:1px solid rgba(0,170,255,.25);
+  padding:10px 14px; font-size:11px; line-height:1.6;
+  pointer-events:none; z-index:20; max-width:320px;
+  border-radius:2px;
+}
+#tooltip .tp { color:#0af; font-size:12px; }
+#tooltip .tc { color:#889; }
+#tooltip .tv { color:#cdf; }
+#tooltip .chain-members { color:#fc4; font-size:10px; margin-top:4px; }
+
+#legend {
+  position:fixed; top:16px; right:16px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  padding:12px 16px; font-size:10px; line-height:1.8;
+  pointer-events:none; z-index:10;
+  border-radius:2px;
+}
+#legend .lt { color:#0af; letter-spacing:2px; margin-bottom:6px; font-size:11px; }
+.leg-row { display:flex; align-items:center; gap:8px; }
+.leg-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-SOPHIE</div>
+  <div><span class="label">SOPHIE GERMAIN PRIMES (p&lt;<span id="statN">1000</span>): </span><span class="val" id="statTotal">--</span></div>
+  <div><span class="label">LONGEST CUNNINGHAM CHAIN: </span><span class="hi" id="statLongest">--</span></div>
+  <div><span class="label">LONGEST CHAIN MEMBERS: </span><span class="hi" id="statChainMembers">--</span></div>
+  <div><span class="label">DENSITY: </span><span class="val" id="statDensity">--</span></div>
+  <div><span class="label">CHAINS VISIBLE: </span><span class="val" id="statChains">--</span></div>
+  <div><span class="label">NODES ANIMATED: </span><span class="val" id="statNodes">--</span></div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="legend">
+  <div class="lt">CHAIN LENGTH</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#4488ff"></span> Single (1)</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#22cc66"></span> Chain of 2</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#ddcc22"></span> Chain of 3</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#ff6622"></span> Chain of 4</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#ff2244"></span> Chain of 5+</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Math ---
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+function isSophieGermain(p) {
+  return isPrime(p) && isPrime(2 * p + 1);
+}
+
+// Build Sophie Germain primes up to N
+const N = 2000;
+const sgPrimes = [];
+for (let i = 2; i <= N; i++) {
+  if (isSophieGermain(i)) sgPrimes.push(i);
+}
+
+// Build Cunningham chains of the first kind
+// A chain starts at p where (p-1)/2 is not prime or p is the smallest in the chain
+function buildChains() {
+  const sgSet = new Set(sgPrimes);
+  const allPrimesInChains = new Set();
+  const chains = [];
+
+  for (const p of sgPrimes) {
+    // Check if p is a chain root: (p-1)/2 should NOT be a Sophie Germain prime
+    // i.e., p is not the successor of another SG prime
+    const predecessor = (p - 1) / 2;
+    if (sgSet.has(predecessor)) continue; // not a root
+
+    // Build chain from p
+    const chain = [p];
+    let current = p;
+    while (true) {
+      const next = 2 * current + 1;
+      if (sgSet.has(next)) {
+        chain.push(next);
+        current = next;
+      } else {
+        // Add the final safe prime (2*current+1) if it's prime
+        if (isPrime(2 * current + 1)) {
+          chain.push(2 * current + 1);
+        }
+        break;
+      }
+    }
+    chains.push(chain);
+    chain.forEach(p => allPrimesInChains.add(p));
+  }
+
+  return chains;
+}
+
+const chains = buildChains();
+
+// Sort chains by length descending for display priority
+chains.sort((a, b) => b.length - a.length);
+
+// --- Graph nodes and edges ---
+const nodes = [];
+const edges = [];
+const nodeMap = {};
+
+function chainColor(len) {
+  if (len <= 1) return { r: 68, g: 136, b: 255 };      // blue
+  if (len === 2) return { r: 34, g: 204, b: 102 };      // green
+  if (len === 3) return { r: 221, g: 204, b: 34 };      // yellow
+  if (len === 4) return { r: 255, g: 102, b: 34 };      // orange
+  return { r: 255, g: 34, b: 68 };                       // red
+}
+
+function chainColorStr(len, alpha) {
+  const c = chainColor(len);
+  return `rgba(${c.r},${c.g},${c.b},${alpha || 1})`;
+}
+
+let nodeId = 0;
+chains.forEach((chain, ci) => {
+  const cLen = chain.length;
+  const col = chainColor(cLen);
+
+  chain.forEach((p, i) => {
+    if (!nodeMap[p]) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 80 + Math.random() * 250;
+      nodeMap[p] = {
+        id: nodeId++,
+        prime: p,
+        x: W / 2 + Math.cos(angle) * dist,
+        y: H / 2 + Math.sin(angle) * dist,
+        vx: 0, vy: 0,
+        chainIndex: ci,
+        chainLength: cLen,
+        chain: chain,
+        color: col,
+        radius: Math.max(3, 2 + cLen * 1.5),
+        orbitAngle: Math.random() * Math.PI * 2,
+        orbitSpeed: 0.0003 + Math.random() * 0.0005,
+        orbitRadius: 0.3 + Math.random() * 0.8,
+        isSG: isSophieGermain(p),
+        revealed: false,
+        revealTime: 0
+      };
+      nodes.push(nodeMap[p]);
+    } else {
+      // If this prime appears in a longer chain, update
+      if (cLen > nodeMap[p].chainLength) {
+        nodeMap[p].chainIndex = ci;
+        nodeMap[p].chainLength = cLen;
+        nodeMap[p].chain = chain;
+        nodeMap[p].color = col;
+        nodeMap[p].radius = Math.max(3, 2 + cLen * 1.5);
+      }
+    }
+  });
+
+  for (let i = 0; i < chain.length - 1; i++) {
+    edges.push({
+      from: nodeMap[chain[i]],
+      to: nodeMap[chain[i + 1]],
+      chainIndex: ci,
+      chainLength: cLen,
+      color: col,
+      revealed: false,
+      revealTime: 0,
+      linkIndex: i
+    });
+  }
+});
+
+// --- Animation state ---
+let animTime = 0;
+let buildPhase = true;
+let buildIndex = 0;
+let buildLinkIndex = 0;
+let lastBuildTime = 0;
+const BUILD_INTERVAL = 120; // ms between revealing links
+
+// Reveal chains one by one, link by link
+function revealNext(now) {
+  if (!buildPhase) return;
+  if (now - lastBuildTime < BUILD_INTERVAL) return;
+  lastBuildTime = now;
+
+  if (buildIndex >= chains.length) {
+    buildPhase = false;
+    return;
+  }
+
+  const chain = chains[buildIndex];
+
+  // Reveal node at buildLinkIndex
+  const p = chain[buildLinkIndex];
+  if (nodeMap[p] && !nodeMap[p].revealed) {
+    nodeMap[p].revealed = true;
+    nodeMap[p].revealTime = now;
+  }
+
+  // Reveal edge from buildLinkIndex-1 to buildLinkIndex
+  if (buildLinkIndex > 0) {
+    const edge = edges.find(e =>
+      e.from.prime === chain[buildLinkIndex - 1] &&
+      e.to.prime === chain[buildLinkIndex] &&
+      e.chainIndex === buildIndex
+    );
+    if (edge && !edge.revealed) {
+      edge.revealed = true;
+      edge.revealTime = now;
+    }
+  }
+
+  buildLinkIndex++;
+  if (buildLinkIndex >= chain.length) {
+    buildIndex++;
+    buildLinkIndex = 0;
+  }
+}
+
+// --- Camera ---
+let camX = 0, camY = 0, zoom = 1;
+let dragging = false, dragStartX = 0, dragStartY = 0, camStartX = 0, camStartY = 0;
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  camStartX = camX;
+  camStartY = camY;
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragging) {
+    camX = camStartX + (e.clientX - dragStartX) / zoom;
+    camY = camStartY + (e.clientY - dragStartY) / zoom;
+  }
+  handleHover(e);
+});
+canvas.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('mouseleave', () => { dragging = false; tooltip.style.display = 'none'; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zf = e.deltaY > 0 ? 0.92 : 1.08;
+  zoom = Math.max(0.15, Math.min(8, zoom * zf));
+}, { passive: false });
+
+canvas.addEventListener('click', e => {
+  handleClick(e);
+});
+
+let hoveredNode = null;
+let selectedChainIndex = -1;
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / zoom - camX + W / 2,
+    y: (sy - H / 2) / zoom - camY + H / 2
+  };
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - W / 2 + camX) * zoom + W / 2,
+    y: (wy - H / 2 + camY) * zoom + H / 2
+  };
+}
+
+function handleHover(e) {
+  const wp = screenToWorld(e.clientX, e.clientY);
+  hoveredNode = null;
+  let minDist = Infinity;
+
+  for (const n of nodes) {
+    if (!n.revealed) continue;
+    const dx = n.x - wp.x, dy = n.y - wp.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const hitR = Math.max(n.radius + 4, 12) / zoom;
+    if (d < hitR && d < minDist) {
+      minDist = d;
+      hoveredNode = n;
+    }
+  }
+
+  if (hoveredNode) {
+    const n = hoveredNode;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 16) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    // Clamp tooltip to screen
+    const rect = tooltip.getBoundingClientRect();
+    if (rect.right > W - 10) tooltip.style.left = (e.clientX - rect.width - 16) + 'px';
+    if (rect.bottom > H - 40) tooltip.style.top = (e.clientY - rect.height - 10) + 'px';
+
+    const safePrime = 2 * n.prime + 1;
+    tooltip.innerHTML =
+      `<div class="tp">p = ${n.prime}</div>` +
+      `<div><span class="tc">Safe prime: </span><span class="tv">${safePrime}${isPrime(safePrime) ? '' : ' (not prime)'}</span></div>` +
+      `<div><span class="tc">Sophie Germain: </span><span class="tv">${n.isSG ? 'YES' : 'NO (terminal)'}</span></div>` +
+      `<div><span class="tc">Chain length: </span><span class="tv">${n.chainLength}</span></div>` +
+      `<div class="chain-members">Chain: ${n.chain.join(' \u2192 ')}</div>`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+function handleClick(e) {
+  if (hoveredNode) {
+    if (selectedChainIndex === hoveredNode.chainIndex) {
+      selectedChainIndex = -1;
+    } else {
+      selectedChainIndex = hoveredNode.chainIndex;
+    }
+  } else {
+    selectedChainIndex = -1;
+  }
+}
+
+// --- Force simulation ---
+function simulate() {
+  const repulsion = 800;
+  const attraction = 0.005;
+  const centerForce = 0.0003;
+  const damping = 0.92;
+
+  // Center gravity
+  const cx = W / 2, cy = H / 2;
+  for (const n of nodes) {
+    if (!n.revealed) continue;
+    n.vx += (cx - n.x) * centerForce;
+    n.vy += (cy - n.y) * centerForce;
+  }
+
+  // Repulsion between nodes
+  for (let i = 0; i < nodes.length; i++) {
+    if (!nodes[i].revealed) continue;
+    for (let j = i + 1; j < nodes.length; j++) {
+      if (!nodes[j].revealed) continue;
+      const a = nodes[i], b = nodes[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < 1) d2 = 1;
+      const d = Math.sqrt(d2);
+      const f = repulsion / d2;
+      const fx = (dx / d) * f, fy = (dy / d) * f;
+      a.vx -= fx; a.vy -= fy;
+      b.vx += fx; b.vy += fy;
+    }
+  }
+
+  // Edge attraction
+  for (const e of edges) {
+    if (!e.revealed) continue;
+    const a = e.from, b = e.to;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const idealLen = 50 + 15 * e.chainLength;
+    const f = (d - idealLen) * attraction;
+    const fx = (dx / (d || 1)) * f, fy = (dy / (d || 1)) * f;
+    a.vx += fx; a.vy += fy;
+    b.vx -= fx; b.vy -= fy;
+  }
+
+  // Update positions
+  for (const n of nodes) {
+    if (!n.revealed) continue;
+    n.vx *= damping;
+    n.vy *= damping;
+    n.x += n.vx;
+    n.y += n.vy;
+
+    // Gentle orbit
+    n.orbitAngle += n.orbitSpeed;
+    n.x += Math.cos(n.orbitAngle) * n.orbitRadius * 0.15;
+    n.y += Math.sin(n.orbitAngle) * n.orbitRadius * 0.15;
+  }
+}
+
+// --- Render ---
+function draw(now) {
+  animTime = now;
+
+  // Build animation
+  revealNext(now);
+
+  // Physics
+  simulate();
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(camX - W / 2, camY - H / 2);
+
+  // Draw edges
+  for (const e of edges) {
+    if (!e.revealed) continue;
+    const age = (now - e.revealTime) / 1000;
+    const fadeIn = Math.min(1, age / 0.5);
+    const a = e.from, b = e.to;
+
+    const isSelected = selectedChainIndex === e.chainIndex;
+    const isDimmed = selectedChainIndex >= 0 && !isSelected;
+
+    // Pulse effect
+    const pulsePhase = (now / 1200 - e.linkIndex * 0.5) % (Math.PI * 2);
+    const pulse = 0.4 + 0.3 * Math.sin(pulsePhase);
+
+    const alpha = fadeIn * (isDimmed ? 0.08 : (isSelected ? 0.9 : pulse));
+
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = `rgba(${e.color.r},${e.color.g},${e.color.b},${alpha})`;
+    ctx.lineWidth = isSelected ? 2.5 : (e.chainLength > 3 ? 1.8 : 1.2);
+    ctx.stroke();
+
+    // Arrow
+    if (alpha > 0.15) {
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const arrLen = 5;
+      ctx.beginPath();
+      ctx.moveTo(mx + Math.cos(angle) * arrLen, my + Math.sin(angle) * arrLen);
+      ctx.lineTo(mx + Math.cos(angle + 2.5) * arrLen * 0.6, my + Math.sin(angle + 2.5) * arrLen * 0.6);
+      ctx.lineTo(mx + Math.cos(angle - 2.5) * arrLen * 0.6, my + Math.sin(angle - 2.5) * arrLen * 0.6);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${e.color.r},${e.color.g},${e.color.b},${alpha * 0.8})`;
+      ctx.fill();
+    }
+  }
+
+  // Draw nodes
+  for (const n of nodes) {
+    if (!n.revealed) continue;
+    const age = (now - n.revealTime) / 1000;
+    const fadeIn = Math.min(1, age / 0.4);
+    const scale = 0.3 + 0.7 * Math.min(1, age / 0.3);
+
+    const isSelected = selectedChainIndex === n.chainIndex;
+    const isDimmed = selectedChainIndex >= 0 && !isSelected;
+    const isHovered = hoveredNode === n;
+
+    const alpha = fadeIn * (isDimmed ? 0.15 : 1);
+    const r = n.radius * scale * (isHovered ? 1.6 : 1);
+
+    // Glow
+    if (!isDimmed && n.chainLength > 1) {
+      const glowPulse = 0.15 + 0.1 * Math.sin(now / 800 + n.prime);
+      const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 4);
+      grad.addColorStop(0, `rgba(${n.color.r},${n.color.g},${n.color.b},${glowPulse * alpha})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${n.color.r},${n.color.g},${n.color.b},${alpha * 0.9})`;
+    ctx.fill();
+
+    if (isSelected || isHovered) {
+      ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.8})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Label for larger nodes or when zoomed in
+    if ((zoom > 0.6 && n.chainLength >= 3) || zoom > 1.2 || isHovered || isSelected) {
+      ctx.font = `${Math.max(8, 10 / Math.sqrt(zoom))}px 'Courier New',monospace`;
+      ctx.fillStyle = `rgba(200,220,240,${alpha * 0.8})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(n.prime, n.x, n.y - r - 4);
+    }
+  }
+
+  ctx.restore();
+
+  // Update stats
+  updateStats();
+
+  requestAnimationFrame(draw);
+}
+
+function updateStats() {
+  const revealedNodes = nodes.filter(n => n.revealed).length;
+  const longestChain = chains.length > 0 ? chains[0] : [];
+  const sgCount = sgPrimes.length;
+  const density = (sgCount / N * 100).toFixed(2);
+
+  document.getElementById('statN').textContent = N;
+  document.getElementById('statTotal').textContent = sgCount;
+  document.getElementById('statLongest').textContent = longestChain.length;
+  document.getElementById('statChainMembers').textContent = longestChain.join(' \u2192 ');
+  document.getElementById('statDensity').textContent = density + '%';
+  document.getElementById('statChains').textContent = chains.length;
+  document.getElementById('statNodes').textContent = revealedNodes + ' / ' + nodes.length;
+}
+
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

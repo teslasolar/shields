@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-MERSENNE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+canvas#main{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1}
+#tooltip{position:fixed;z-index:50;pointer-events:none;display:none;background:rgba(6,6,16,.95);
+  border:1px solid #0af;padding:10px 14px;font-size:12px;line-height:1.6;
+  border-radius:3px;color:#aac;max-width:340px;backdrop-filter:blur(6px)}
+#tooltip .mp-name{color:#0af;font-size:14px;font-weight:bold;margin-bottom:4px}
+#tooltip .mp-val{color:#fc0;font-size:11px;word-break:break-all}
+#tooltip .mp-year{color:#8a8}
+#stats-panel{position:fixed;top:46px;right:12px;z-index:10;background:rgba(6,6,16,.92);
+  border:1px solid #1a2a3e;padding:12px 16px;font-size:11px;line-height:1.8;
+  border-radius:3px;color:#889;width:240px}
+#stats-panel h3{color:#0af;font-size:13px;margin-bottom:6px;letter-spacing:2px}
+#stats-panel .val{color:#fc0}
+#stats-panel .gimps{color:#4a8;font-size:10px;margin-top:6px;line-height:1.5}
+#binary-overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:30;
+  pointer-events:none;display:none}
+#binary-overlay canvas{width:100%;height:100%}
+#instructions{position:fixed;bottom:38px;left:12px;z-index:10;font-size:10px;color:#445;
+  letter-spacing:1px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<canvas id="main"></canvas>
+
+<div id="tooltip"></div>
+
+<div id="stats-panel">
+  <h3>MERSENNE PRIMES</h3>
+  <div>Known: <span class="val" id="stat-total">51</span></div>
+  <div>Form: <span class="val">M<sub>p</sub> = 2<sup>p</sup> - 1</span></div>
+  <div>Largest p: <span class="val" id="stat-largest">82,589,933</span></div>
+  <div>Largest digits: <span class="val" id="stat-digits">24,862,048</span></div>
+  <div class="gimps">GIMPS (Great Internet Mersenne<br>Prime Search) — distributed<br>computing project since 1996.<br>All Mersenne primes since M<sub>35</sub><br>discovered by GIMPS volunteers.</div>
+</div>
+
+<div id="binary-overlay"><canvas id="binary-canvas"></canvas></div>
+
+<div id="instructions">
+  SCROLL: zoom &nbsp; DRAG: pan &nbsp; HOVER: info &nbsp; CLICK: binary expand
+</div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08);z-index:10">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span>
+  <span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span>
+  <span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+// --- Mersenne Primes Data (first 20 known) ---
+const MERSENNE = [
+  { n:1,  p:2,       year:500,    disc:"Ancient" },
+  { n:2,  p:3,       year:500,    disc:"Ancient" },
+  { n:3,  p:5,       year:1461,   disc:"Regius (attr.)" },
+  { n:4,  p:7,       year:1461,   disc:"Regius (attr.)" },
+  { n:5,  p:13,      year:1461,   disc:"Regius (attr.)" },
+  { n:6,  p:17,      year:1588,   disc:"Cataldi" },
+  { n:7,  p:19,      year:1588,   disc:"Cataldi" },
+  { n:8,  p:31,      year:1772,   disc:"Euler" },
+  { n:9,  p:61,      year:1883,   disc:"Pervushin" },
+  { n:10, p:89,      year:1911,   disc:"Powers" },
+  { n:11, p:107,     year:1914,   disc:"Powers" },
+  { n:12, p:127,     year:1876,   disc:"Lucas" },
+  { n:13, p:521,     year:1952,   disc:"Robinson" },
+  { n:14, p:607,     year:1952,   disc:"Robinson" },
+  { n:15, p:1279,    year:1952,   disc:"Robinson" },
+  { n:16, p:2203,    year:1952,   disc:"Robinson" },
+  { n:17, p:2281,    year:1952,   disc:"Robinson" },
+  { n:18, p:3217,    year:1957,   disc:"Riesel" },
+  { n:19, p:4253,    year:1961,   disc:"Hurwitz" },
+  { n:20, p:4423,    year:1961,   disc:"Hurwitz" }
+];
+
+// Compute digit count and small values
+MERSENNE.forEach(m => {
+  m.digits = Math.ceil(m.p * Math.log10(2));
+  // For small exponents, compute actual value
+  if (m.p <= 31) {
+    m.value = (Math.pow(2, m.p) - 1).toString();
+  } else {
+    m.value = "2^" + m.p + " - 1 (" + m.digits.toLocaleString() + " digits)";
+  }
+  m.binary = m.p <= 19 ? (Math.pow(2, m.p) - 1).toString(2) : null;
+});
+
+// Shield prime index (M_7 = M with p=17, which is the 6th, but "7th Mersenne" is n=7, p=19)
+// Actually M_7 means the 7th known Mersenne prime: p=19, value=524287
+// But the footer says M₇ = 2⁷ - 1 = 127, so the "shield prime" is the one with p=7
+const SHIELD_INDEX = MERSENNE.findIndex(m => m.p === 7); // index 3
+
+const canvas = document.getElementById('main');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const binaryOverlay = document.getElementById('binary-overlay');
+const binaryCanvas = document.getElementById('binary-canvas');
+const bCtx = binaryCanvas.getContext('2d');
+
+let W, H, dpr;
+let zoom = 1, panX = 0, panY = 0;
+let isDragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0;
+let mouseX = -1, mouseY = -1;
+let hoveredIndex = -1;
+let animTime = 0;
+let riseProgress = 0; // 0..1 controls sequential column rise
+let binaryExpandIndex = -1, binaryExpandTime = 0;
+let columnRects = []; // for hit testing
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  binaryCanvas.width = W * dpr;
+  binaryCanvas.height = H * dpr;
+  bCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+// --- Transform helpers ---
+function toScreen(x, y) {
+  return [(x + panX) * zoom + W / 2, (y + panY) * zoom + H / 2];
+}
+function toWorld(sx, sy) {
+  return [(sx - W / 2) / zoom - panX, (sy - H / 2) / zoom - panY];
+}
+
+// --- Column layout ---
+function getColumnLayout() {
+  const count = MERSENNE.length;
+  const totalWidth = (count - 1) * 70;
+  const startX = -totalWidth / 2;
+  const baseY = 120; // columns grow upward from this baseline
+  const cols = [];
+
+  for (let i = 0; i < count; i++) {
+    const m = MERSENNE[i];
+    const logH = Math.log(m.p + 1) * 40 + 30; // height proportional to log(p)
+    const x = startX + i * 70;
+    const colW = 40;
+    // rise animation: each column starts rising at staggered time
+    const riseStart = i / count;
+    const riseEnd = riseStart + 0.3;
+    const riseFrac = Math.min(1, Math.max(0, (riseProgress - riseStart) / (riseEnd - riseStart)));
+    const eased = riseFrac < 1 ? 1 - Math.pow(1 - riseFrac, 3) : 1; // ease out cubic
+    const currentH = logH * eased;
+
+    cols.push({
+      x: x,
+      y: baseY,
+      w: colW,
+      h: currentH,
+      logH: logH,
+      index: i,
+      mersenne: m,
+      risen: eased
+    });
+  }
+  return cols;
+}
+
+// --- Binary cascade bits for a column ---
+function drawBinaryCascade(col, time) {
+  const m = col.mersenne;
+  const sx = col.x;
+  const sy = col.y;
+  const sh = col.h;
+  const sw = col.w;
+
+  // Generate pseudo-binary stream based on exponent
+  const seed = m.p * 137;
+  const rows = Math.floor(sh / 10);
+  const charsPerRow = 4;
+
+  ctx.font = '8px Courier New';
+  ctx.globalAlpha = 0.25;
+
+  for (let r = 0; r < rows; r++) {
+    const cascadeOffset = (time * 0.02 + r * 0.3) % (rows + 5);
+    const fadeIn = Math.max(0, 1 - Math.abs(cascadeOffset - r) / 3);
+    if (fadeIn <= 0) continue;
+
+    ctx.globalAlpha = fadeIn * 0.3;
+    const isShield = col.index === SHIELD_INDEX;
+    ctx.fillStyle = isShield ? '#fc0' : '#0af';
+
+    for (let c = 0; c < charsPerRow; c++) {
+      const bit = ((seed + r * 7 + c * 13 + Math.floor(time * 0.05)) % 2).toString();
+      const [scx, scy] = toScreen(sx + 4 + c * 9, sy - sh + r * 10 + 6);
+      if (scx > -50 && scx < W + 50 && scy > -50 && scy < H + 50) {
+        ctx.fillText(bit, scx, scy);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// --- Draw arc between consecutive primes ---
+function drawArc(col1, col2, time) {
+  const [x1, y1] = toScreen(col1.x + col1.w / 2, col1.y - col1.h);
+  const [x2, y2] = toScreen(col2.x + col2.w / 2, col2.y - col2.h);
+
+  const midX = (x1 + x2) / 2;
+  const gap = col2.mersenne.p - col1.mersenne.p;
+  const arcHeight = Math.min(60, gap * 0.5 + 10) * zoom;
+  const midY = Math.min(y1, y2) - arcHeight;
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(midX, midY, x2, y2);
+  ctx.strokeStyle = 'rgba(0,170,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Gap label
+  const labelX = midX;
+  const labelY = midY - 6 * zoom;
+  ctx.font = (9 * Math.min(zoom, 1.5)) + 'px Courier New';
+  ctx.fillStyle = 'rgba(0,170,255,0.3)';
+  ctx.textAlign = 'center';
+  ctx.fillText('+' + gap, labelX, labelY);
+}
+
+// --- Glow effect ---
+function drawGlow(col, time) {
+  const isShield = col.index === SHIELD_INDEX;
+  const pulse = 0.6 + 0.4 * Math.sin(time * 0.003 + col.index * 0.5);
+  const [sx, sy] = toScreen(col.x + col.w / 2, col.y - col.h / 2);
+  const radius = (col.h / 2 + 20) * zoom;
+
+  const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+  if (isShield) {
+    grad.addColorStop(0, `rgba(255,200,0,${0.12 * pulse})`);
+    grad.addColorStop(0.5, `rgba(255,170,0,${0.05 * pulse})`);
+    grad.addColorStop(1, 'rgba(255,170,0,0)');
+  } else {
+    grad.addColorStop(0, `rgba(0,120,255,${0.08 * pulse})`);
+    grad.addColorStop(0.5, `rgba(0,80,200,${0.03 * pulse})`);
+    grad.addColorStop(1, 'rgba(0,60,180,0)');
+  }
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+}
+
+// --- Draw a single column ---
+function drawColumn(col, time) {
+  if (col.risen <= 0) return;
+
+  const isShield = col.index === SHIELD_INDEX;
+  const isHovered = col.index === hoveredIndex;
+  const pulse = 0.7 + 0.3 * Math.sin(time * 0.004 + col.index * 0.7);
+
+  // Glow behind
+  drawGlow(col, time);
+
+  // Column body
+  const [sx, sy] = toScreen(col.x, col.y);
+  const [sx2, sy2] = toScreen(col.x + col.w, col.y - col.h);
+  const screenW = sx2 - sx;
+  const screenH = sy - sy2;
+
+  if (sx > W + 100 || sx2 < -100 || sy2 > H + 100 || sy < -100) return;
+
+  // Column gradient
+  const colGrad = ctx.createLinearGradient(sx, sy, sx, sy2);
+  if (isShield) {
+    colGrad.addColorStop(0, `rgba(180,140,0,${0.6 * pulse})`);
+    colGrad.addColorStop(0.5, `rgba(255,200,0,${0.4 * pulse})`);
+    colGrad.addColorStop(1, `rgba(255,220,60,${0.2 * pulse})`);
+  } else {
+    colGrad.addColorStop(0, `rgba(0,60,140,${0.5 * pulse})`);
+    colGrad.addColorStop(0.5, `rgba(0,100,200,${0.35 * pulse})`);
+    colGrad.addColorStop(1, `rgba(0,140,255,${0.15 * pulse})`);
+  }
+
+  ctx.fillStyle = colGrad;
+  ctx.fillRect(sx, sy2, screenW, screenH);
+
+  // Column border
+  ctx.strokeStyle = isShield
+    ? `rgba(255,200,0,${0.5 * pulse})`
+    : `rgba(0,150,255,${0.35 * pulse})`;
+  ctx.lineWidth = isHovered ? 2 : 1;
+  ctx.strokeRect(sx, sy2, screenW, screenH);
+
+  // Hovered highlight
+  if (isHovered) {
+    ctx.strokeStyle = isShield ? 'rgba(255,220,80,0.8)' : 'rgba(0,180,255,0.7)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - 1, sy2 - 1, screenW + 2, screenH + 2);
+  }
+
+  // Binary cascade
+  drawBinaryCascade(col, time);
+
+  // Label at bottom
+  const labelSize = Math.max(8, Math.min(12, 10 * zoom));
+  ctx.font = labelSize + 'px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = isShield ? '#fc0' : '#0af';
+
+  const [lx, ly] = toScreen(col.x + col.w / 2, col.y + 16);
+  ctx.fillText('M' + col.mersenne.n, lx, ly);
+
+  // Exponent label
+  ctx.font = (labelSize - 2) + 'px Courier New';
+  ctx.fillStyle = '#667';
+  const [ex, ey] = toScreen(col.x + col.w / 2, col.y + 28);
+  ctx.fillText('p=' + col.mersenne.p, ex, ey);
+
+  // Shield badge
+  if (isShield) {
+    ctx.font = (labelSize - 1) + 'px Courier New';
+    ctx.fillStyle = '#fc0';
+    const [bx, by] = toScreen(col.x + col.w / 2, col.y - col.h - 14);
+    ctx.fillText('\u2666 SHIELD \u2666', bx, by);
+  }
+
+  // Store screen rect for hit testing
+  columnRects[col.index] = { x: sx, y: sy2, w: screenW, h: screenH };
+}
+
+// --- Binary expand animation ---
+function drawBinaryExpand(time) {
+  if (binaryExpandIndex < 0) return;
+
+  const m = MERSENNE[binaryExpandIndex];
+  const elapsed = time - binaryExpandTime;
+  if (elapsed > 4000) {
+    binaryExpandIndex = -1;
+    binaryOverlay.style.display = 'none';
+    return;
+  }
+
+  binaryOverlay.style.display = 'block';
+  bCtx.clearRect(0, 0, W, H);
+
+  const progress = Math.min(1, elapsed / 2000);
+  const fadeOut = elapsed > 3000 ? 1 - (elapsed - 3000) / 1000 : 1;
+  const isShield = binaryExpandIndex === SHIELD_INDEX;
+
+  // Generate binary string
+  let bits;
+  if (m.binary) {
+    bits = m.binary;
+  } else {
+    // For large primes, show pattern: all 1s (since 2^p - 1 is all 1s in binary)
+    bits = '1'.repeat(Math.min(m.p, 64));
+  }
+
+  const centerX = W / 2;
+  const centerY = H / 2;
+  const maxRadius = Math.min(W, H) * 0.4 * progress;
+
+  bCtx.font = '14px Courier New';
+  bCtx.textAlign = 'center';
+
+  // Expanding rings of bits
+  const rings = Math.min(8, Math.ceil(bits.length / 8));
+  for (let ring = 0; ring < rings; ring++) {
+    const ringProgress = Math.max(0, progress - ring * 0.08);
+    if (ringProgress <= 0) continue;
+
+    const radius = maxRadius * (ring + 1) / rings * ringProgress;
+    const bitsInRing = Math.min(8 + ring * 4, bits.length);
+    const alpha = fadeOut * (1 - ring / (rings + 2));
+
+    for (let b = 0; b < bitsInRing; b++) {
+      const angle = (b / bitsInRing) * Math.PI * 2 - Math.PI / 2 + elapsed * 0.0003 * (ring % 2 === 0 ? 1 : -1);
+      const bx = centerX + Math.cos(angle) * radius;
+      const by = centerY + Math.sin(angle) * radius;
+      const bit = bits[b % bits.length];
+
+      bCtx.globalAlpha = alpha * 0.8;
+      bCtx.fillStyle = isShield ? '#fc0' : '#0af';
+      bCtx.fillText(bit, bx, by);
+    }
+  }
+
+  // Center label
+  bCtx.globalAlpha = fadeOut;
+  bCtx.font = '18px Courier New';
+  bCtx.fillStyle = isShield ? '#fc0' : '#0af';
+  bCtx.fillText('M' + m.n + ' = 2^' + m.p + ' - 1', centerX, centerY - 14);
+  bCtx.font = '12px Courier New';
+  bCtx.fillStyle = '#889';
+  bCtx.fillText(m.p + ' binary digits (all 1s)', centerX, centerY + 10);
+
+  bCtx.globalAlpha = 1;
+}
+
+// --- Starfield background ---
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random() * 2000 - 1000,
+    y: Math.random() * 1200 - 600,
+    r: Math.random() * 1.2 + 0.3,
+    a: Math.random() * 0.5 + 0.1
+  });
+}
+
+function drawStars(time) {
+  for (const s of stars) {
+    const [sx, sy] = toScreen(s.x, s.y);
+    if (sx < -10 || sx > W + 10 || sy < -10 || sy > H + 10) continue;
+    const twinkle = s.a + 0.15 * Math.sin(time * 0.002 + s.x);
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.r * zoom, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(100,120,180,${twinkle})`;
+    ctx.fill();
+  }
+}
+
+// --- Title ---
+function drawTitle(time) {
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#556';
+  ctx.fillText('SHIELD-MERSENNE', 14, 52);
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = '#334';
+  ctx.fillText('2^p - 1  |  POWER TOWER VISUALIZATION', 14, 66);
+}
+
+// --- Main render ---
+function render(time) {
+  animTime = time;
+
+  // Rise animation over first 4 seconds
+  riseProgress = Math.min(1, time / 4000);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars(time);
+  drawTitle(time);
+
+  const cols = getColumnLayout();
+
+  // Draw arcs between consecutive columns
+  for (let i = 0; i < cols.length - 1; i++) {
+    if (cols[i].risen > 0.5 && cols[i + 1].risen > 0.5) {
+      drawArc(cols[i], cols[i + 1], time);
+    }
+  }
+
+  // Draw columns
+  columnRects = [];
+  for (const col of cols) {
+    drawColumn(col, time);
+  }
+
+  // Binary expand overlay
+  drawBinaryExpand(time);
+
+  requestAnimationFrame(render);
+}
+
+// --- Tooltip ---
+function showTooltip(index, x, y) {
+  const m = MERSENNE[index];
+  const isShield = index === SHIELD_INDEX;
+  tooltip.style.display = 'block';
+  tooltip.style.left = Math.min(x + 16, W - 260) + 'px';
+  tooltip.style.top = Math.min(y - 10, H - 160) + 'px';
+  if (isShield) {
+    tooltip.style.borderColor = '#fc0';
+  } else {
+    tooltip.style.borderColor = '#0af';
+  }
+
+  tooltip.innerHTML = `
+    <div class="mp-name" style="color:${isShield ? '#fc0' : '#0af'}">
+      M<sub>${m.n}</sub> &mdash; ${isShield ? '\u2666 Shield Prime \u2666' : 'Mersenne Prime #' + m.n}
+    </div>
+    <div>Exponent p = <span style="color:#fff">${m.p.toLocaleString()}</span></div>
+    <div>Value: <span class="mp-val">${m.value}</span></div>
+    <div>Digits: <span style="color:#fc0">${m.digits.toLocaleString()}</span></div>
+    <div class="mp-year">Discovered: ${m.year <= 500 ? 'Antiquity' : m.year} &mdash; ${m.disc}</div>
+    <div style="color:#445;font-size:10px;margin-top:4px">Click to expand binary</div>
+  `;
+}
+
+function hideTooltip() {
+  tooltip.style.display = 'none';
+}
+
+// --- Event handlers ---
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+
+  if (isDragging) {
+    panX = panStartX + (e.clientX - dragStartX) / zoom;
+    panY = panStartY + (e.clientY - dragStartY) / zoom;
+    hideTooltip();
+    return;
+  }
+
+  // Hit test columns
+  hoveredIndex = -1;
+  for (let i = 0; i < columnRects.length; i++) {
+    const r = columnRects[i];
+    if (!r) continue;
+    if (mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
+      hoveredIndex = i;
+      break;
+    }
+  }
+
+  if (hoveredIndex >= 0) {
+    showTooltip(hoveredIndex, mouseX, mouseY);
+    canvas.style.cursor = 'pointer';
+  } else {
+    hideTooltip();
+    canvas.style.cursor = 'grab';
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (hoveredIndex >= 0) {
+    binaryExpandIndex = hoveredIndex;
+    binaryExpandTime = animTime;
+    return;
+  }
+  isDragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  panStartX = panX;
+  panStartY = panY;
+  canvas.style.cursor = 'grabbing';
+});
+
+canvas.addEventListener('mouseup', () => {
+  isDragging = false;
+  canvas.style.cursor = hoveredIndex >= 0 ? 'pointer' : 'grab';
+});
+
+canvas.addEventListener('mouseleave', () => {
+  isDragging = false;
+  hoveredIndex = -1;
+  hideTooltip();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+  const newZoom = Math.max(0.3, Math.min(5, zoom * zoomFactor));
+
+  // Zoom toward mouse position
+  const wx = (mouseX - W / 2) / zoom - panX;
+  const wy = (mouseY - H / 2) / zoom - panY;
+
+  zoom = newZoom;
+
+  panX = (mouseX - W / 2) / zoom - wx;
+  panY = (mouseY - H / 2) / zoom - wy;
+}, { passive: false });
+
+// Touch support
+let lastTouchDist = 0;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    isDragging = true;
+    dragStartX = e.touches[0].clientX;
+    dragStartY = e.touches[0].clientY;
+    panStartX = panX;
+    panStartY = panY;
+  }
+  if (e.touches.length === 2) {
+    lastTouchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && isDragging) {
+    panX = panStartX + (e.touches[0].clientX - dragStartX) / zoom;
+    panY = panStartY + (e.touches[0].clientY - dragStartY) / zoom;
+  }
+  if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (lastTouchDist > 0) {
+      zoom = Math.max(0.3, Math.min(5, zoom * (dist / lastTouchDist)));
+    }
+    lastTouchDist = dist;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => {
+  isDragging = false;
+  lastTouchDist = 0;
+});
+
+// Start
+requestAnimationFrame(render);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
