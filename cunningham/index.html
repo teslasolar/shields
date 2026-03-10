@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-CUNNINGHAM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+h1{text-align:center;font-size:26px;color:#4ff;margin:12px 0 2px;text-shadow:0 0 20px rgba(68,255,255,.4),0 0 60px rgba(68,255,255,.15);letter-spacing:6px;z-index:10}
+.subtitle{text-align:center;color:#556;font-size:11px;margin-bottom:6px;letter-spacing:2px;z-index:10}
+#canvas-wrap{flex:1;position:relative;overflow:hidden}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+#tooltip{position:fixed;background:rgba(6,6,20,.94);border:1px solid #4ff;color:#aee;padding:8px 14px;font-size:11px;font-family:'Courier New',monospace;pointer-events:none;display:none;z-index:300;border-radius:3px;box-shadow:0 0 16px rgba(68,255,255,.3);max-width:360px;line-height:1.6}
+#tooltip .tt-label{color:#4ff;font-weight:bold;margin-bottom:2px}
+#tooltip .tt-kind1{color:#0cf}
+#tooltip .tt-kind2{color:#f6a}
+#stats-panel{position:fixed;top:70px;right:14px;background:rgba(6,6,20,.92);border:1px solid #1a1a3a;padding:12px 16px;font-size:10px;color:#778;z-index:200;border-radius:4px;min-width:200px;line-height:1.8}
+#stats-panel h3{color:#4ff;font-size:11px;margin-bottom:6px;letter-spacing:2px}
+#stats-panel .s-val{color:#4ff}
+#stats-panel .s-k1{color:#0cf}
+#stats-panel .s-k2{color:#f6a}
+.legend{position:fixed;top:70px;left:14px;background:rgba(6,6,20,.88);border:1px solid #1a1a3a;padding:10px 14px;font-size:10px;color:#778;z-index:200;border-radius:4px;line-height:2}
+.legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<h1>SHIELD-CUNNINGHAM</h1>
+<div class="subtitle">CUNNINGHAM CHAINS &mdash; CASCADING PRIMES WHERE EACH IS 2p&plusmn;1</div>
+
+<div id="canvas-wrap">
+<canvas id="c"></canvas>
+</div>
+
+<div id="tooltip"></div>
+
+<div class="legend">
+  <div><span class="dot" style="background:#0cf"></span>FIRST KIND (2p+1)</div>
+  <div><span class="dot" style="background:#f6a"></span>SECOND KIND (2p&minus;1)</div>
+  <div style="color:#556;margin-top:4px;font-size:9px">SCROLL: zoom &middot; DRAG: pan</div>
+  <div style="color:#556;font-size:9px">CLICK: highlight chain</div>
+</div>
+
+<div id="stats-panel"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statsPanel = document.getElementById('stats-panel');
+const wrap = document.getElementById('canvas-wrap');
+
+// --- Primes & Cunningham ---
+function sieve(max) {
+  const s = new Uint8Array(max + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= max; i++) {
+    if (!s[i]) for (let j = i * i; j <= max; j += i) s[j] = 1;
+  }
+  const primes = [];
+  for (let i = 2; i <= max; i++) if (!s[i]) primes.push(i);
+  return { primes, isP: n => n <= max && !s[n] };
+}
+
+// Sieve large enough to check chain members beyond 500
+const { primes, isP } = sieve(200000);
+const primeSet = new Set(primes);
+
+function findChains(maxStart) {
+  const chains1 = []; // first kind 2p+1
+  const chains2 = []; // second kind 2p-1
+  const used1 = new Set();
+  const used2 = new Set();
+
+  // First kind: each p -> 2p+1
+  for (let i = 0; i < primes.length && primes[i] <= maxStart; i++) {
+    const p = primes[i];
+    // Only start chains that are NOT continuations (i.e., (p-1)/2 is not prime or p is 2)
+    const prev = (p - 1) / 2;
+    if (prev >= 2 && Number.isInteger(prev) && isP(prev)) continue;
+    const chain = [p];
+    let cur = p;
+    while (true) {
+      const next = 2 * cur + 1;
+      if (isP(next)) { chain.push(next); cur = next; }
+      else break;
+    }
+    if (chain.length >= 2) chains1.push(chain);
+  }
+
+  // Second kind: each p -> 2p-1
+  for (let i = 0; i < primes.length && primes[i] <= maxStart; i++) {
+    const p = primes[i];
+    const prev = (p + 1) / 2;
+    if (prev >= 2 && Number.isInteger(prev) && isP(prev) && p !== 2) {
+      // check if prev -> 2*prev-1 == p
+      if (2 * prev - 1 === p) continue;
+    }
+    const chain = [p];
+    let cur = p;
+    while (true) {
+      const next = 2 * cur - 1;
+      if (next > 1 && isP(next)) { chain.push(next); cur = next; }
+      else break;
+    }
+    if (chain.length >= 2) chains2.push(chain);
+  }
+
+  return { chains1, chains2 };
+}
+
+const { chains1, chains2 } = findChains(500);
+const allChains = [
+  ...chains1.map(c => ({ members: c, kind: 1 })),
+  ...chains2.map(c => ({ members: c, kind: 2 }))
+];
+
+// Sort by length descending for layout
+allChains.sort((a, b) => b.members.length - a.members.length);
+
+// --- Layout: waterfalls ---
+let W, H;
+const nodes = []; // { x, y, prime, chainIdx, linkIdx }
+const links = []; // { x1, y1, x2, y2, chainIdx, linkIdx }
+const chainLayouts = []; // { nodes: [], links: [], kind, members }
+
+function layout() {
+  nodes.length = 0;
+  links.length = 0;
+  chainLayouts.length = 0;
+
+  const padding = 60;
+  const colGap = 120;
+  const rowGap = 70;
+  const nodeR = 16;
+
+  // Arrange chains in columns
+  let cx = padding + 50;
+  for (let ci = 0; ci < allChains.length; ci++) {
+    const chain = allChains[ci];
+    const cl = { nodes: [], links: [], kind: chain.kind, members: chain.members };
+    let cy = padding + 40;
+    for (let li = 0; li < chain.members.length; li++) {
+      const n = { x: cx, y: cy, prime: chain.members[li], chainIdx: ci, linkIdx: li, r: nodeR };
+      nodes.push(n);
+      cl.nodes.push(n);
+      if (li > 0) {
+        const prev = cl.nodes[li - 1];
+        const l = { x1: prev.x, y1: prev.y, x2: n.x, y2: n.y, chainIdx: ci, linkIdx: li - 1 };
+        links.push(l);
+        cl.links.push(l);
+      }
+      cy += rowGap;
+    }
+    chainLayouts.push(cl);
+    cx += colGap;
+  }
+}
+
+// --- Camera ---
+let cam = { x: 0, y: 0, zoom: 1 };
+let dragging = false, dragStart = { x: 0, y: 0 }, camStart = { x: 0, y: 0 };
+
+function toScreen(wx, wy) {
+  return { x: (wx - cam.x) * cam.zoom + W / 2, y: (wy - cam.y) * cam.zoom + H / 2 };
+}
+function toWorld(sx, sy) {
+  return { x: (sx - W / 2) / cam.zoom + cam.x, y: (sy - H / 2) / cam.zoom + cam.y };
+}
+
+// --- Animation state ---
+let animTime = 0;
+let revealedLinks = 0; // how many links revealed so far (cascade)
+const totalLinks = allChains.reduce((s, c) => s + c.members.length, 0);
+let selectedChain = -1;
+let hoveredChain = -1;
+let mouseX = -1, mouseY = -1;
+
+// Particles for selected chain
+let particles = [];
+function spawnParticles(ci) {
+  particles = [];
+  const cl = chainLayouts[ci];
+  if (!cl) return;
+  for (let i = 0; i < 30; i++) {
+    particles.push({
+      t: Math.random(), // position along chain (0-1)
+      speed: 0.002 + Math.random() * 0.004,
+      size: 1.5 + Math.random() * 2,
+      alpha: 0.5 + Math.random() * 0.5
+    });
+  }
+}
+
+function getChainPoint(ci, t) {
+  const cl = chainLayouts[ci];
+  if (!cl || cl.nodes.length < 2) return null;
+  const totalSeg = cl.nodes.length - 1;
+  const seg = Math.min(Math.floor(t * totalSeg), totalSeg - 1);
+  const localT = (t * totalSeg) - seg;
+  const a = cl.nodes[seg];
+  const b = cl.nodes[seg + 1];
+  return { x: a.x + (b.x - a.x) * localT, y: a.y + (b.y - a.y) * localT };
+}
+
+// --- Waterfall droplets ---
+let droplets = [];
+function initDroplets() {
+  droplets = [];
+  for (let ci = 0; ci < chainLayouts.length; ci++) {
+    const cl = chainLayouts[ci];
+    for (let li = 0; li < cl.links.length; li++) {
+      for (let d = 0; d < 3; d++) {
+        droplets.push({
+          chainIdx: ci, linkIdx: li,
+          t: Math.random(),
+          speed: 0.008 + Math.random() * 0.012,
+          size: 1 + Math.random() * 1.5,
+          alpha: 0.3 + Math.random() * 0.4,
+          offsetX: (Math.random() - 0.5) * 8
+        });
+      }
+    }
+  }
+}
+
+// --- Resize ---
+function resize() {
+  W = wrap.clientWidth;
+  H = wrap.clientHeight;
+  canvas.width = W;
+  canvas.height = H;
+  layout();
+  initDroplets();
+  // Center camera on layout
+  if (chainLayouts.length > 0) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+    cam.x = (minX + maxX) / 2;
+    cam.y = (minY + maxY) / 2;
+    const scaleX = W / (maxX - minX + 200);
+    const scaleY = H / (maxY - minY + 200);
+    cam.zoom = Math.min(scaleX, scaleY, 1.5);
+  }
+}
+
+// --- Hit test ---
+function hitTest(sx, sy) {
+  const w = toWorld(sx, sy);
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const dx = w.x - n.x, dy = w.y - n.y;
+    if (dx * dx + dy * dy < (n.r + 4) * (n.r + 4)) return n.chainIdx;
+  }
+  // Check links
+  for (const l of links) {
+    const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) continue;
+    const t = Math.max(0, Math.min(1, ((w.x - l.x1) * dx + (w.y - l.y1) * dy) / len2));
+    const px = l.x1 + t * dx, py = l.y1 + t * dy;
+    const d2 = (w.x - px) * (w.x - px) + (w.y - py) * (w.y - py);
+    if (d2 < 100) return l.chainIdx;
+  }
+  return -1;
+}
+
+// --- Draw ---
+function kindColor(kind, alpha) {
+  if (kind === 1) return `rgba(0,200,255,${alpha})`;
+  return `rgba(255,100,170,${alpha})`;
+}
+function kindColorHex(kind) {
+  return kind === 1 ? '#0cf' : '#f6a';
+}
+
+function draw(ts) {
+  animTime = ts || 0;
+  const dt = 1 / 60;
+
+  // Cascade reveal
+  const cascadeSpeed = 0.4; // links per frame
+  if (revealedLinks < totalLinks) {
+    revealedLinks += cascadeSpeed;
+    if (revealedLinks > totalLinks) revealedLinks = totalLinks;
+  }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background subtle grid
+  ctx.save();
+  const gridSize = 50 * cam.zoom;
+  if (gridSize > 10) {
+    ctx.strokeStyle = 'rgba(30,30,60,0.3)';
+    ctx.lineWidth = 0.5;
+    const offX = (-cam.x * cam.zoom + W / 2) % gridSize;
+    const offY = (-cam.y * cam.zoom + H / 2) % gridSize;
+    for (let x = offX; x < W; x += gridSize) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = offY; y < H; y += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Count revealed per chain
+  let revealed = 0;
+  const chainRevealed = [];
+  for (let ci = 0; ci < allChains.length; ci++) {
+    const len = allChains[ci].members.length;
+    const start = revealed;
+    const end = revealed + len;
+    const vis = Math.max(0, Math.min(len, revealedLinks - start));
+    chainRevealed.push(vis);
+    revealed += len;
+  }
+
+  // Draw links
+  for (let ci = 0; ci < chainLayouts.length; ci++) {
+    const cl = chainLayouts[ci];
+    const vis = chainRevealed[ci];
+    const isSelected = ci === selectedChain;
+    const isHovered = ci === hoveredChain;
+
+    for (let li = 0; li < cl.links.length; li++) {
+      if (li + 1 >= vis) break; // link li connects node li to li+1
+      const l = cl.links[li];
+      const s1 = toScreen(l.x1, l.y1);
+      const s2 = toScreen(l.x2, l.y2);
+
+      // Waterfall glow
+      const alpha = isSelected ? 0.9 : isHovered ? 0.7 : 0.4;
+      const width = isSelected ? 3 : isHovered ? 2.5 : 1.5;
+
+      ctx.save();
+      ctx.strokeStyle = kindColor(cl.kind, alpha);
+      ctx.lineWidth = width * cam.zoom;
+      ctx.shadowColor = kindColorHex(cl.kind);
+      ctx.shadowBlur = isSelected ? 16 : isHovered ? 10 : 4;
+      ctx.beginPath();
+      // Slight curve for waterfall feel
+      const midX = (s1.x + s2.x) / 2 + (Math.sin(animTime * 0.002 + ci) * 4 * cam.zoom);
+      const midY = (s1.y + s2.y) / 2;
+      ctx.moveTo(s1.x, s1.y);
+      ctx.quadraticCurveTo(midX, midY, s2.x, s2.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Draw waterfall droplets
+  for (const d of droplets) {
+    const cl = chainLayouts[d.chainIdx];
+    if (!cl) continue;
+    const vis = chainRevealed[d.chainIdx];
+    if (d.linkIdx + 1 >= vis) continue;
+
+    d.t += d.speed;
+    if (d.t > 1) d.t -= 1;
+
+    const l = cl.links[d.linkIdx];
+    if (!l) continue;
+    const wx = l.x1 + (l.x2 - l.x1) * d.t + d.offsetX * Math.sin(d.t * Math.PI);
+    const wy = l.y1 + (l.y2 - l.y1) * d.t;
+    const s = toScreen(wx, wy);
+
+    const isHL = d.chainIdx === selectedChain || d.chainIdx === hoveredChain;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, d.size * cam.zoom * (isHL ? 1.5 : 1), 0, Math.PI * 2);
+    ctx.fillStyle = kindColor(cl.kind, d.alpha * (isHL ? 1.2 : 0.6));
+    ctx.fill();
+  }
+
+  // Draw selected chain particles
+  if (selectedChain >= 0 && chainLayouts[selectedChain]) {
+    for (const p of particles) {
+      p.t += p.speed;
+      if (p.t > 1) p.t -= 1;
+      const pt = getChainPoint(selectedChain, p.t);
+      if (!pt) continue;
+      const s = toScreen(pt.x, pt.y);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, p.size * cam.zoom * 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = kindColor(chainLayouts[selectedChain].kind, p.alpha);
+      ctx.shadowColor = kindColorHex(chainLayouts[selectedChain].kind);
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Draw nodes
+  for (let ci = 0; ci < chainLayouts.length; ci++) {
+    const cl = chainLayouts[ci];
+    const vis = chainRevealed[ci];
+    const isSelected = ci === selectedChain;
+    const isHovered = ci === hoveredChain;
+
+    for (let ni = 0; ni < cl.nodes.length; ni++) {
+      if (ni >= vis) break;
+      const n = cl.nodes[ni];
+      const s = toScreen(n.x, n.y);
+      const r = n.r * cam.zoom;
+
+      // Node circle
+      const alpha = isSelected ? 1 : isHovered ? 0.85 : 0.6;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(6,6,16,${isSelected ? 0.9 : 0.8})`;
+      ctx.fill();
+      ctx.strokeStyle = kindColor(cl.kind, alpha);
+      ctx.lineWidth = (isSelected ? 2.5 : isHovered ? 2 : 1.2) * cam.zoom;
+      ctx.shadowColor = kindColorHex(cl.kind);
+      ctx.shadowBlur = isSelected ? 18 : isHovered ? 10 : 5;
+      ctx.stroke();
+
+      // Prime label
+      if (r > 5) {
+        ctx.fillStyle = kindColor(cl.kind, alpha);
+        ctx.font = `${Math.max(8, Math.min(12, r * 0.75))}px 'Courier New'`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowBlur = 0;
+        ctx.fillText(n.prime, s.x, s.y);
+      }
+
+      // Starting node decoration
+      if (ni === 0) {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r + 4 * cam.zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = kindColor(cl.kind, 0.2);
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Arrow on link
+      if (ni > 0 && r > 6) {
+        const prev = cl.nodes[ni - 1];
+        const sp = toScreen(prev.x, prev.y);
+        const dx = s.x - sp.x, dy = s.y - sp.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) {
+          const ux = dx / len, uy = dy / len;
+          const ax = s.x - ux * (r + 2 * cam.zoom);
+          const ay = s.y - uy * (r + 2 * cam.zoom);
+          const aSize = 4 * cam.zoom;
+          ctx.save();
+          ctx.fillStyle = kindColor(cl.kind, alpha * 0.6);
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(ax - ux * aSize - uy * aSize * 0.5, ay - uy * aSize + ux * aSize * 0.5);
+          ctx.lineTo(ax - ux * aSize + uy * aSize * 0.5, ay - uy * aSize - ux * aSize * 0.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // Formula label on link
+      if (ni > 0 && cam.zoom > 0.6) {
+        const prev = cl.nodes[ni - 1];
+        const mx = (n.x + prev.x) / 2;
+        const my = (n.y + prev.y) / 2;
+        const ms = toScreen(mx + 22, my);
+        ctx.save();
+        ctx.fillStyle = kindColor(cl.kind, 0.25);
+        ctx.font = `${Math.max(7, 9 * cam.zoom)}px 'Courier New'`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const formula = cl.kind === 1 ? `2(${prev.prime})+1` : `2(${prev.prime})-1`;
+        ctx.fillText(formula, ms.x, ms.y);
+        ctx.restore();
+      }
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// --- Stats ---
+function buildStats() {
+  const longest1 = chains1.reduce((m, c) => Math.max(m, c.length), 0);
+  const longest2 = chains2.reduce((m, c) => Math.max(m, c.length), 0);
+  const longest = Math.max(longest1, longest2);
+
+  const byLen1 = {};
+  const byLen2 = {};
+  chains1.forEach(c => { byLen1[c.length] = (byLen1[c.length] || 0) + 1; });
+  chains2.forEach(c => { byLen2[c.length] = (byLen2[c.length] || 0) + 1; });
+
+  const longestChain1 = chains1.reduce((best, c) => c.length > best.length ? c : best, []);
+  const longestChain2 = chains2.reduce((best, c) => c.length > best.length ? c : best, []);
+
+  let html = `<h3>STATISTICS</h3>`;
+  html += `<div>TOTAL CHAINS: <span class="s-val">${allChains.length}</span></div>`;
+  html += `<div>FIRST KIND: <span class="s-k1">${chains1.length}</span> &nbsp; SECOND: <span class="s-k2">${chains2.length}</span></div>`;
+  html += `<div style="margin-top:6px">LONGEST OVERALL: <span class="s-val">${longest}</span></div>`;
+
+  if (longestChain1.length > 0) {
+    html += `<div style="margin-top:4px">LONGEST 1st: <span class="s-k1">${longestChain1.join('→')}</span></div>`;
+  }
+  if (longestChain2.length > 0) {
+    html += `<div>LONGEST 2nd: <span class="s-k2">${longestChain2.join('→')}</span></div>`;
+  }
+
+  html += `<div style="margin-top:8px;color:#556">BY LENGTH:</div>`;
+  const allLens = new Set([...Object.keys(byLen1), ...Object.keys(byLen2)].map(Number));
+  const sortedLens = [...allLens].sort((a, b) => b - a);
+  for (const len of sortedLens) {
+    const c1 = byLen1[len] || 0;
+    const c2 = byLen2[len] || 0;
+    html += `<div>LEN ${len}: <span class="s-k1">${c1}</span> / <span class="s-k2">${c2}</span></div>`;
+  }
+
+  statsPanel.innerHTML = html;
+}
+
+// --- Tooltip ---
+function showTooltip(ci, sx, sy) {
+  if (ci < 0) { tooltip.style.display = 'none'; return; }
+  const chain = allChains[ci];
+  const kindLabel = chain.kind === 1 ? 'FIRST KIND (2p+1)' : 'SECOND KIND (2p−1)';
+  const kindClass = chain.kind === 1 ? 'tt-kind1' : 'tt-kind2';
+
+  let html = `<div class="tt-label">${kindLabel}</div>`;
+  html += `<div>START: <span class="${kindClass}">${chain.members[0]}</span></div>`;
+  html += `<div>LENGTH: <span class="${kindClass}">${chain.members.length}</span></div>`;
+  html += `<div>CHAIN: <span class="${kindClass}">${chain.members.join(' → ')}</span></div>`;
+
+  tooltip.innerHTML = html;
+  tooltip.style.display = 'block';
+
+  // Position
+  let tx = sx + 16, ty = sy - 10;
+  const rect = tooltip.getBoundingClientRect();
+  if (tx + rect.width > window.innerWidth - 10) tx = sx - rect.width - 10;
+  if (ty + rect.height > window.innerHeight - 40) ty = sy - rect.height - 10;
+  if (ty < 10) ty = 10;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+
+// --- Events ---
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+
+  if (dragging) {
+    const dx = (e.clientX - dragStart.x) / cam.zoom;
+    const dy = (e.clientY - dragStart.y) / cam.zoom;
+    cam.x = camStart.x - dx;
+    cam.y = camStart.y - dy;
+    return;
+  }
+
+  hoveredChain = hitTest(sx, sy);
+  showTooltip(hoveredChain, e.clientX, e.clientY);
+  canvas.style.cursor = hoveredChain >= 0 ? 'pointer' : 'crosshair';
+});
+
+canvas.addEventListener('mousedown', e => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  camStart = { x: cam.x, y: cam.y };
+  dragging = true;
+});
+
+canvas.addEventListener('mouseup', e => {
+  const dx = Math.abs(e.clientX - dragStart.x);
+  const dy = Math.abs(e.clientY - dragStart.y);
+  dragging = false;
+  if (dx < 4 && dy < 4) {
+    const rect = canvas.getBoundingClientRect();
+    const ci = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (ci >= 0) {
+      selectedChain = selectedChain === ci ? -1 : ci;
+      if (selectedChain >= 0) spawnParticles(selectedChain);
+      else particles = [];
+    } else {
+      selectedChain = -1;
+      particles = [];
+    }
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  hoveredChain = -1;
+  tooltip.style.display = 'none';
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const wBefore = toWorld(sx, sy);
+  cam.zoom = Math.max(0.15, Math.min(5, cam.zoom * factor));
+  const wAfter = toWorld(sx, sy);
+  cam.x -= (wAfter.x - wBefore.x);
+  cam.y -= (wAfter.y - wBefore.y);
+}, { passive: false });
+
+// --- Init ---
+window.addEventListener('resize', resize);
+resize();
+buildStats();
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xd7;3&#xd7;5&#xd7;7&#xd7;11&#xd7;13&#xd7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

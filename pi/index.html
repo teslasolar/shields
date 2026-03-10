@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh;display:flex;flex-direction:column}
+h1{text-align:center;font-size:28px;color:#4ff;margin:18px 0 4px;text-shadow:0 0 20px rgba(68,255,255,.4),0 0 60px rgba(68,255,255,.15);letter-spacing:6px}
+.subtitle{text-align:center;color:#556;font-size:12px;margin-bottom:10px;letter-spacing:2px}
+.stats-bar{display:flex;justify-content:center;flex-wrap:wrap;gap:20px;padding:8px 16px;font-size:11px;color:#667}
+.stats-bar span{color:#4ff}
+.stats-bar .label{color:#667}
+#main-wrap{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 20px 40px}
+canvas{display:block;cursor:crosshair;max-width:100%}
+#tooltip{position:fixed;background:rgba(6,6,20,.94);border:1px solid #4ff;color:#acc;padding:8px 14px;font-size:11px;font-family:'Courier New',monospace;pointer-events:none;display:none;z-index:200;border-radius:3px;box-shadow:0 0 12px rgba(68,255,255,.3);line-height:1.6}
+#tooltip .val{color:#4ff;font-weight:bold}
+#tooltip .approx{color:#ff4}
+#tooltip .li{color:#f4f}
+#tooltip .err{color:#f88}
+#controls{display:flex;justify-content:center;gap:12px;margin:10px 0;flex-wrap:wrap}
+.toggle-btn{background:rgba(20,20,40,.8);border:1px solid #334;color:#889;padding:4px 14px;font-family:'Courier New',monospace;font-size:11px;cursor:pointer;border-radius:3px;transition:all .3s;letter-spacing:1px}
+.toggle-btn.active{border-color:currentColor;box-shadow:0 0 8px currentColor;opacity:1}
+.toggle-btn:hover{opacity:.9}
+.toggle-btn.cyan{color:#4ff}.toggle-btn.yellow{color:#ff4}.toggle-btn.magenta{color:#f4f}
+#ratio-panel{text-align:center;margin:6px 0;font-size:11px;color:#667;min-height:18px}
+#info-panel{text-align:center;margin:4px 0;font-size:12px;color:#889;min-height:22px}
+#info-panel .hl{color:#4ff;font-weight:bold}
+#markers-panel{text-align:center;margin:4px 0;font-size:11px;color:#778;min-height:18px}
+.pnt-box{margin:8px auto;padding:8px 18px;background:rgba(20,20,40,.6);border:1px solid #223;border-radius:4px;font-size:11px;color:#778;text-align:center;max-width:600px;line-height:1.7}
+.pnt-box .theorem{color:#4ff;font-size:13px;letter-spacing:1px}
+.pnt-box .detail{color:#99a}
+.glow{animation:glow-pulse 2s ease-in-out infinite}
+@keyframes glow-pulse{0%,100%{text-shadow:0 0 10px rgba(68,255,255,.3)}50%{text-shadow:0 0 25px rgba(68,255,255,.6),0 0 50px rgba(68,255,255,.2)}}
+</style>
+</head>
+<body>
+
+<h1 class="glow">SHIELD-PI</h1>
+<div class="subtitle">&pi;(x) &mdash; THE PRIME COUNTING FUNCTION</div>
+
+<div class="stats-bar" id="stats-bar">
+<div>&pi;(100) = <span id="s100">--</span></div>
+<div>&pi;(500) = <span id="s500">--</span></div>
+<div>&pi;(1000) = <span id="s1000">--</span></div>
+<div class="label">|</div>
+<div>&pi;(100)/(100/ln100) = <span id="r100">--</span></div>
+<div>&pi;(1000)/(1000/ln1000) = <span id="r1000">--</span></div>
+</div>
+
+<div id="controls">
+<button class="toggle-btn cyan active" data-curve="pi" onclick="toggleCurve('pi',this)">&pi;(x)</button>
+<button class="toggle-btn yellow active" data-curve="xlogx" onclick="toggleCurve('xlogx',this)">x/ln(x)</button>
+<button class="toggle-btn magenta active" data-curve="li" onclick="toggleCurve('li',this)">Li(x)</button>
+</div>
+
+<div id="ratio-panel"></div>
+<div id="info-panel"></div>
+
+<div id="main-wrap">
+<canvas id="canvas"></canvas>
+</div>
+
+<div id="markers-panel"></div>
+
+<div class="pnt-box">
+<div class="theorem">PRIME NUMBER THEOREM: &pi;(x) ~ x / ln(x)</div>
+<div class="detail">The ratio &pi;(x) / (x/ln x) &rarr; 1 as x &rarr; &infin;</div>
+<div class="detail">Li(x) = &int;<sub>2</sub><sup>x</sup> dt/ln(t) gives a much better approximation</div>
+<div class="detail">&pi;(x) &minus; Li(x) oscillates, intimately connected to the Riemann zeros</div>
+</div>
+
+<div id="tooltip"></div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+// --- Primes and counting ---
+function sieve(n){const a=new Uint8Array(n+1);a[0]=a[1]=1;for(let i=2;i*i<=n;i++)if(!a[i])for(let j=i*i;j<=n;j+=i)a[j]=1;const p=[];for(let i=2;i<=n;i++)if(!a[i])p.push(i);return p}
+const MAX_X=1000;
+const primes=sieve(MAX_X);
+// pi(x) for every integer
+const piArr=new Float64Array(MAX_X+1);
+{let c=0;for(let x=0;x<=MAX_X;x++){if(!piArr[x]&&primes.includes(x))c++;piArr[x]=c;}}
+// Recompute properly
+{let c=0,pi=0;const pset=new Set(primes);for(let x=0;x<=MAX_X;x++){if(pset.has(x))c++;piArr[x]=c;}}
+
+function xlogx(x){return x<2?0:x/Math.log(x)}
+
+// Li(x) via numerical integration (trapezoidal)
+const liArr=new Float64Array(MAX_X+1);
+{liArr[0]=0;liArr[1]=0;
+let sum=0;const dt=0.1;
+for(let x=2;x<=MAX_X;x++){
+  // integrate from 2 to x
+  let s=0;for(let t=2+dt;t<=x;t+=dt)s+=1/Math.log(t)*dt;
+  // add endpoint correction
+  s+=0.5*(1/Math.log(2))*dt;
+  liArr[x]=s;
+}}
+
+// Canvas setup
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const tooltip=document.getElementById('tooltip');
+let W,H,plotX,plotY,plotW,plotH;
+const PAD={top:30,right:30,bottom:50,left:60};
+
+// View state
+let viewXMin=2,viewXMax=MAX_X;
+let show={pi:true,xlogx:true,li:true};
+let markers=[];
+let animProgress=0;
+let animDone=false;
+let isDragging=false,dragStartX=0,dragViewStart=0;
+
+function resize(){
+  const maxW=Math.min(window.innerWidth-40,1100);
+  const maxH=Math.min(window.innerHeight-340,560);
+  W=canvas.width=maxW;H=canvas.height=Math.max(maxH,300);
+  plotX=PAD.left;plotY=PAD.top;plotW=W-PAD.left-PAD.right;plotH=H-PAD.top-PAD.bottom;
+}
+
+function xToScreen(x){return plotX+(x-viewXMin)/(viewXMax-viewXMin)*plotW}
+function yToScreen(y){
+  const yMax=piArr[Math.min(Math.floor(viewXMax),MAX_X)]*1.1||180;
+  return plotY+plotH-y/yMax*plotH;
+}
+function screenToX(sx){return viewXMin+(sx-plotX)/plotW*(viewXMax-viewXMin)}
+function getYMax(){return (piArr[Math.min(Math.floor(viewXMax),MAX_X)]||168)*1.1}
+
+function yToScreenAbs(y){const yMax=getYMax();return plotY+plotH-y/yMax*plotH}
+
+// Stats
+function updateStats(){
+  document.getElementById('s100').textContent=piArr[100];
+  document.getElementById('s500').textContent=piArr[500];
+  document.getElementById('s1000').textContent=piArr[1000];
+  document.getElementById('r100').textContent=(piArr[100]/xlogx(100)).toFixed(4);
+  document.getElementById('r1000').textContent=(piArr[1000]/xlogx(1000)).toFixed(4);
+}
+
+function toggleCurve(name,btn){
+  show[name]=!show[name];
+  btn.classList.toggle('active');
+  draw();
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // Background
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+
+  const yMax=getYMax();
+  const animX=animDone?viewXMax:viewXMin+(viewXMax-viewXMin)*animProgress;
+
+  // Grid
+  ctx.strokeStyle='rgba(40,40,80,.4)';ctx.lineWidth=0.5;
+  // X grid
+  const xStep=calcStep(viewXMax-viewXMin,8);
+  for(let x=Math.ceil(viewXMin/xStep)*xStep;x<=viewXMax;x+=xStep){
+    const sx=xToScreen(x);
+    ctx.beginPath();ctx.moveTo(sx,plotY);ctx.lineTo(sx,plotY+plotH);ctx.stroke();
+    ctx.fillStyle='#556';ctx.font='10px Courier New';ctx.textAlign='center';
+    ctx.fillText(Math.round(x),sx,plotY+plotH+14);
+  }
+  // Y grid
+  const yStep=calcStep(yMax,6);
+  for(let y=yStep;y<yMax;y+=yStep){
+    const sy=yToScreenAbs(y);
+    ctx.beginPath();ctx.moveTo(plotX,sy);ctx.lineTo(plotX+plotW,sy);ctx.stroke();
+    ctx.fillStyle='#556';ctx.font='10px Courier New';ctx.textAlign='right';
+    ctx.fillText(Math.round(y),plotX-6,sy+4);
+  }
+
+  // Axes
+  ctx.strokeStyle='#334';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(plotX,plotY);ctx.lineTo(plotX,plotY+plotH);ctx.lineTo(plotX+plotW,plotY+plotH);ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle='#556';ctx.font='11px Courier New';ctx.textAlign='center';
+  ctx.fillText('x',plotX+plotW/2,plotY+plotH+35);
+  ctx.save();ctx.translate(14,plotY+plotH/2);ctx.rotate(-Math.PI/2);ctx.fillText('count',0,0);ctx.restore();
+
+  // Draw curves
+  const startX=Math.max(2,Math.floor(viewXMin));
+  const endX=Math.min(MAX_X,Math.floor(animX));
+
+  // x/ln(x) - yellow
+  if(show.xlogx){
+    ctx.strokeStyle='rgba(255,255,68,.7)';ctx.lineWidth=1.5;
+    ctx.beginPath();
+    let first=true;
+    for(let x=startX;x<=endX;x++){
+      const sx=xToScreen(x),sy=yToScreenAbs(xlogx(x));
+      if(first){ctx.moveTo(sx,sy);first=false}else ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+  }
+
+  // Li(x) - magenta
+  if(show.li){
+    ctx.strokeStyle='rgba(255,68,255,.7)';ctx.lineWidth=1.5;
+    ctx.beginPath();
+    let first=true;
+    for(let x=startX;x<=endX;x++){
+      const sx=xToScreen(x),sy=yToScreenAbs(liArr[x]);
+      if(first){ctx.moveTo(sx,sy);first=false}else ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+  }
+
+  // pi(x) step function - cyan
+  if(show.pi){
+    ctx.strokeStyle='rgba(68,255,255,.85)';ctx.lineWidth=2;
+    ctx.beginPath();
+    let prev=piArr[startX];
+    ctx.moveTo(xToScreen(startX),yToScreenAbs(prev));
+    for(let x=startX+1;x<=endX;x++){
+      const cur=piArr[x];
+      // horizontal to x
+      ctx.lineTo(xToScreen(x),yToScreenAbs(prev));
+      if(cur!==prev){
+        // vertical jump
+        ctx.lineTo(xToScreen(x),yToScreenAbs(cur));
+        // Draw a small dot at prime
+        const sx=xToScreen(x),sy=yToScreenAbs(cur);
+        ctx.stroke();
+        ctx.fillStyle='rgba(68,255,255,.5)';
+        ctx.beginPath();ctx.arc(sx,sy,2,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='rgba(68,255,255,.85)';ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(sx,sy);
+      }
+      prev=cur;
+    }
+    ctx.lineTo(xToScreen(endX),yToScreenAbs(prev));
+    ctx.stroke();
+  }
+
+  // Markers
+  for(const m of markers){
+    if(m<viewXMin||m>viewXMax)continue;
+    const sx=xToScreen(m);
+    ctx.strokeStyle='rgba(255,100,100,.5)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(sx,plotY);ctx.lineTo(sx,plotY+plotH);ctx.stroke();
+    ctx.setLineDash([]);
+    const xi=Math.round(m);
+    if(xi>=2&&xi<=MAX_X){
+      const pi=piArr[xi],li=liArr[xi],xl=xlogx(xi);
+      ctx.fillStyle='#f88';ctx.font='10px Courier New';ctx.textAlign='left';
+      ctx.fillText(`x=${xi}  π=${pi}  Li=${li.toFixed(1)}`,sx+4,plotY+14);
+    }
+  }
+
+  // Legend
+  const lx=plotX+10,ly=plotY+16;
+  ctx.font='11px Courier New';
+  if(show.pi){ctx.fillStyle='#4ff';ctx.fillText('━ π(x)',lx,ly)}
+  if(show.xlogx){ctx.fillStyle='#ff4';ctx.fillText('━ x/ln(x)',lx+80,ly)}
+  if(show.li){ctx.fillStyle='#f4f';ctx.fillText('━ Li(x)',lx+180,ly)}
+}
+
+function calcStep(range,targetTicks){
+  const raw=range/targetTicks;
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const norm=raw/mag;
+  if(norm<1.5)return mag;if(norm<3.5)return 2*mag;if(norm<7.5)return 5*mag;return 10*mag;
+}
+
+// Animation
+function animate(){
+  if(!animDone){
+    animProgress+=0.008;
+    if(animProgress>=1){animProgress=1;animDone=true}
+    draw();
+    requestAnimationFrame(animate);
+  }
+}
+
+// Mouse hover
+canvas.addEventListener('mousemove',function(e){
+  if(isDragging){
+    const dx=e.clientX-dragStartX;
+    const xRange=viewXMax-viewXMin;
+    const shift=-dx/plotW*xRange;
+    const newMin=dragViewStart+shift;
+    const newMax=newMin+xRange;
+    if(newMin>=0&&newMax<=MAX_X+50){viewXMin=newMin;viewXMax=newMax;draw()}
+    return;
+  }
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  if(mx<plotX||mx>plotX+plotW||my<plotY||my>plotY+plotH){tooltip.style.display='none';return}
+  const x=screenToX(mx);
+  const xi=Math.round(x);
+  if(xi<2||xi>MAX_X){tooltip.style.display='none';return}
+  const pi=piArr[xi],xl=xlogx(xi),li=liArr[xi];
+  const ratio=xl>0?(pi/xl):0;
+  const err=pi-li;
+  tooltip.innerHTML=
+    `x = <span class="val">${xi}</span><br>`+
+    `&pi;(${xi}) = <span class="val">${pi}</span><br>`+
+    `x/ln(x) = <span class="approx">${xl.toFixed(2)}</span><br>`+
+    `Li(${xi}) = <span class="li">${li.toFixed(2)}</span><br>`+
+    `&pi;/[x/ln x] = <span class="val">${ratio.toFixed(4)}</span><br>`+
+    `&pi; &minus; Li = <span class="err">${err.toFixed(2)}</span>`;
+  tooltip.style.display='block';
+  tooltip.style.left=Math.min(e.clientX+14,window.innerWidth-200)+'px';
+  tooltip.style.top=(e.clientY-100)+'px';
+
+  // crosshair
+  draw();
+  ctx.strokeStyle='rgba(68,255,255,.2)';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(mx,plotY);ctx.lineTo(mx,plotY+plotH);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(plotX,my);ctx.lineTo(plotX+plotW,my);ctx.stroke();
+});
+
+canvas.addEventListener('mouseleave',function(){tooltip.style.display='none'});
+
+// Click to place marker
+canvas.addEventListener('click',function(e){
+  if(isDragging)return;
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  if(mx<plotX||mx>plotX+plotW)return;
+  const x=screenToX(mx);
+  const xi=Math.round(x);
+  if(xi<2||xi>MAX_X)return;
+  // Toggle marker
+  const idx=markers.indexOf(xi);
+  if(idx>=0)markers.splice(idx,1);else{if(markers.length>=5)markers.shift();markers.push(xi)}
+  updateMarkerPanel();
+  draw();
+});
+
+function updateMarkerPanel(){
+  const panel=document.getElementById('markers-panel');
+  if(!markers.length){panel.textContent='Click on the plot to place markers (up to 5)';return}
+  let html='';
+  for(const xi of markers){
+    const pi=piArr[xi],xl=xlogx(xi),li=liArr[xi];
+    html+=`<span style="color:#f88;margin:0 8px">x=${xi}: &pi;=${pi}, x/ln x=${xl.toFixed(1)}, Li=${li.toFixed(1)}, &pi;-Li=${(pi-li).toFixed(1)}</span> `;
+  }
+  panel.innerHTML=html;
+}
+
+// Mouse wheel zoom
+canvas.addEventListener('wheel',function(e){
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  const xAtMouse=screenToX(mx);
+  const factor=e.deltaY>0?1.15:1/1.15;
+  let newMin=xAtMouse-(xAtMouse-viewXMin)*factor;
+  let newMax=xAtMouse+(viewXMax-xAtMouse)*factor;
+  // Clamp
+  if(newMax-newMin<20){const mid=(newMin+newMax)/2;newMin=mid-10;newMax=mid+10}
+  if(newMax-newMin>1200){newMin=0;newMax=1050}
+  if(newMin<0)newMin=0;if(newMax>1050)newMax=1050;
+  viewXMin=newMin;viewXMax=newMax;
+  draw();
+},{passive:false});
+
+// Drag to pan
+canvas.addEventListener('mousedown',function(e){
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  if(mx>=plotX&&mx<=plotX+plotW&&my>=plotY&&my<=plotY+plotH){
+    isDragging=true;dragStartX=e.clientX;dragViewStart=viewXMin;
+    canvas.style.cursor='grabbing';
+  }
+});
+window.addEventListener('mouseup',function(){
+  if(isDragging){isDragging=false;canvas.style.cursor='crosshair'}
+});
+
+// Ratio convergence panel
+function showRatioPanel(){
+  const pts=[10,25,50,100,200,500,1000];
+  let html='<span style="color:#556">π(x)/(x/ln x):</span> ';
+  for(const x of pts){
+    const r=piArr[x]/xlogx(x);
+    html+=`<span style="color:#4ff;margin:0 4px">${x}→${r.toFixed(3)}</span>`;
+  }
+  html+=' <span style="color:#556">→ 1</span>';
+  document.getElementById('ratio-panel').innerHTML=html;
+}
+
+// Init
+window.addEventListener('resize',function(){resize();draw()});
+resize();
+updateStats();
+showRatioPanel();
+updateMarkerPanel();
+animate();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
