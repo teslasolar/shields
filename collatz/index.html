@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-COLLATZ</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#aab; }
+canvas { display:block; cursor:grab; }
+canvas:active { cursor:grabbing; }
+
+#stats {
+  position:fixed; top:12px; right:12px; width:280px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  border-radius:6px; padding:14px 16px; font-size:11px; line-height:1.7;
+  pointer-events:none; z-index:10;
+}
+#stats h3 { color:#0af; font-size:12px; letter-spacing:3px; margin-bottom:8px; }
+#stats .label { color:#556; }
+#stats .val { color:#8cf; }
+#stats .prime-val { color:#f0a; }
+
+#tooltip {
+  position:fixed; display:none; pointer-events:none;
+  background:rgba(6,6,16,.95); border:1px solid rgba(0,170,255,.25);
+  border-radius:4px; padding:10px 14px; font-size:11px; line-height:1.6;
+  z-index:20; max-width:260px;
+}
+#tooltip .t-num { color:#0af; font-size:14px; font-weight:bold; }
+#tooltip .t-prime { color:#f0a; }
+#tooltip .t-composite { color:#556; }
+
+#title-bar {
+  position:fixed; top:12px; left:12px; z-index:10;
+  font-size:14px; letter-spacing:4px; color:#0af;
+  text-shadow:0 0 20px rgba(0,170,255,.4);
+}
+#title-bar .sub { font-size:9px; color:#445; letter-spacing:2px; margin-top:4px; }
+
+#seq-panel {
+  position:fixed; bottom:40px; left:50%; transform:translateX(-50%);
+  background:rgba(6,6,16,.94); border:1px solid rgba(0,170,255,.2);
+  border-radius:6px; padding:10px 18px; font-size:11px;
+  z-index:15; display:none; text-align:center; max-width:90vw;
+  overflow-x:auto; white-space:nowrap;
+}
+#seq-panel .seq-title { color:#0af; margin-bottom:6px; font-size:12px; }
+#seq-panel .seq-steps { color:#8cf; }
+#seq-panel .seq-arrow { color:#334; margin:0 2px; }
+#seq-panel .seq-current { color:#ff0; font-weight:bold; text-shadow:0 0 8px rgba(255,255,0,.5); }
+#seq-panel .seq-prime { color:#f0a; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="title-bar">
+  SHIELD-COLLATZ
+  <div class="sub">COLLATZ CONJECTURE &times; PRIME TOPOLOGY</div>
+</div>
+
+<div id="stats"></div>
+<div id="tooltip"></div>
+<div id="seq-panel"></div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statsEl = document.getElementById('stats');
+const seqPanel = document.getElementById('seq-panel');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Primes & Collatz ---
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6)
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  return true;
+}
+
+const SHIELD_PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const SHIELD_COLORS = {
+  2:  '#ff3366',
+  3:  '#ff6633',
+  5:  '#ffcc00',
+  7:  '#33ff66',
+  11: '#33ccff',
+  13: '#6633ff',
+  17: '#ff33cc'
+};
+
+function collatzSequence(n) {
+  const seq = [n];
+  while (n !== 1) {
+    n = n % 2 === 0 ? n / 2 : 3 * n + 1;
+    seq.push(n);
+  }
+  return seq;
+}
+
+function collatzNext(n) {
+  if (n === 1) return null;
+  return n % 2 === 0 ? n / 2 : 3 * n + 1;
+}
+
+// Build tree: for each number 1-200, find its Collatz successor (next step toward 1)
+// parent[n] = collatzNext(n) — the number n goes to
+// children[n] = numbers that go to n
+const MAX_N = 200;
+const nodes = {};
+const children = {};
+
+// Collect all numbers that appear in any sequence from 1-200
+const allNumbers = new Set();
+for (let i = 1; i <= MAX_N; i++) {
+  const seq = collatzSequence(i);
+  seq.forEach(x => allNumbers.add(x));
+}
+
+allNumbers.forEach(n => {
+  nodes[n] = {
+    val: n,
+    prime: isPrime(n),
+    seq: n <= MAX_N ? collatzSequence(n) : null,
+    stoppingTime: n <= MAX_N ? collatzSequence(n).length - 1 : 0,
+    maxVal: n <= MAX_N ? Math.max(...collatzSequence(n)) : n,
+    depth: 0,
+    x: 0, y: 0,
+    targetX: 0, targetY: 0,
+    visible: false,
+    revealTime: 0
+  };
+  children[n] = [];
+});
+
+// Build parent->child relationships (reversed: tree from 1 upward)
+// For the tree, child relationship: n's parent in the tree is collatzNext(n)
+allNumbers.forEach(n => {
+  if (n === 1) return;
+  const next = collatzNext(n);
+  if (allNumbers.has(next) && children[next]) {
+    children[next].push(n);
+  }
+});
+
+// Calculate depths via BFS from 1
+function calcDepths() {
+  const queue = [1];
+  nodes[1].depth = 0;
+  const visited = new Set([1]);
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const ch = children[cur] || [];
+    for (const c of ch) {
+      if (!visited.has(c)) {
+        visited.add(c);
+        nodes[c].depth = nodes[cur].depth + 1;
+        queue.push(c);
+      }
+    }
+  }
+}
+calcDepths();
+
+// Layout tree — assign x positions
+function layoutTree() {
+  let xCounter = 0;
+  const LEVEL_HEIGHT = 55;
+
+  function countLeaves(n) {
+    const ch = (children[n] || []).filter(c => allNumbers.has(c));
+    if (ch.length === 0) return 1;
+    let total = 0;
+    ch.sort((a, b) => a - b);
+    for (const c of ch) total += countLeaves(c);
+    return total;
+  }
+
+  function assignPositions(n, xStart, xEnd) {
+    const node = nodes[n];
+    if (!node) return;
+    const ch = (children[n] || []).filter(c => allNumbers.has(c));
+    ch.sort((a, b) => a - b);
+
+    node.targetX = (xStart + xEnd) / 2;
+    node.targetY = -node.depth * LEVEL_HEIGHT;
+
+    if (ch.length === 0) return;
+
+    const leafCounts = ch.map(c => countLeaves(c));
+    const totalLeaves = leafCounts.reduce((a, b) => a + b, 0);
+    const range = xEnd - xStart;
+
+    let cx = xStart;
+    for (let i = 0; i < ch.length; i++) {
+      const w = (leafCounts[i] / totalLeaves) * range;
+      assignPositions(ch[i], cx, cx + w);
+      cx += w;
+    }
+  }
+
+  const totalLeaves = countLeaves(1);
+  const totalWidth = totalLeaves * 18;
+  assignPositions(1, -totalWidth / 2, totalWidth / 2);
+}
+layoutTree();
+
+// Initialize positions
+allNumbers.forEach(n => {
+  const node = nodes[n];
+  node.x = 0;
+  node.y = 0;
+});
+
+// --- Camera ---
+let camX = 0, camY = 200, zoom = 1.0;
+let dragStart = null, camDragStart = null;
+let isDragging = false;
+
+canvas.addEventListener('mousedown', e => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  camDragStart = { x: camX, y: camY };
+  isDragging = false;
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragStart) {
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isDragging = true;
+    camX = camDragStart.x - dx / zoom;
+    camY = camDragStart.y - dy / zoom;
+  }
+  handleHover(e);
+});
+canvas.addEventListener('mouseup', e => {
+  if (!isDragging) handleClick(e);
+  dragStart = null;
+  isDragging = false;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zf = e.deltaY > 0 ? 0.9 : 1.1;
+  zoom = Math.max(0.15, Math.min(5, zoom * zf));
+}, { passive: false });
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / zoom + camX,
+    y: (sy - H / 2) / zoom + camY
+  };
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - camX) * zoom + W / 2,
+    y: (wy - camY) * zoom + H / 2
+  };
+}
+
+// --- Hover & Click ---
+let hoveredNode = null;
+let activeSeq = null;
+let seqAnimStep = 0;
+let seqAnimTimer = 0;
+
+function handleHover(e) {
+  const wp = screenToWorld(e.clientX, e.clientY);
+  const hitRadius = 8 / zoom;
+  hoveredNode = null;
+
+  for (const n of allNumbers) {
+    const node = nodes[n];
+    if (!node.visible) continue;
+    const dx = node.x - wp.x;
+    const dy = node.y - wp.y;
+    if (dx * dx + dy * dy < hitRadius * hitRadius) {
+      hoveredNode = node;
+      break;
+    }
+  }
+
+  if (hoveredNode) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 15) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    const n = hoveredNode;
+    const primeClass = n.prime ? 't-prime' : 't-composite';
+    const primeLabel = n.prime ? 'PRIME' : 'COMPOSITE';
+    const isShield = SHIELD_PRIMES.includes(n.val);
+    let html = `<div class="t-num">${n.val}</div>`;
+    html += `<div class="${primeClass}">${primeLabel}${isShield ? ' [SHIELD]' : ''}</div>`;
+    if (n.seq) {
+      html += `<div><span style="color:#556">Stopping time:</span> <span style="color:#8cf">${n.stoppingTime}</span></div>`;
+      html += `<div><span style="color:#556">Max value:</span> <span style="color:#8cf">${n.maxVal.toLocaleString()}</span></div>`;
+      html += `<div style="color:#445;font-size:10px;margin-top:4px">Click to animate sequence</div>`;
+    }
+    tooltip.innerHTML = html;
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+function handleClick(e) {
+  if (!hoveredNode || !hoveredNode.seq) return;
+  activeSeq = hoveredNode.seq;
+  seqAnimStep = 0;
+  seqAnimTimer = 0;
+  seqPanel.style.display = 'block';
+}
+
+// --- Stats ---
+function buildStats() {
+  let primeStops = [], compStops = [];
+  let longestN = 1, longestLen = 0;
+  let maxValN = 1, maxValV = 1;
+
+  for (let i = 1; i <= MAX_N; i++) {
+    const node = nodes[i];
+    if (!node) continue;
+    if (node.prime) primeStops.push(node.stoppingTime);
+    else compStops.push(node.stoppingTime);
+    if (node.stoppingTime > longestLen) { longestLen = node.stoppingTime; longestN = i; }
+    if (node.maxVal > maxValV) { maxValV = node.maxVal; maxValN = i; }
+  }
+
+  const avgPrime = primeStops.length ? (primeStops.reduce((a, b) => a + b, 0) / primeStops.length).toFixed(1) : 0;
+  const avgComp = compStops.length ? (compStops.reduce((a, b) => a + b, 0) / compStops.length).toFixed(1) : 0;
+
+  statsEl.innerHTML = `
+    <h3>&#9670; STATISTICS</h3>
+    <div><span class="label">Avg stop (primes):</span> <span class="prime-val">${avgPrime}</span></div>
+    <div><span class="label">Avg stop (composites):</span> <span class="val">${avgComp}</span></div>
+    <div><span class="label">Longest sequence:</span> <span class="val">${longestN} (${longestLen} steps)</span></div>
+    <div><span class="label">Max value reached:</span> <span class="val">${maxValN} &rarr; ${maxValV.toLocaleString()}</span></div>
+    <div style="margin-top:8px;color:#334;font-size:9px">Nodes: ${allNumbers.size} | Range: 1-${MAX_N}</div>
+    <div style="color:#334;font-size:9px">Scroll to zoom &middot; Drag to pan</div>
+  `;
+}
+buildStats();
+
+// --- Shield prime paths: collect edges that belong to each shield prime's path ---
+const shieldPaths = {};
+SHIELD_PRIMES.forEach(p => {
+  const seq = collatzSequence(p);
+  const edges = new Set();
+  for (let i = 0; i < seq.length - 1; i++) {
+    edges.add(seq[i] + '->' + seq[i + 1]);
+  }
+  shieldPaths[p] = edges;
+});
+
+function getEdgeShieldColor(from, to) {
+  // Check if this edge (from -> to in Collatz, meaning from is child and to is parent in tree)
+  for (const p of SHIELD_PRIMES) {
+    if (shieldPaths[p].has(from + '->' + to)) {
+      return SHIELD_COLORS[p];
+    }
+  }
+  return null;
+}
+
+function getNodeShieldPrime(val) {
+  if (SHIELD_PRIMES.includes(val)) return val;
+  return null;
+}
+
+// Which shield paths pass through this node?
+function nodeShieldColor(val) {
+  for (const p of SHIELD_PRIMES) {
+    if (shieldPaths[p].has(val + '->' + collatzNext(val)) || val === p) {
+      return SHIELD_COLORS[p];
+    }
+  }
+  return null;
+}
+
+// --- Animation ---
+let time = 0;
+let revealDepth = -1;
+const REVEAL_SPEED = 0.035;
+const startTime = performance.now();
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  const dt = 1 / 60;
+  time += dt;
+
+  // Reveal animation
+  revealDepth = (ts - startTime) / 1000 * 3;
+
+  // Update node positions and visibility
+  allNumbers.forEach(n => {
+    const node = nodes[n];
+    if (node.depth <= revealDepth) {
+      if (!node.visible) {
+        node.visible = true;
+        node.revealTime = time;
+        node.x = nodes[1].targetX;
+        node.y = nodes[1].targetY;
+      }
+      const t = 0.08;
+      node.x += (node.targetX - node.x) * t;
+      node.y += (node.targetY - node.y) * t;
+    }
+  });
+
+  // Sequence animation
+  if (activeSeq) {
+    seqAnimTimer += dt;
+    if (seqAnimTimer > 0.3) {
+      seqAnimTimer = 0;
+      seqAnimStep++;
+      if (seqAnimStep >= activeSeq.length) {
+        seqAnimStep = activeSeq.length - 1;
+      }
+    }
+    updateSeqPanel();
+  }
+
+  draw();
+}
+
+function updateSeqPanel() {
+  if (!activeSeq) return;
+  let html = `<div class="seq-title">${activeSeq[0]} &rarr; 1 (${activeSeq.length - 1} steps)</div><div class="seq-steps">`;
+  const showCount = Math.min(seqAnimStep + 1, activeSeq.length);
+  for (let i = 0; i < showCount; i++) {
+    const v = activeSeq[i];
+    let cls = '';
+    if (i === seqAnimStep) cls = 'seq-current';
+    else if (isPrime(v)) cls = 'seq-prime';
+    html += `<span class="${cls}">${v}</span>`;
+    if (i < showCount - 1) html += `<span class="seq-arrow"> &rarr; </span>`;
+  }
+  if (showCount < activeSeq.length) html += `<span class="seq-arrow"> &hellip;</span>`;
+  html += '</div>';
+  seqPanel.innerHTML = html;
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-camX, -camY);
+
+  // Draw edges
+  allNumbers.forEach(n => {
+    if (n === 1) return;
+    const node = nodes[n];
+    if (!node || !node.visible) return;
+    const next = collatzNext(n);
+    if (!next || !nodes[next] || !nodes[next].visible) return;
+
+    const parent = nodes[next];
+
+    // Check shield color
+    const sc = getEdgeShieldColor(n, next);
+
+    ctx.beginPath();
+    ctx.moveTo(node.x, node.y);
+    // Slight curve
+    const midY = (node.y + parent.y) / 2;
+    ctx.quadraticCurveTo(node.x, midY, parent.x, parent.y);
+
+    if (sc) {
+      ctx.strokeStyle = sc;
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 2 / zoom;
+    } else {
+      ctx.strokeStyle = node.prime ? 'rgba(255,100,180,0.12)' : 'rgba(0,170,255,0.06)';
+      ctx.globalAlpha = 0.8;
+      ctx.lineWidth = 0.8 / zoom;
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  // Highlight active sequence edges
+  if (activeSeq && seqAnimStep > 0) {
+    for (let i = 0; i < seqAnimStep; i++) {
+      const a = activeSeq[i], b = activeSeq[i + 1];
+      if (!nodes[a] || !nodes[b] || !nodes[a].visible || !nodes[b].visible) continue;
+      ctx.beginPath();
+      ctx.moveTo(nodes[a].x, nodes[a].y);
+      const midY = (nodes[a].y + nodes[b].y) / 2;
+      ctx.quadraticCurveTo(nodes[a].x, midY, nodes[b].x, nodes[b].y);
+      ctx.strokeStyle = '#ff0';
+      ctx.globalAlpha = 0.8;
+      ctx.lineWidth = 2.5 / zoom;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Draw nodes
+  const baseR = 4 / zoom;
+  allNumbers.forEach(n => {
+    const node = nodes[n];
+    if (!node || !node.visible) return;
+
+    const age = time - node.revealTime;
+    const fadeIn = Math.min(1, age * 2);
+
+    let r = baseR;
+    let fillColor;
+    const sp = getNodeShieldPrime(n);
+
+    if (sp) {
+      fillColor = SHIELD_COLORS[sp];
+      r = baseR * 1.6;
+      // Pulse for shield primes
+      r += Math.sin(time * 3 + n) * baseR * 0.3;
+    } else if (node.prime) {
+      fillColor = '#ff66aa';
+      // Pulse for primes
+      r += Math.sin(time * 2.5 + n * 0.7) * baseR * 0.2;
+    } else {
+      fillColor = '#335';
+      r = baseR * 0.7;
+    }
+
+    // Active seq highlight
+    if (activeSeq && seqAnimStep < activeSeq.length && activeSeq[seqAnimStep] === n) {
+      r = baseR * 2.5;
+      fillColor = '#ff0';
+    }
+
+    ctx.globalAlpha = fadeIn;
+
+    // Glow for primes
+    if (node.prime || sp) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r * 2.5, 0, Math.PI * 2);
+      const grd = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, r * 2.5);
+      grd.addColorStop(0, fillColor + '44');
+      grd.addColorStop(1, 'transparent');
+      ctx.fillStyle = grd;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    // Label for smaller zoom or important nodes
+    if (zoom > 0.8 || sp || (n <= MAX_N && node.prime && zoom > 0.4)) {
+      const fontSize = Math.max(7, 9 / zoom);
+      if (zoom > 0.5 || sp) {
+        ctx.font = `${fontSize}px 'Courier New'`;
+        ctx.fillStyle = sp ? SHIELD_COLORS[sp] : (node.prime ? '#f8a' : '#446');
+        ctx.textAlign = 'center';
+        ctx.fillText(n, node.x, node.y - r - 3 / zoom);
+      }
+    }
+
+    ctx.globalAlpha = 1;
+  });
+
+  // Hovered node highlight
+  if (hoveredNode && hoveredNode.visible) {
+    const hr = baseR * 2;
+    ctx.beginPath();
+    ctx.arc(hoveredNode.x, hoveredNode.y, hr, 0, Math.PI * 2);
+    ctx.strokeStyle = '#0af';
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// Close sequence panel on click elsewhere
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    activeSeq = null;
+    seqPanel.style.display = 'none';
+  }
+});
+
+requestAnimationFrame(animate);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
