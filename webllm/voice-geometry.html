@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Sacred Geometry</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas#geo {
+  display: block;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Floating panels */
+.panel {
+  position: fixed;
+  z-index: 100;
+  background: rgba(6,6,16,.88);
+  border: 1px solid rgba(0,170,255,.18);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  backdrop-filter: blur(10px);
+  pointer-events: all;
+  min-width: 180px;
+}
+.panel h3 {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #0af;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-weight: normal;
+}
+.panel-label {
+  color: #556;
+  font-size: 9px;
+  margin-top: 6px;
+}
+.panel-value {
+  color: #c0c0d0;
+  font-size: 11px;
+}
+
+/* Voice panel - bottom left */
+#voice-panel {
+  bottom: 52px;
+  left: 14px;
+}
+#mic-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+#mic-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0af;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+#mic-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+#mic-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #0af;
+  border-radius: 3px;
+  transition: width .05s, background .2s;
+}
+#emotion-dots {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 4px;
+  flex-wrap: wrap;
+}
+.emo-dot {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+  color: #556;
+}
+.emo-dot .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transition: transform .2s, opacity .2s;
+  opacity: 0.3;
+}
+#dominant-emo {
+  font-size: 12px;
+  color: #fc0;
+  margin-top: 4px;
+  min-height: 16px;
+}
+#voice-transcript {
+  font-size: 9px;
+  color: #0f8;
+  margin-top: 6px;
+  max-width: 220px;
+  word-wrap: break-word;
+  min-height: 14px;
+  opacity: .7;
+}
+
+/* LLM panel - bottom right */
+#llm-panel {
+  bottom: 52px;
+  right: 14px;
+  min-width: 220px;
+}
+#model-select, #load-btn, #skip-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.15);
+  color: #c0c0d0;
+  padding: 5px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background .2s;
+}
+#model-select:hover, #load-btn:hover, #skip-btn:hover {
+  background: rgba(255,255,255,.12);
+}
+#model-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+#llm-status {
+  font-size: 9px;
+  color: #556;
+  margin: 4px 0;
+}
+#chat-log {
+  max-height: 110px;
+  overflow-y: auto;
+  font-size: 9px;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+#chat-log::-webkit-scrollbar { width: 3px; }
+#chat-log::-webkit-scrollbar-thumb { background: rgba(0,170,255,.2); border-radius: 2px; }
+.chat-msg { margin-bottom: 4px; }
+.chat-user { color: #0f8; }
+.chat-ai { color: #fc0; }
+
+/* Stats panel - top right */
+#stats-panel {
+  top: 50px;
+  right: 14px;
+  min-width: 170px;
+}
+#stats-panel .stat-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 3px 0;
+}
+#stats-panel .stat-key { color: #556; }
+#stats-panel .stat-val { color: #c0c0d0; }
+
+/* Footer */
+#footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(140,140,160,.35);
+  padding: 10px;
+  background: rgba(6,6,16,.85);
+  border-top: 1px solid rgba(0,170,255,.08);
+}
+
+/* Load overlay */
+#load-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 200;
+  background: rgba(6,6,16,.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #c0c0d0;
+}
+#load-overlay .subtitle {
+  font-size: 10px;
+  color: #556;
+  letter-spacing: 2px;
+}
+#load-overlay button {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  background: rgba(0,170,255,.12);
+  border: 1px solid rgba(0,170,255,.3);
+  color: #0af;
+  padding: 10px 30px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 4px;
+  transition: background .2s;
+}
+#load-overlay button:hover { background: rgba(0,170,255,.2); }
+</style>
+</head>
+<body>
+
+<canvas id="geo"></canvas>
+
+<!-- Voice Panel - bottom left -->
+<div class="panel" id="voice-panel">
+  <h3>VOICE ANALYSIS</h3>
+  <div class="panel-label">MIC LEVEL</div>
+  <div id="mic-bar-wrap">
+    <div id="mic-dot"></div>
+    <div id="mic-bar"><div id="mic-bar-fill"></div></div>
+  </div>
+  <div class="panel-label">EMOTIONS</div>
+  <div id="emotion-dots">
+    <div class="emo-dot"><span class="dot" style="background:#fc0" id="emo-excitement"></span>EXC</div>
+    <div class="emo-dot"><span class="dot" style="background:#0af" id="emo-calm"></span>CLM</div>
+    <div class="emo-dot"><span class="dot" style="background:#f44" id="emo-anger"></span>ANG</div>
+    <div class="emo-dot"><span class="dot" style="background:#48f" id="emo-sadness"></span>SAD</div>
+    <div class="emo-dot"><span class="dot" style="background:#0f8" id="emo-joy"></span>JOY</div>
+    <div class="emo-dot"><span class="dot" style="background:#f0a" id="emo-curiosity"></span>CUR</div>
+  </div>
+  <div id="dominant-emo">--</div>
+  <div id="voice-transcript"></div>
+</div>
+
+<!-- LLM Panel - bottom right -->
+<div class="panel" id="llm-panel">
+  <h3>WEBLLM ENGINE</h3>
+  <div id="model-controls">
+    <select id="model-select">
+      <option value="SmolLM2-135M-Instruct-q4f16_1-MLC">SmolLM2-135M</option>
+      <option value="SmolLM2-360M-Instruct-q4f16_1-MLC">SmolLM2-360M</option>
+      <option value="Qwen2.5-0.5B-Instruct-q4f16_1-MLC">Qwen2.5-0.5B</option>
+      <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC" selected>Qwen2.5-1.5B</option>
+      <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama-3.2-1B</option>
+      <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama-3.2-3B</option>
+    </select>
+    <button id="load-btn">LOAD</button>
+  </div>
+  <div id="llm-status">NOT LOADED</div>
+  <div id="chat-log"></div>
+</div>
+
+<!-- Stats Panel - top right -->
+<div class="panel" id="stats-panel">
+  <h3>GEOMETRY STATS</h3>
+  <div class="stat-row"><span class="stat-key">PATTERN</span><span class="stat-val" id="st-pattern">Seed of Life</span></div>
+  <div class="stat-row"><span class="stat-key">NODES</span><span class="stat-val" id="st-nodes">7</span></div>
+  <div class="stat-row"><span class="stat-key">SYMMETRY</span><span class="stat-val" id="st-sym">6</span></div>
+  <div class="stat-row"><span class="stat-key">ROTATION</span><span class="stat-val" id="st-rot">0.00</span></div>
+  <div class="stat-row"><span class="stat-key">SCALE</span><span class="stat-val" id="st-scale">1.00</span></div>
+  <div class="stat-row"><span class="stat-key">DIMENSIONS</span><span class="stat-val" id="st-dims">2D</span></div>
+</div>
+
+<!-- Footer -->
+<div id="footer">M&#8327; = 127 &middot; PRIMORIAL 510,510 &middot; LIGHT TO LIGHT</div>
+
+<!-- Load overlay -->
+<div id="load-overlay">
+  <div>VOICE SACRED GEOMETRY</div>
+  <div class="subtitle">WebLLM-driven pattern engine</div>
+  <div class="subtitle">Load a model or skip to use voice-only mode</div>
+  <div>
+    <button id="overlay-load">LOAD MODEL</button>
+    <button id="overlay-skip">SKIP</button>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// === SHIELD PRIMES ===
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const TAU = Math.PI * 2;
+const PHI = (1 + Math.sqrt(5)) / 2;
+
+// === CANVAS SETUP ===
+const canvas = document.getElementById('geo');
+const ctx = canvas.getContext('2d');
+let W, H, CX, CY, baseR;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  CX = W / 2;
+  CY = H / 2;
+  baseR = Math.min(W, H) * 0.18;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// === COLORS ===
+const CYAN = '#0af', GOLD = '#fc0', MAGENTA = '#f0a', GREEN = '#0f8';
+const PALETTE = [CYAN, GOLD, MAGENTA, GREEN, '#4af', '#f84', '#8f0'];
+
+function hsl(h, s, l, a) { return `hsla(${h},${s}%,${l}%,${a || 1})`; }
+
+// === STATE ===
+let geoState = {
+  pattern: 'seed',
+  symmetry: 6,
+  speed: 0.3,
+  scale: 1.0,
+  hue1: 190,
+  hue2: 45,
+  rotation: 0,
+  colorPhase: 0,
+  breathScale: 1.0,
+  targetPattern: 'seed',
+  transitionT: 1
+};
+
+// Voice state
+let voiceRMS = 0, voiceF0 = 0, pitchVariance = 0;
+let onsetRate = 0, vowelType = 'ah';
+let smoothRMS = 0, smoothF0 = 0, smoothPitchVar = 0;
+let emotions = { excitement: 0, calm: 0.5, anger: 0, sadness: 0, joy: 0, curiosity: 0 };
+let dominantEmotion = 'calm';
+let pitchHistory = [];
+let onsetTimes = [];
+let rmsHistory = [];
+
+// LLM
+let engine = null, llmLoaded = false, llmLoading = false;
+let chatMessages = [];
+
+// Speech recognition
+let recognition = null;
+
+// === FIBONACCI SPHERE BACKGROUND (127 dots) ===
+const fibDots = [];
+for (let i = 0; i < 127; i++) {
+  const theta = Math.acos(1 - 2 * (i + 0.5) / 127);
+  const phi = TAU * i / PHI;
+  fibDots.push({ x: Math.sin(theta) * Math.cos(phi), y: Math.sin(theta) * Math.sin(phi) });
+}
+
+function drawFibBackground(t) {
+  ctx.save();
+  for (let i = 0; i < 127; i++) {
+    const d = fibDots[i];
+    const pulse = 0.4 + 0.2 * Math.sin(t * 0.3 + i * 0.15);
+    ctx.fillStyle = `rgba(0,170,255,${0.03 + 0.02 * pulse})`;
+    const px = CX + d.x * Math.min(W, H) * 0.48;
+    const py = CY + d.y * Math.min(W, H) * 0.48;
+    ctx.beginPath();
+    ctx.arc(px, py, 1.2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// === PATTERN DEFINITIONS ===
+const PATTERNS = {
+  seed: {
+    name: 'Seed of Life',
+    nodes: 7,
+    dims: '2D',
+    draw(cx, cy, R, rot, hue1, hue2, alpha) {
+      const centers = [{ x: 0, y: 0 }];
+      for (let i = 0; i < 6; i++) {
+        const a = rot + i * TAU / 6;
+        centers.push({ x: Math.cos(a) * R, y: Math.sin(a) * R });
+      }
+      ctx.globalCompositeOperation = 'screen';
+      centers.forEach((c, i) => {
+        const h = hue1 + (hue2 - hue1) * (i / 6);
+        ctx.strokeStyle = hsl(h, 80, 55, alpha * 0.55);
+        ctx.shadowColor = hsl(h, 90, 60, 0.5);
+        ctx.shadowBlur = 12;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(cx + c.x, cy + c.y, R, 0, TAU);
+        ctx.stroke();
+      });
+      // Intersection nodes
+      this.drawNodes(cx, cy, centers, hue1, alpha);
+    },
+    drawNodes(cx, cy, centers, hue, alpha) {
+      // Find approximate intersection points between circles
+      const nodes = [];
+      for (let i = 0; i < centers.length; i++) {
+        for (let j = i + 1; j < centers.length; j++) {
+          const dx = centers[j].x - centers[i].x;
+          const dy = centers[j].y - centers[i].y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d > 0 && d < baseR * 2.1) {
+            const mx = (centers[i].x + centers[j].x) / 2;
+            const my = (centers[i].y + centers[j].y) / 2;
+            nodes.push({ x: mx, y: my });
+          }
+        }
+      }
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = hsl(hue, 80, 70, 0.6);
+      ctx.fillStyle = hsl(hue, 70, 75, alpha * 0.8);
+      nodes.forEach(n => {
+        ctx.beginPath();
+        ctx.arc(cx + n.x, cy + n.y, 2.5, 0, TAU);
+        ctx.fill();
+      });
+    }
+  },
+
+  flower: {
+    name: 'Flower of Life',
+    nodes: 19,
+    dims: '2D',
+    draw(cx, cy, R, rot, hue1, hue2, alpha) {
+      const centers = [{ x: 0, y: 0 }];
+      // Inner ring of 6
+      for (let i = 0; i < 6; i++) {
+        const a = rot + i * TAU / 6;
+        centers.push({ x: Math.cos(a) * R, y: Math.sin(a) * R });
+      }
+      // Outer ring of 12 (6 at 2R aligned + 6 at 2R offset)
+      for (let i = 0; i < 6; i++) {
+        const a = rot + i * TAU / 6;
+        centers.push({ x: Math.cos(a) * R * 2, y: Math.sin(a) * R * 2 });
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = rot + (i + 0.5) * TAU / 6;
+        centers.push({ x: Math.cos(a) * R * Math.sqrt(3), y: Math.sin(a) * R * Math.sqrt(3) });
+      }
+      ctx.globalCompositeOperation = 'screen';
+      centers.forEach((c, i) => {
+        const h = hue1 + (hue2 - hue1) * (i / 19);
+        ctx.strokeStyle = hsl(h, 75, 50, alpha * 0.4);
+        ctx.shadowColor = hsl(h, 85, 55, 0.3);
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        ctx.arc(cx + c.x, cy + c.y, R, 0, TAU);
+        ctx.stroke();
+      });
+      // Node dots at centers
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = hsl(hue1, 70, 75, alpha * 0.7);
+      centers.forEach(c => {
+        ctx.beginPath();
+        ctx.arc(cx + c.x, cy + c.y, 2, 0, TAU);
+        ctx.fill();
+      });
+    }
+  },
+
+  metatron: {
+    name: "Metatron's Cube",
+    nodes: 13,
+    dims: '3D',
+    draw(cx, cy, R, rot, hue1, hue2, alpha) {
+      const centers = [{ x: 0, y: 0 }];
+      // Inner 6
+      for (let i = 0; i < 6; i++) {
+        const a = rot + i * TAU / 6;
+        centers.push({ x: Math.cos(a) * R, y: Math.sin(a) * R });
+      }
+      // Outer 6
+      for (let i = 0; i < 6; i++) {
+        const a = rot + i * TAU / 6;
+        centers.push({ x: Math.cos(a) * R * 2, y: Math.sin(a) * R * 2 });
+      }
+      ctx.globalCompositeOperation = 'screen';
+      // Draw circles
+      centers.forEach((c, i) => {
+        const h = (hue1 + i * 28) % 360;
+        ctx.strokeStyle = hsl(h, 75, 50, alpha * 0.35);
+        ctx.shadowColor = hsl(h, 80, 55, 0.3);
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(cx + c.x, cy + c.y, R * 0.35, 0, TAU);
+        ctx.stroke();
+      });
+      // Draw ALL connecting lines
+      ctx.lineWidth = 0.6;
+      for (let i = 0; i < centers.length; i++) {
+        for (let j = i + 1; j < centers.length; j++) {
+          const h = (hue1 + (i + j) * 14) % 360;
+          ctx.strokeStyle = hsl(h, 60, 50, alpha * 0.18);
+          ctx.shadowColor = hsl(h, 70, 55, 0.15);
+          ctx.shadowBlur = 4;
+          ctx.beginPath();
+          ctx.moveTo(cx + centers[i].x, cy + centers[i].y);
+          ctx.lineTo(cx + centers[j].x, cy + centers[j].y);
+          ctx.stroke();
+        }
+      }
+      // Nodes
+      ctx.shadowBlur = 6;
+      centers.forEach((c, i) => {
+        const h = (hue1 + i * 28) % 360;
+        ctx.fillStyle = hsl(h, 70, 70, alpha * 0.9);
+        ctx.beginPath();
+        ctx.arc(cx + c.x, cy + c.y, 3, 0, TAU);
+        ctx.fill();
+      });
+    }
+  },
+
+  sri_yantra: {
+    name: 'Sri Yantra',
+    nodes: 9,
+    dims: '2D+',
+    draw(cx, cy, R, rot, hue1, hue2, alpha) {
+      ctx.globalCompositeOperation = 'screen';
+      // Outer circles
+      for (let k = 0; k < 3; k++) {
+        const r = R * (1.8 + k * 0.25);
+        ctx.strokeStyle = hsl(hue1, 60, 40, alpha * 0.2);
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = hsl(hue1, 70, 50, 0.2);
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, TAU);
+        ctx.stroke();
+      }
+      // 9 interlocking triangles (5 down, 4 up)
+      const scales = [1.0, 0.82, 0.66, 0.52, 0.4, 0.78, 0.6, 0.45, 0.3];
+      const directions = [1, 1, 1, 1, 1, -1, -1, -1, -1]; // 1=down, -1=up
+      const offsets = [0, 0.06, 0.12, 0.18, 0.24, 0.03, 0.09, 0.15, 0.21];
+
+      scales.forEach((s, i) => {
+        const dir = directions[i];
+        const triR = R * 1.6 * s;
+        const yOff = dir * R * offsets[i] * 2;
+        const h = hue1 + (hue2 - hue1) * (i / 9);
+        ctx.strokeStyle = hsl(h, 75, 55, alpha * 0.45);
+        ctx.shadowColor = hsl(h, 80, 60, 0.3);
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let v = 0; v < 3; v++) {
+          const a = rot + v * TAU / 3 + (dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+          const px = cx + Math.cos(a) * triR;
+          const py = cy + Math.sin(a) * triR + yOff;
+          v === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      });
+      // Central bindu point
+      ctx.fillStyle = hsl(hue2, 90, 70, alpha);
+      ctx.shadowColor = hsl(hue2, 90, 70, 0.6);
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4, 0, TAU);
+      ctx.fill();
+    }
+  },
+
+  platonic: {
+    name: 'Platonic Solids',
+    nodes: 18,
+    dims: '3D',
+    draw(cx, cy, R, rot, hue1, hue2, alpha) {
+      ctx.globalCompositeOperation = 'screen';
+      // Tetrahedron (4 vertices)
+      const tetraV = [];
+      for (let i = 0; i < 4; i++) {
+        const phi = Math.acos(1 - 2 * (i + 0.5) / 4);
+        const theta = TAU * i / PHI + rot;
+        tetraV.push({
+          x: Math.sin(phi) * Math.cos(theta) * R * 0.5,
+          y: Math.sin(phi) * Math.sin(theta) * R * 0.5 + Math.cos(phi) * R * 0.15
+        });
+      }
+      this.drawWireframe(cx - R * 1.2, cy - R * 0.4, tetraV, hue1, alpha, 'TETRA');
+
+      // Cube (8 vertices)
+      const cubeV = [];
+      const s = R * 0.35;
+      for (let i = 0; i < 8; i++) {
+        const bx = (i & 1 ? 1 : -1) * s;
+        const by = (i & 2 ? 1 : -1) * s;
+        const bz = (i & 4 ? 1 : -1) * s;
+        const cosR = Math.cos(rot), sinR = Math.sin(rot);
+        cubeV.push({
+          x: bx * cosR - bz * sinR,
+          y: by * 0.8 + bz * sinR * 0.3
+        });
+      }
+      const cubeEdges = [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
+      this.drawWireframeEdges(cx + R * 1.2, cy - R * 0.4, cubeV, cubeEdges, (hue1 + 60) % 360, alpha);
+
+      // Octahedron (6 vertices)
+      const octaV = [];
+      const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+      dirs.forEach(d => {
+        const cosR = Math.cos(rot * 0.7), sinR = Math.sin(rot * 0.7);
+        octaV.push({
+          x: (d[0] * cosR - d[2] * sinR) * R * 0.55,
+          y: (d[1] * 0.85 + d[2] * sinR * 0.3) * R * 0.55
+        });
+      });
+      const octaEdges = [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[2,5],[3,4],[3,5]];
+      this.drawWireframeEdges(cx, cy + R * 0.9, octaV, octaEdges, (hue1 + 120) % 360, alpha);
+    },
+    drawWireframe(cx, cy, verts, hue, alpha) {
+      ctx.strokeStyle = hsl(hue, 70, 55, alpha * 0.5);
+      ctx.shadowColor = hsl(hue, 80, 60, 0.3);
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < verts.length; i++) {
+        for (let j = i + 1; j < verts.length; j++) {
+          ctx.beginPath();
+          ctx.moveTo(cx + verts[i].x, cy + verts[i].y);
+          ctx.lineTo(cx + verts[j].x, cy + verts[j].y);
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = hsl(hue, 70, 70, alpha * 0.9);
+      ctx.shadowBlur = 5;
+      verts.forEach(v => {
+        ctx.beginPath();
+        ctx.arc(cx + v.x, cy + v.y, 2.5, 0, TAU);
+        ctx.fill();
+      });
+    },
+    drawWireframeEdges(cx, cy, verts, edges, hue, alpha) {
+      ctx.strokeStyle = hsl(hue, 70, 55, alpha * 0.5);
+      ctx.shadowColor = hsl(hue, 80, 60, 0.3);
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 1;
+      edges.forEach(([a, b]) => {
+        ctx.beginPath();
+        ctx.moveTo(cx + verts[a].x, cy + verts[a].y);
+        ctx.lineTo(cx + verts[b].x, cy + verts[b].y);
+        ctx.stroke();
+      });
+      ctx.fillStyle = hsl(hue, 70, 70, alpha * 0.9);
+      ctx.shadowBlur = 5;
+      verts.forEach(v => {
+        ctx.beginPath();
+        ctx.arc(cx + v.x, cy + v.y, 2.5, 0, TAU);
+        ctx.fill();
+      });
+    }
+  },
+
+  circles: {
+    name: 'Sacred Circles',
+    nodes: 7,
+    dims: '2D',
+    draw(cx, cy, R, rot, hue1, hue2, alpha) {
+      ctx.globalCompositeOperation = 'screen';
+      for (let i = 0; i < PRIMES.length; i++) {
+        const p = PRIMES[i];
+        const r = R * (p / 17) * 1.4;
+        const h = hue1 + (hue2 - hue1) * (i / 7);
+        const pulse = 0.7 + 0.3 * Math.sin(rot * 2 + i * 0.8);
+        ctx.strokeStyle = hsl(h, 50, 45, alpha * 0.35 * pulse);
+        ctx.shadowColor = hsl(h, 60, 50, 0.2);
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 1 + i * 0.15;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, TAU);
+        ctx.stroke();
+      }
+      // Center node
+      ctx.fillStyle = hsl(hue1, 60, 60, alpha * 0.6);
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, TAU);
+      ctx.fill();
+    }
+  }
+};
+
+const PATTERN_NAMES = { seed: 'Seed of Life', flower: 'Flower of Life', metatron: "Metatron's Cube", sri_yantra: 'Sri Yantra', platonic: 'Platonic Solids', circles: 'Sacred Circles' };
+const EMOTION_PATTERN = { calm: 'seed', excitement: 'flower', joy: 'metatron', curiosity: 'sri_yantra', anger: 'platonic', sadness: 'circles' };
+const EMOTION_HUES = { calm: [190, 220], excitement: [30, 60], joy: [0, 360], curiosity: [270, 320], anger: [0, 20], sadness: [220, 250] };
+const EMOTION_SPEEDS = { calm: 0.15, excitement: 0.8, joy: 0.5, curiosity: 0.4, anger: 0.6, sadness: 0.1 };
+
+// === VOICE ANALYSIS ===
+let audioCtx, analyser, micStream;
+let timeData, freqData;
+
+async function initMic() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = stream;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.8;
+    source.connect(analyser);
+    timeData = new Float32Array(analyser.fftSize);
+    freqData = new Float32Array(analyser.frequencyBinCount);
+    document.getElementById('mic-dot').style.background = '#0f8';
+  } catch (e) {
+    console.warn('Mic access denied:', e);
+    document.getElementById('mic-dot').style.background = '#f44';
+  }
+}
+
+function calcRMS() {
+  if (!analyser) return 0;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  return Math.sqrt(sum / timeData.length);
+}
+
+function calcF0() {
+  if (!analyser || !audioCtx) return 0;
+  analyser.getFloatTimeDomainData(timeData);
+  const sr = audioCtx.sampleRate;
+  const minLag = Math.floor(sr / 500); // 500Hz max
+  const maxLag = Math.floor(sr / 60);  // 60Hz min
+  let bestCorr = 0, bestLag = 0;
+  for (let lag = minLag; lag < maxLag && lag < timeData.length / 2; lag++) {
+    let corr = 0;
+    for (let i = 0; i < timeData.length - lag; i++) {
+      corr += timeData[i] * timeData[i + lag];
+    }
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestLag = lag;
+    }
+  }
+  if (bestLag === 0 || bestCorr < 0.01) return 0;
+  return sr / bestLag;
+}
+
+function detectOnset(rms) {
+  const now = performance.now();
+  rmsHistory.push({ t: now, v: rms });
+  rmsHistory = rmsHistory.filter(r => now - r.t < 2000);
+  if (rmsHistory.length > 2) {
+    const prev = rmsHistory[rmsHistory.length - 2].v;
+    if (rms > prev * 1.8 && rms > 0.02) {
+      onsetTimes.push(now);
+    }
+  }
+  onsetTimes = onsetTimes.filter(t => now - t < 3000);
+  return onsetTimes.length / 3; // onsets per second
+}
+
+function detectVowel() {
+  if (!analyser) return 'ah';
+  analyser.getFloatFrequencyData(freqData);
+  const sr = audioCtx.sampleRate;
+  const binHz = sr / analyser.fftSize;
+  // Find peak in formant regions
+  let peakBin = 0, peakVal = -Infinity;
+  const minBin = Math.floor(200 / binHz);
+  const maxBin = Math.floor(3000 / binHz);
+  for (let i = minBin; i < maxBin && i < freqData.length; i++) {
+    if (freqData[i] > peakVal) {
+      peakVal = freqData[i];
+      peakBin = i;
+    }
+  }
+  const peakFreq = peakBin * binHz;
+  if (peakFreq < 400) return 'oo';
+  if (peakFreq < 600) return 'oh';
+  if (peakFreq < 900) return 'ah';
+  if (peakFreq < 1500) return 'eh';
+  return 'ee';
+}
+
+function updateEmotions() {
+  const rms = smoothRMS;
+  const f0 = smoothF0;
+  const pv = smoothPitchVar;
+  const onset = onsetRate;
+
+  // Excitement: high RMS + high pitch + fast onsets
+  emotions.excitement = Math.min(1, rms * 8 + (f0 > 200 ? 0.3 : 0) + onset * 0.2);
+  // Calm: low RMS + steady pitch + slow
+  emotions.calm = Math.max(0, 1 - rms * 10 - pv * 3 - onset * 0.3);
+  // Anger: high RMS + low pitch + high variance
+  emotions.anger = Math.min(1, rms * 6 * (f0 < 150 && f0 > 0 ? 1.5 : 0.3) + pv * 2);
+  // Sadness: low RMS + low pitch + low onset
+  emotions.sadness = Math.min(1, (1 - rms * 8) * (f0 > 0 && f0 < 180 ? 0.8 : 0.2) * (1 - onset * 0.5));
+  // Joy: moderate-high RMS + high pitch + moderate variance
+  emotions.joy = Math.min(1, rms * 5 * (f0 > 220 ? 1.2 : 0.4) + (pv > 0.1 && pv < 0.5 ? 0.3 : 0));
+  // Curiosity: rising pitch + moderate RMS
+  emotions.curiosity = Math.min(1, pv * 4 + (f0 > 180 ? 0.2 : 0) + rms * 3 * 0.5);
+
+  // Normalize
+  let maxE = 0;
+  dominantEmotion = 'calm';
+  for (const e in emotions) {
+    if (emotions[e] > maxE) { maxE = emotions[e]; dominantEmotion = e; }
+  }
+}
+
+// === UI UPDATES ===
+const micDot = document.getElementById('mic-dot');
+const micBarFill = document.getElementById('mic-bar-fill');
+const domEmoEl = document.getElementById('dominant-emo');
+const transcriptEl = document.getElementById('voice-transcript');
+
+function updateVoiceUI() {
+  const pct = Math.min(100, smoothRMS * 500);
+  micBarFill.style.width = pct + '%';
+  if (pct < 20) { micBarFill.style.background = '#0af'; }
+  else if (pct < 60) { micBarFill.style.background = '#0f8'; }
+  else { micBarFill.style.background = '#fa0'; }
+
+  // Emotion dots
+  for (const e in emotions) {
+    const el = document.getElementById('emo-' + e);
+    if (el) {
+      const v = emotions[e];
+      el.style.opacity = 0.2 + v * 0.8;
+      el.style.transform = `scale(${0.8 + v * 0.7})`;
+    }
+  }
+  domEmoEl.textContent = dominantEmotion.toUpperCase();
+  domEmoEl.style.color = dominantEmotion === 'calm' ? CYAN : dominantEmotion === 'excitement' ? GOLD : dominantEmotion === 'joy' ? GREEN : dominantEmotion === 'anger' ? '#f44' : dominantEmotion === 'curiosity' ? MAGENTA : '#48f';
+}
+
+function updateStatsUI() {
+  const pat = PATTERNS[geoState.pattern];
+  document.getElementById('st-pattern').textContent = pat ? pat.name : geoState.pattern;
+  document.getElementById('st-nodes').textContent = pat ? pat.nodes : '?';
+  document.getElementById('st-sym').textContent = geoState.symmetry;
+  document.getElementById('st-rot').textContent = (geoState.speed).toFixed(2);
+  document.getElementById('st-scale').textContent = geoState.scale.toFixed(2);
+  document.getElementById('st-dims').textContent = pat ? pat.dims : '2D';
+}
+
+// === SPEECH RECOGNITION ===
+function initSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) { final += t; }
+      else { interim += t; }
+    }
+    if (interim) transcriptEl.textContent = interim;
+    if (final) {
+      transcriptEl.textContent = final;
+      if (llmLoaded && engine) sendToLLM(final.trim());
+    }
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error !== 'no-speech') console.warn('Speech error:', e.error);
+  };
+  recognition.onend = () => {
+    try { recognition.start(); } catch(e) {}
+  };
+
+  try { recognition.start(); } catch(e) {}
+}
+
+// === WEBLLM ===
+const SYSTEM_PROMPT = `You are a sacred geometry engine. The user speaks commands to modify patterns. Respond with pattern changes in this format: PATTERN:name SYMMETRY:n SPEED:0-1 COLORS:hue1,hue2 SCALE:0.5-2.0. Available patterns: seed, flower, metatron, sri_yantra, platonic, circles. Keep responses very short (1-2 lines). Always include at least PATTERN: in your response.`;
+
+const chatLog = document.getElementById('chat-log');
+const llmStatus = document.getElementById('llm-status');
+
+function addChatMessage(role, text) {
+  chatMessages.push({ role, text });
+  if (chatMessages.length > 5) chatMessages.shift();
+  chatLog.innerHTML = chatMessages.map(m =>
+    `<div class="chat-msg ${m.role === 'user' ? 'chat-user' : 'chat-ai'}">${m.role === 'user' ? '> ' : '< '}${m.text}</div>`
+  ).join('');
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function parseLLMResponse(text) {
+  const patMatch = text.match(/PATTERN:\s*(\w+)/i);
+  const symMatch = text.match(/SYMMETRY:\s*(\d+)/i);
+  const spdMatch = text.match(/SPEED:\s*([\d.]+)/i);
+  const colMatch = text.match(/COLORS:\s*(\d+)\s*,\s*(\d+)/i);
+  const sclMatch = text.match(/SCALE:\s*([\d.]+)/i);
+
+  if (patMatch) {
+    const p = patMatch[1].toLowerCase();
+    if (PATTERNS[p]) geoState.targetPattern = p;
+  }
+  if (symMatch) geoState.symmetry = Math.max(2, Math.min(24, parseInt(symMatch[1])));
+  if (spdMatch) geoState.speed = Math.max(0, Math.min(1, parseFloat(spdMatch[1])));
+  if (colMatch) { geoState.hue1 = parseInt(colMatch[1]) % 360; geoState.hue2 = parseInt(colMatch[2]) % 360; }
+  if (sclMatch) geoState.scale = Math.max(0.5, Math.min(2.0, parseFloat(sclMatch[1])));
+}
+
+async function sendToLLM(text) {
+  if (!engine || !llmLoaded) return;
+  addChatMessage('user', text);
+  llmStatus.textContent = 'GENERATING...';
+  llmStatus.style.color = GOLD;
+  try {
+    const reply = await engine.chat.completions.create({
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: text }
+      ],
+      max_tokens: 100,
+      temperature: 0.7
+    });
+    const resp = reply.choices[0].message.content;
+    addChatMessage('ai', resp);
+    parseLLMResponse(resp);
+    llmStatus.textContent = 'READY';
+    llmStatus.style.color = GREEN;
+  } catch (e) {
+    llmStatus.textContent = 'ERROR: ' + e.message;
+    llmStatus.style.color = '#f44';
+  }
+}
+
+async function loadModel() {
+  if (llmLoading) return;
+  llmLoading = true;
+  const modelId = document.getElementById('model-select').value;
+  llmStatus.textContent = 'LOADING ' + modelId.split('-').slice(0, 2).join('-') + '...';
+  llmStatus.style.color = CYAN;
+  try {
+    const webllm = await import('https://esm.run/@anthropic-ai/web-llm');
+    engine = await webllm.CreateMLCEngine(modelId, {
+      initProgressCallback: (progress) => {
+        llmStatus.textContent = progress.text || ('LOADING ' + Math.round((progress.progress || 0) * 100) + '%');
+      }
+    });
+    llmLoaded = true;
+    llmLoading = false;
+    llmStatus.textContent = 'LOADED - READY';
+    llmStatus.style.color = GREEN;
+    document.getElementById('load-overlay').style.display = 'none';
+  } catch (e) {
+    // Try alternate CDN
+    try {
+      const webllm = await import('https://esm.run/@mlc-ai/web-llm');
+      engine = await webllm.CreateMLCEngine(modelId, {
+        initProgressCallback: (progress) => {
+          llmStatus.textContent = progress.text || ('LOADING ' + Math.round((progress.progress || 0) * 100) + '%');
+        }
+      });
+      llmLoaded = true;
+      llmLoading = false;
+      llmStatus.textContent = 'LOADED - READY';
+      llmStatus.style.color = GREEN;
+      document.getElementById('load-overlay').style.display = 'none';
+    } catch (e2) {
+      llmLoading = false;
+      llmStatus.textContent = 'LOAD FAILED: ' + e2.message;
+      llmStatus.style.color = '#f44';
+    }
+  }
+}
+
+// === OVERLAY BUTTONS ===
+document.getElementById('overlay-load').addEventListener('click', () => {
+  document.getElementById('load-overlay').style.display = 'none';
+  loadModel();
+});
+document.getElementById('overlay-skip').addEventListener('click', () => {
+  document.getElementById('load-overlay').style.display = 'none';
+});
+document.getElementById('load-btn').addEventListener('click', loadModel);
+
+// === MAIN RENDER LOOP ===
+let lastT = 0;
+
+function frame(ts) {
+  requestAnimationFrame(frame);
+  const t = ts * 0.001;
+  const dt = lastT ? t - lastT : 0.016;
+  lastT = t;
+
+  // Voice analysis tick
+  if (analyser) {
+    voiceRMS = calcRMS();
+    voiceF0 = calcF0();
+    smoothRMS += (voiceRMS - smoothRMS) * 0.15;
+    smoothF0 += (voiceF0 - smoothF0) * 0.08;
+
+    pitchHistory.push(voiceF0);
+    if (pitchHistory.length > 30) pitchHistory.shift();
+    const avgP = pitchHistory.reduce((a, b) => a + b, 0) / pitchHistory.length;
+    let pVar = 0;
+    pitchHistory.forEach(p => pVar += (p - avgP) * (p - avgP));
+    pitchVariance = Math.sqrt(pVar / pitchHistory.length) / 200;
+    smoothPitchVar += (pitchVariance - smoothPitchVar) * 0.1;
+
+    onsetRate = detectOnset(voiceRMS);
+    vowelType = detectVowel();
+    updateEmotions();
+    updateVoiceUI();
+  }
+
+  // Map emotions to geometry
+  const emoPat = EMOTION_PATTERN[dominantEmotion] || 'seed';
+  if (geoState.targetPattern === geoState.pattern) {
+    // Only change if no LLM override active
+    geoState.targetPattern = emoPat;
+  }
+  // Smooth pattern transition
+  if (geoState.pattern !== geoState.targetPattern) {
+    geoState.transitionT -= dt * 1.5;
+    if (geoState.transitionT <= 0) {
+      geoState.pattern = geoState.targetPattern;
+      geoState.transitionT = 0;
+    }
+  } else {
+    geoState.transitionT = Math.min(1, geoState.transitionT + dt * 1.5);
+  }
+
+  // Voice-driven parameters
+  const emoHues = EMOTION_HUES[dominantEmotion] || [190, 220];
+  const emoSpeed = EMOTION_SPEEDS[dominantEmotion] || 0.3;
+  geoState.hue1 += (emoHues[0] - geoState.hue1) * dt * 2;
+  geoState.hue2 += (emoHues[1] - geoState.hue2) * dt * 2;
+
+  // Rotation driven by F0 and base speed
+  const rotSpeed = emoSpeed + (smoothF0 / 500) * 0.3 + smoothPitchVar * 0.5;
+  geoState.rotation += rotSpeed * dt;
+
+  // Scale breathing from RMS
+  const breathTarget = 1.0 + smoothRMS * 6;
+  geoState.breathScale += (breathTarget - geoState.breathScale) * dt * 4;
+
+  // Color cycling from pitch variance
+  geoState.colorPhase += smoothPitchVar * dt * 200;
+
+  // === DRAW ===
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Fibonacci dot background
+  drawFibBackground(t);
+
+  // Draw the current pattern
+  const pat = PATTERNS[geoState.pattern];
+  if (pat) {
+    const R = baseR * geoState.scale * geoState.breathScale;
+    const h1 = (geoState.hue1 + geoState.colorPhase) % 360;
+    const h2 = (geoState.hue2 + geoState.colorPhase) % 360;
+    const alpha = geoState.transitionT;
+
+    ctx.save();
+    pat.draw(CX, CY, R, geoState.rotation, h1, h2, alpha);
+    ctx.restore();
+
+    // Reset composite
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+  }
+
+  updateStatsUI();
+}
+
+// === INIT ===
+initMic();
+initSpeechRecognition();
+requestAnimationFrame(frame);
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

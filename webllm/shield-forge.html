@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FORGE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+
+/* 3-column grid */
+#app{display:grid;grid-template-columns:250px 1fr 320px;height:100vh;padding-top:40px}
+
+/* LEFT — Code Panel */
+#code-panel{background:#0a0a18;border-right:1px solid #1a2a3e;display:flex;flex-direction:column;overflow:hidden}
+#code-panel .panel-hdr{padding:10px 12px 8px;font-size:13px;letter-spacing:3px;color:#0af;font-weight:bold;border-bottom:1px solid #1a2a3e}
+#code-editor{flex:1;min-height:0;display:flex;flex-direction:column}
+#code-editor textarea{flex:1;width:100%;resize:none;background:#08081a;color:#aef;border:none;padding:10px;font-family:'Courier New',monospace;font-size:11px;line-height:1.5;outline:none;tab-size:2}
+#code-editor textarea::selection{background:#1a3a6a}
+#btn-bar{display:flex;gap:6px;padding:8px;border-top:1px solid #1a2a3e;border-bottom:1px solid #1a2a3e}
+#btn-bar button{flex:1;padding:6px 0;border:1px solid #223;border-radius:3px;background:#0c0c1e;color:#889;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s}
+#btn-run{color:#0f8!important;border-color:#0f8!important}
+#btn-run:hover{background:#0f8;color:#060610!important}
+#btn-clear:hover{background:#f44;color:#060610;border-color:#f44}
+#btn-save:hover{background:#fc0;color:#060610;border-color:#fc0}
+
+/* Gallery */
+#gallery{overflow-y:auto;flex-shrink:0;max-height:220px;padding:6px;border-top:1px solid #1a2a3e}
+#gallery .gallery-title{font-size:9px;color:#556;letter-spacing:2px;padding:4px 6px}
+#gallery-grid{display:flex;flex-wrap:wrap;gap:6px;padding:4px}
+.gallery-item{cursor:pointer;border:1px solid #1a2a3e;border-radius:3px;overflow:hidden;transition:border-color .2s;display:flex;flex-direction:column;align-items:center}
+.gallery-item:hover{border-color:#0af}
+.gallery-item canvas{width:76px;height:76px;display:block;background:#060610}
+.gallery-item .gname{font-size:7px;color:#667;padding:2px 4px;text-align:center;letter-spacing:.5px;width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* CENTER — Canvas */
+#canvas-panel{position:relative;background:#060610;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#preview{display:block;width:100%;height:100%}
+#canvas-overlay{position:absolute;top:0;left:0;right:0;padding:10px 14px;font-size:10px;color:#889;display:flex;justify-content:space-between;pointer-events:none;z-index:5}
+#canvas-overlay .pat-name{color:#0af;letter-spacing:1px}
+#canvas-overlay .fps{color:#fc0}
+#error-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(6,6,16,.92);border:1px solid #f44;border-radius:4px;padding:16px 20px;font-size:11px;color:#f66;max-width:80%;max-height:60%;overflow:auto;display:none;z-index:6;white-space:pre-wrap;word-break:break-word}
+
+/* RIGHT — AI Chat Panel */
+#chat-panel{background:#0a0a18;border-left:1px solid #1a2a3e;display:flex;flex-direction:column;overflow:hidden}
+#chat-panel .panel-hdr{padding:10px 12px 8px;font-size:13px;letter-spacing:3px;color:#f0a;font-weight:bold;border-bottom:1px solid #1a2a3e}
+#model-bar{display:flex;gap:6px;padding:8px;border-bottom:1px solid #1a2a3e;align-items:center}
+#model-select{flex:1;background:#08081a;color:#aac;border:1px solid #223;border-radius:3px;padding:5px 6px;font-family:'Courier New',monospace;font-size:10px;outline:none}
+#btn-load-model{padding:5px 10px;border:1px solid #a8f;border-radius:3px;background:#0c0c1e;color:#a8f;font-family:'Courier New',monospace;font-size:9px;letter-spacing:1px;cursor:pointer;transition:all .2s;white-space:nowrap}
+#btn-load-model:hover{background:#a8f;color:#060610}
+#model-status{font-size:8px;color:#445;padding:2px 8px;letter-spacing:1px}
+
+/* Chat messages */
+#chat-messages{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.chat-msg{padding:8px 10px;border-radius:4px;font-size:11px;line-height:1.5;max-width:95%;word-wrap:break-word}
+.chat-msg.user{background:#0d1a2e;color:#0af;align-self:flex-end;border:1px solid #1a3a6e}
+.chat-msg.ai{background:#1a0d1e;color:#e0c0f0;align-self:flex-start;border:1px solid #3a1a4e}
+.chat-msg.system{background:#0a1a0a;color:#4a8;align-self:center;font-size:10px;border:1px solid #1a3a2e}
+.chat-msg code{background:#08081a;padding:1px 4px;border-radius:2px;font-size:10px}
+
+/* Voice bar */
+#voice-bar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-top:1px solid #1a2a3e}
+#btn-mic{width:32px;height:32px;border-radius:50%;border:2px solid #f0a;background:#0c0c1e;color:#f0a;font-size:14px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#btn-mic:hover,#btn-mic.active{background:#f0a;color:#060610}
+#mic-level{flex:1;height:6px;background:#111;border-radius:3px;overflow:hidden}
+#mic-level-fill{height:100%;width:0%;background:linear-gradient(90deg,#0af,#f0a);border-radius:3px;transition:width 50ms}
+#emotion-dots{display:flex;gap:4px;flex-shrink:0}
+.emotion-dot{width:8px;height:8px;border-radius:50%;background:#223;transition:background .3s}
+
+/* Chat input */
+#chat-input-bar{display:flex;gap:6px;padding:8px;border-top:1px solid #1a2a3e}
+#chat-input{flex:1;background:#08081a;color:#dde;border:1px solid #223;border-radius:3px;padding:7px 10px;font-family:'Courier New',monospace;font-size:11px;outline:none;resize:none;height:36px}
+#chat-input:focus{border-color:#a8f}
+#btn-send{padding:7px 12px;border:1px solid #0af;border-radius:3px;background:#0c0c1e;color:#0af;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s}
+#btn-send:hover{background:#0af;color:#060610}
+
+/* Footer */
+#footer{position:fixed;bottom:0;left:0;right:0;height:28px;background:rgba(6,6,16,.97);border-top:1px solid #1a2a3e;display:flex;align-items:center;justify-content:center;gap:12px;font-size:9px;color:#334;letter-spacing:1.5px;z-index:100}
+#footer span{color:#445}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#060610}
+::-webkit-scrollbar-thumb{background:#1a2a3e;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#2a3a5e}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- LEFT: Code Editor -->
+  <div id="code-panel">
+    <div class="panel-hdr">CODE</div>
+    <div id="code-editor">
+      <textarea id="editor" spellcheck="false" placeholder="// Write canvas drawing code here...
+// Available: ctx, W, H, t, frame
+// M7, PHI, TAU, PRIMES, RING_HZ
+// hsl(), polar(), polygon(), star(), spiral()"></textarea>
+    </div>
+    <div id="btn-bar">
+      <button id="btn-run">&#9654; RUN</button>
+      <button id="btn-clear">CLEAR</button>
+      <button id="btn-save">SAVE</button>
+    </div>
+    <div id="gallery">
+      <div class="gallery-title">GALLERY</div>
+      <div id="gallery-grid"></div>
+    </div>
+  </div>
+
+  <!-- CENTER: Canvas Preview -->
+  <div id="canvas-panel">
+    <canvas id="preview"></canvas>
+    <div id="canvas-overlay">
+      <span class="pat-name" id="overlay-name">—</span>
+      <span><span id="overlay-frame">0</span>f &nbsp; <span class="fps" id="overlay-fps">0</span> fps</span>
+    </div>
+    <div id="error-overlay" id="error-display"></div>
+  </div>
+
+  <!-- RIGHT: AI Chat -->
+  <div id="chat-panel">
+    <div class="panel-hdr">AI FORGE</div>
+    <div id="model-bar">
+      <select id="model-select">
+        <option value="SmolLM2-360M-Instruct-q4f16_1-MLC">SmolLM2 360M (fast)</option>
+        <option value="SmolLM2-1.7B-Instruct-q4f16_1-MLC">SmolLM2 1.7B</option>
+        <option value="Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC">Qwen2.5 Coder 1.5B</option>
+        <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama 3.2 1B</option>
+        <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B</option>
+        <option value="Phi-3.5-mini-instruct-q4f16_1-MLC" selected>Phi 3.5 Mini</option>
+        <option value="gemma-2-2b-it-q4f16_1-MLC">Gemma 2 2B</option>
+        <option value="TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC">TinyLlama 1.1B</option>
+      </select>
+      <button id="btn-load-model">LOAD</button>
+    </div>
+    <div id="model-status">MODEL: not loaded</div>
+    <div id="chat-messages">
+      <div class="chat-msg system">Shield Forge ready. Load a model to generate patterns via AI, or write code directly.</div>
+    </div>
+    <div id="voice-bar">
+      <button id="btn-mic">&#127908;</button>
+      <div id="mic-level"><div id="mic-level-fill"></div></div>
+      <div id="emotion-dots">
+        <div class="emotion-dot" title="calm"></div>
+        <div class="emotion-dot" title="energy"></div>
+        <div class="emotion-dot" title="focus"></div>
+        <div class="emotion-dot" title="joy"></div>
+      </div>
+    </div>
+    <div id="chat-input-bar">
+      <input id="chat-input" type="text" placeholder="Describe a pattern..." />
+      <button id="btn-send">SEND</button>
+    </div>
+  </div>
+</div>
+
+<div id="footer">
+  <span>M&#x2087; = 127</span><span style="color:#223">&#xB7;</span>
+  <span>PRIMORIAL 510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">&#xB7;</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script type="module">
+// ── Shield Constants ──
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = Math.PI * 2;
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+
+// ── Helpers exposed to user code ──
+function hsl(h, s, l) { return `hsl(${h},${s}%,${l}%)`; }
+function polar(cx, cy, r, angle) { return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]; }
+
+function polygon(cx, cy, r, sides, rot = 0) {
+  ctx.beginPath();
+  for (let i = 0; i <= sides; i++) {
+    const a = rot + (TAU / sides) * i;
+    const [x, y] = polar(cx, cy, r, a);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function star(cx, cy, r1, r2, points, rot = 0) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = rot + (TAU / (points * 2)) * i;
+    const r = i % 2 === 0 ? r1 : r2;
+    const [x, y] = polar(cx, cy, r, a);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function spiral(cx, cy, turns, growth, pts) {
+  ctx.beginPath();
+  for (let i = 0; i <= pts; i++) {
+    const frac = i / pts;
+    const a = frac * turns * TAU;
+    const r = frac * growth;
+    const [x, y] = polar(cx, cy, r, a);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// ── DOM refs ──
+const editor = document.getElementById('editor');
+const canvas = document.getElementById('preview');
+let ctx = canvas.getContext('2d');
+const errorOverlay = document.querySelector('#error-overlay');
+const overlayName = document.getElementById('overlay-name');
+const overlayFrame = document.getElementById('overlay-frame');
+const overlayFps = document.getElementById('overlay-fps');
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const modelSelect = document.getElementById('model-select');
+const modelStatus = document.getElementById('model-status');
+const micLevelFill = document.getElementById('mic-level-fill');
+const emotionDots = document.querySelectorAll('.emotion-dot');
+const galleryGrid = document.getElementById('gallery-grid');
+
+// ── Pre-loaded example patterns ──
+const EXAMPLES = [
+  {
+    name: 'Prime Rings',
+    code: `ctx.clearRect(0, 0, W, H);
+const cx = W/2, cy = H/2;
+const maxR = Math.min(W, H) * 0.42;
+for (let i = 0; i < PRIMES.length; i++) {
+  const p = PRIMES[i];
+  const r = maxR * (i + 1) / PRIMES.length;
+  const hue = (i * 51 + t * 20) % 360;
+  ctx.strokeStyle = hsl(hue, 80, 55);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.stroke();
+  for (let j = 0; j < p; j++) {
+    const a = (TAU / p) * j + t * (0.3 + i * 0.1);
+    const [x, y] = polar(cx, cy, r, a);
+    ctx.fillStyle = hsl(hue, 90, 65);
+    ctx.beginPath();
+    ctx.arc(x, y, 3 + Math.sin(t * 2 + j) * 1.5, 0, TAU);
+    ctx.fill();
+    if (i > 0) {
+      const prevR = maxR * i / PRIMES.length;
+      const prevP = PRIMES[i-1];
+      const pa = (TAU / prevP) * (j % prevP) + t * (0.3 + (i-1) * 0.1);
+      const [px, py] = polar(cx, cy, prevR, pa);
+      ctx.strokeStyle = hsl(hue, 40, 25);
+      ctx.lineWidth = 0.4;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(px, py); ctx.stroke();
+    }
+  }
+}`
+  },
+  {
+    name: 'Fibonacci Spiral',
+    code: `ctx.clearRect(0, 0, W, H);
+const cx = W/2, cy = H/2;
+ctx.lineWidth = 2;
+const maxPts = 500;
+const growthRate = Math.min(W, H) * 0.0025;
+// Draw golden spiral
+for (let s = 0; s < 3; s++) {
+  ctx.beginPath();
+  for (let i = 0; i <= maxPts; i++) {
+    const frac = i / maxPts;
+    const a = frac * 8 * TAU + s * TAU / 3 + t * 0.4;
+    const r = Math.pow(PHI, frac * 6) * growthRate;
+    const x = cx + r * Math.cos(a);
+    const y = cy + r * Math.sin(a);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  const hue = (s * 120 + t * 15) % 360;
+  ctx.strokeStyle = hsl(hue, 75, 55);
+  ctx.stroke();
+}
+// Fibonacci dots
+let a2 = 1, b2 = 1;
+for (let i = 0; i < 20; i++) {
+  const angle = i * TAU / PHI + t * 0.3;
+  const r = Math.sqrt(b2) * Math.min(W,H) * 0.025;
+  const [x, y] = polar(cx, cy, Math.min(r, Math.min(W,H)*0.45), angle);
+  const sz = 2 + (i % 5);
+  ctx.fillStyle = hsl((i * 25 + t * 30) % 360, 85, 60);
+  ctx.beginPath(); ctx.arc(x, y, sz, 0, TAU); ctx.fill();
+  const tmp = a2 + b2; a2 = b2; b2 = tmp;
+}`
+  },
+  {
+    name: 'Shield Flower',
+    code: `ctx.clearRect(0, 0, W, H);
+const cx = W/2, cy = H/2;
+const baseR = Math.min(W, H) * 0.06;
+ctx.lineWidth = 1;
+ctx.globalAlpha = 0.7;
+// Flower of Life with prime-based rings
+for (let ring = 0; ring < PRIMES.length; ring++) {
+  const p = PRIMES[ring];
+  const ringR = baseR * (ring + 1) * 0.65;
+  for (let i = 0; i < p; i++) {
+    const a = (TAU / p) * i + t * 0.15 * (ring % 2 === 0 ? 1 : -1);
+    const [px, py] = polar(cx, cy, ringR, a);
+    const hue = (ring * 45 + i * (360 / p) + t * 10) % 360;
+    ctx.strokeStyle = hsl(hue, 70, 45 + Math.sin(t + i) * 10);
+    ctx.beginPath();
+    ctx.arc(px, py, baseR * (1 + Math.sin(t * 1.5 + ring) * 0.2), 0, TAU);
+    ctx.stroke();
+  }
+}
+ctx.globalAlpha = 1;
+// Center petal pattern
+for (let i = 0; i < 6; i++) {
+  const a = (TAU / 6) * i + t * 0.2;
+  const [px, py] = polar(cx, cy, baseR, a);
+  ctx.strokeStyle = hsl(60 + t * 20, 80, 55);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(px, py, baseR, 0, TAU);
+  ctx.stroke();
+}
+// M7 center marker
+ctx.fillStyle = '#fc0';
+ctx.font = '12px Courier New';
+ctx.textAlign = 'center';
+ctx.fillText('M\\u2087=' + M7, cx, cy + 4);`
+  },
+  {
+    name: 'Harmonic Waves',
+    code: `ctx.clearRect(0, 0, W, H);
+ctx.lineWidth = 2;
+const colors = ['#0af','#fc0','#f0a','#0f8','#a8f','#ff4','#f80'];
+for (let i = 0; i < RING_HZ.length; i++) {
+  const freq = RING_HZ[i] / 100;
+  const amp = (H * 0.06) * (1 - i * 0.08);
+  const yBase = H * 0.15 + (H * 0.7) * i / (RING_HZ.length - 1);
+  ctx.strokeStyle = colors[i % colors.length];
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  for (let x = 0; x < W; x++) {
+    const xf = x / W;
+    let y = yBase;
+    y += Math.sin(xf * freq * TAU + t * (1 + i * 0.4)) * amp;
+    y += Math.sin(xf * freq * 0.5 * TAU + t * 0.7) * amp * 0.3;
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // Frequency label
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = colors[i % colors.length];
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(RING_HZ[i] + ' Hz  (P' + PRIMES[i] + ')', 12, yBase - amp - 6);
+}
+ctx.globalAlpha = 1;
+// Interference pattern at bottom
+ctx.beginPath();
+for (let x = 0; x < W; x++) {
+  let sum = 0;
+  for (let i = 0; i < RING_HZ.length; i++) {
+    sum += Math.sin((x/W) * (RING_HZ[i]/80) * TAU + t * (1.2 + i*0.3)) / RING_HZ.length;
+  }
+  const y = H * 0.92 + sum * H * 0.04;
+  x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+}
+ctx.strokeStyle = '#fff';
+ctx.lineWidth = 1;
+ctx.globalAlpha = 0.6;
+ctx.stroke();
+ctx.globalAlpha = 1;`
+  }
+];
+
+// ── Gallery State ──
+let gallery = EXAMPLES.map(e => ({ name: e.name, code: e.code, thumbnail: null }));
+let currentName = '—';
+
+// ── Canvas sizing ──
+function resizeCanvas() {
+  const panel = document.getElementById('canvas-panel');
+  canvas.width = panel.clientWidth;
+  canvas.height = panel.clientHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ── Animation loop ──
+let running = false;
+let userCode = '';
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let fpsFrames = 0;
+let currentFps = 0;
+let animId = null;
+let startTime = performance.now();
+
+function runLoop(now) {
+  animId = requestAnimationFrame(runLoop);
+  const t = (now - startTime) / 1000;
+  const frame = frameCount;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // FPS
+  fpsFrames++;
+  if (now - lastFpsTime >= 500) {
+    currentFps = Math.round(fpsFrames / ((now - lastFpsTime) / 1000));
+    fpsFrames = 0;
+    lastFpsTime = now;
+    overlayFps.textContent = currentFps;
+  }
+  overlayFrame.textContent = frame;
+
+  try {
+    ctx = canvas.getContext('2d');
+    ctx.save();
+    const fn = new Function('ctx','W','H','t','frame','M7','PHI','TAU','PRIMES','RING_HZ',
+      'hsl','polar','polygon','star','spiral', userCode);
+    fn(ctx, W, H, t, frame, M7, PHI, TAU, PRIMES, RING_HZ,
+       hsl, polar, polygon, star, spiral);
+    ctx.restore();
+    errorOverlay.style.display = 'none';
+  } catch (err) {
+    ctx.restore();
+    errorOverlay.style.display = 'block';
+    errorOverlay.textContent = err.message;
+  }
+
+  frameCount++;
+}
+
+function startAnimation() {
+  if (animId) cancelAnimationFrame(animId);
+  frameCount = 0;
+  startTime = performance.now();
+  running = true;
+  animId = requestAnimationFrame(runLoop);
+}
+
+function stopAnimation() {
+  if (animId) cancelAnimationFrame(animId);
+  animId = null;
+  running = false;
+}
+
+// ── Run / Clear / Save ──
+function runCode() {
+  userCode = editor.value;
+  errorOverlay.style.display = 'none';
+  if (!running) startAnimation();
+}
+
+document.getElementById('btn-run').addEventListener('click', runCode);
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  stopAnimation();
+  editor.value = '';
+  userCode = '';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  errorOverlay.style.display = 'none';
+  overlayName.textContent = '—';
+  currentName = '—';
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  const code = editor.value.trim();
+  if (!code) return;
+  const name = prompt('Pattern name:', currentName !== '—' ? currentName : 'My Pattern');
+  if (!name) return;
+  const thumb = renderThumbnail(code);
+  gallery.push({ name, code, thumbnail: thumb });
+  currentName = name;
+  overlayName.textContent = name;
+  renderGallery();
+});
+
+// ── Thumbnail renderer ──
+function renderThumbnail(code) {
+  const tc = document.createElement('canvas');
+  tc.width = 80; tc.height = 80;
+  const tctx = tc.getContext('2d');
+  try {
+    const fn = new Function('ctx','W','H','t','frame','M7','PHI','TAU','PRIMES','RING_HZ',
+      'hsl','polar','polygon','star','spiral', code);
+    fn(tctx, 80, 80, 1.5, 30, M7, PHI, TAU, PRIMES, RING_HZ,
+       hsl, polar, polygon, star, spiral);
+  } catch(e) {
+    tctx.fillStyle = '#200';
+    tctx.fillRect(0, 0, 80, 80);
+    tctx.fillStyle = '#f44';
+    tctx.font = '8px Courier New';
+    tctx.fillText('ERR', 28, 44);
+  }
+  return tc;
+}
+
+// ── Gallery rendering ──
+function renderGallery() {
+  galleryGrid.innerHTML = '';
+  gallery.forEach((item, idx) => {
+    const div = document.createElement('div');
+    div.className = 'gallery-item';
+    div.title = item.name;
+    div.addEventListener('click', () => {
+      editor.value = item.code;
+      currentName = item.name;
+      overlayName.textContent = item.name;
+      runCode();
+    });
+
+    const tc = item.thumbnail || renderThumbnail(item.code);
+    if (!item.thumbnail) item.thumbnail = tc;
+
+    const cloned = document.createElement('canvas');
+    cloned.width = 76; cloned.height = 76;
+    cloned.getContext('2d').drawImage(tc, 0, 0, 76, 76);
+    div.appendChild(cloned);
+
+    const label = document.createElement('div');
+    label.className = 'gname';
+    label.textContent = item.name;
+    div.appendChild(label);
+
+    galleryGrid.appendChild(div);
+  });
+}
+
+// ── Tab key support in editor ──
+editor.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 2;
+  }
+  if (e.key === 'Enter' && e.ctrlKey) {
+    e.preventDefault();
+    runCode();
+  }
+});
+
+// ── WebLLM Integration ──
+let engine = null;
+let modelLoaded = false;
+
+const SYSTEM_PROMPT = `You are a creative code generator for mathematical art. Generate JavaScript canvas code using these available variables: ctx (2D context), W (width), H (height), t (time in seconds), frame (frame count), M7=127, PHI=1.618, TAU=6.283, PRIMES=[2,3,5,7,11,13,17], RING_HZ=[55,110,165,275,385,605,935]. Helpers: hsl(h,s,l), polar(cx,cy,r,angle), polygon(cx,cy,r,sides,rot), star(cx,cy,r1,r2,points,rot), spiral(cx,cy,turns,growth,pts). Always start with ctx.clearRect(0,0,W,H). Use animation via t variable. Output ONLY the code block, no explanation.`;
+
+function addChatMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+document.getElementById('btn-load-model').addEventListener('click', async () => {
+  const modelId = modelSelect.value;
+  modelStatus.textContent = 'MODEL: loading...';
+  modelStatus.style.color = '#fc0';
+  addChatMsg('Loading ' + modelId + '...', 'system');
+
+  try {
+    const webllm = await import('https://esm.run/@anthropic-ai/sdk');
+  } catch(e) { /* fallback */ }
+
+  try {
+    const webllmModule = await import('https://esm.run/@mlc-ai/web-llm');
+    modelStatus.textContent = 'MODEL: initializing...';
+
+    engine = await webllmModule.CreateMLCEngine(modelId, {
+      initProgressCallback: (progress) => {
+        modelStatus.textContent = 'MODEL: ' + (progress.text || Math.round((progress.progress || 0) * 100) + '%');
+      }
+    });
+
+    modelLoaded = true;
+    modelStatus.textContent = 'MODEL: ' + modelId.split('-').slice(0, 3).join('-');
+    modelStatus.style.color = '#0f8';
+    addChatMsg('Model loaded. Describe a pattern to generate code.', 'system');
+  } catch (err) {
+    modelStatus.textContent = 'MODEL: error';
+    modelStatus.style.color = '#f44';
+    addChatMsg('Load failed: ' + err.message, 'system');
+  }
+});
+
+async function sendChat(text) {
+  if (!text.trim()) return;
+  addChatMsg(text, 'user');
+  chatInput.value = '';
+
+  if (!modelLoaded || !engine) {
+    addChatMsg('Please load a model first.', 'system');
+    return;
+  }
+
+  addChatMsg('Generating...', 'system');
+
+  try {
+    const response = await engine.chat.completions.create({
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: text }
+      ],
+      temperature: 0.7,
+      max_tokens: 1024
+    });
+
+    const reply = response.choices[0].message.content;
+    addChatMsg(reply, 'ai');
+
+    // Extract code from response
+    let code = reply;
+    const codeMatch = reply.match(/```(?:javascript|js)?\s*([\s\S]*?)```/);
+    if (codeMatch) {
+      code = codeMatch[1].trim();
+    } else {
+      // Try to use the whole response as code if no fences found
+      code = reply.trim();
+    }
+
+    // Put in editor and run
+    editor.value = code;
+    currentName = text.substring(0, 30);
+    overlayName.textContent = currentName;
+    runCode();
+
+  } catch (err) {
+    addChatMsg('Error: ' + err.message, 'system');
+  }
+}
+
+document.getElementById('btn-send').addEventListener('click', () => sendChat(chatInput.value));
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat(chatInput.value);
+  }
+});
+
+// ── Voice Input ──
+let micStream = null;
+let analyser = null;
+let audioCtx = null;
+let recognition = null;
+let micActive = false;
+
+document.getElementById('btn-mic').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-mic');
+
+  if (micActive) {
+    // Stop
+    micActive = false;
+    btn.classList.remove('active');
+    if (recognition) recognition.stop();
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    micLevelFill.style.width = '0%';
+    emotionDots.forEach(d => d.style.background = '#223');
+    return;
+  }
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.8;
+    source.connect(analyser);
+
+    micActive = true;
+    btn.classList.add('active');
+
+    // Mic level + emotion visualization
+    const dataArray = new Float32Array(analyser.fftSize);
+    const freqArray = new Uint8Array(analyser.frequencyBinCount);
+
+    function updateMeter() {
+      if (!micActive) return;
+      analyser.getFloatTimeDomainData(dataArray);
+      analyser.getByteFrequencyData(freqArray);
+
+      // RMS
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
+      const rms = Math.sqrt(sum / dataArray.length);
+      const level = Math.min(100, rms * 400);
+      micLevelFill.style.width = level + '%';
+
+      // Simple F0 estimation via autocorrelation for emotion dots
+      let maxCorr = 0, bestLag = 0;
+      for (let lag = 40; lag < 400; lag++) {
+        let corr = 0;
+        for (let i = 0; i < 512; i++) corr += dataArray[i] * (dataArray[i + lag] || 0);
+        if (corr > maxCorr) { maxCorr = corr; bestLag = lag; }
+      }
+      const f0 = audioCtx.sampleRate / (bestLag || 1);
+
+      // Emotion model based on spectral features
+      const lowE = freqArray.slice(0, 8).reduce((a,b) => a + b, 0) / 8;
+      const midE = freqArray.slice(8, 32).reduce((a,b) => a + b, 0) / 24;
+      const hiE = freqArray.slice(32, 80).reduce((a,b) => a + b, 0) / 48;
+      const spread = hiE / (lowE + 1);
+
+      const calm = Math.min(1, (1 - rms * 5) * 0.8 + 0.2);
+      const energy = Math.min(1, rms * 6);
+      const focus = Math.min(1, midE / 128);
+      const joy = Math.min(1, spread * 0.5 + (f0 > 200 ? 0.3 : 0));
+
+      const eColors = ['#0af', '#f0a', '#fc0', '#0f8'];
+      const eVals = [calm, energy, focus, joy];
+      emotionDots.forEach((dot, i) => {
+        const v = eVals[i];
+        dot.style.background = v > 0.15 ? eColors[i] : '#223';
+        dot.style.opacity = 0.3 + v * 0.7;
+      });
+
+      requestAnimationFrame(updateMeter);
+    }
+    updateMeter();
+
+    // Speech recognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript;
+          }
+        }
+        if (transcript.trim()) {
+          chatInput.value = transcript.trim();
+          sendChat(transcript.trim());
+        }
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error !== 'no-speech') {
+          addChatMsg('Voice: ' + e.error, 'system');
+        }
+      };
+
+      recognition.onend = () => {
+        if (micActive) recognition.start();
+      };
+
+      recognition.start();
+    } else {
+      addChatMsg('SpeechRecognition not supported in this browser.', 'system');
+    }
+
+  } catch (err) {
+    addChatMsg('Mic error: ' + err.message, 'system');
+    micActive = false;
+    document.getElementById('btn-mic').classList.remove('active');
+  }
+});
+
+// ── Initialize ──
+renderGallery();
+
+// Load first example by default
+editor.value = gallery[0].code;
+currentName = gallery[0].name;
+overlayName.textContent = gallery[0].name;
+runCode();
+
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

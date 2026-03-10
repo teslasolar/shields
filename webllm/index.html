@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD LLM SANDBOX</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+::selection{background:#0af3;color:#fff}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#0a0a18}
+::-webkit-scrollbar-thumb{background:#1a2a3e;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#0af5}
+
+/* TOP BAR */
+#topbar{position:fixed;top:0;left:0;right:0;height:42px;background:#0a0a18;border-bottom:1px solid #1a2a3e;
+  display:flex;align-items:center;padding:0 12px;z-index:100;gap:10px}
+#topbar .logo{color:#0af;font-size:14px;font-weight:bold;letter-spacing:2px;white-space:nowrap}
+#topbar .logo span{color:#fc0;font-size:10px;margin-left:6px}
+.repo-name{color:#0f8;font-size:12px;padding:2px 8px;background:#0f81a;border:1px solid #0f83;border-radius:3px;cursor:pointer}
+.branch-tag{color:#a8f;font-size:10px;padding:2px 6px;background:#a8f1a;border:1px solid #a8f3;border-radius:3px}
+.tb-btn{background:#1a2a3e;color:#ccc;border:1px solid #2a3a4e;padding:4px 10px;font-size:11px;
+  font-family:inherit;cursor:pointer;border-radius:3px;transition:all .2s}
+.tb-btn:hover{background:#0af3;border-color:#0af;color:#fff}
+.model-status{margin-left:auto;font-size:10px;color:#556;display:flex;align-items:center;gap:6px}
+.model-status .dot{width:6px;height:6px;border-radius:50%;background:#444}
+.model-status .dot.active{background:#0f8;box-shadow:0 0 6px #0f8}
+
+/* 4-PANEL GRID */
+#panels{position:fixed;top:42px;left:0;right:0;bottom:28px;display:grid;
+  grid-template-columns:220px 1fr 340px;grid-template-rows:1fr 1fr;gap:1px;background:#1a2a3e}
+
+/* LEFT: file explorer + commits (spans both rows) */
+#file-panel{grid-row:1/3;background:#080812;display:flex;flex-direction:column;overflow:hidden}
+.panel-header{padding:6px 10px;font-size:11px;color:#0af;letter-spacing:1px;border-bottom:1px solid #1a2a3e;
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.panel-header .count{color:#556;font-size:10px}
+#file-list{flex:1;overflow-y:auto;padding:4px 0}
+.file-entry{padding:4px 10px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px;
+  color:#889;transition:background .15s}
+.file-entry:hover{background:#0af1a;color:#ccc}
+.file-entry.active{background:#0af15;color:#0af}
+.file-entry .icon{font-size:12px}
+.file-entry .icon.html{color:#f44}.file-entry .icon.css{color:#0af}.file-entry .icon.js{color:#fc0}
+.file-entry .icon.other{color:#556}
+.file-entry .size{margin-left:auto;color:#334;font-size:9px}
+#commit-section{border-top:1px solid #1a2a3e;max-height:35%;overflow-y:auto;flex-shrink:0}
+#commit-section .panel-header{color:#fc0}
+.commit-entry{padding:4px 10px;font-size:10px;color:#556;border-bottom:1px solid #0a0a18}
+.commit-entry .cid{color:#a8f;margin-right:6px}
+.commit-entry .cmsg{color:#889}
+.commit-entry .ctime{color:#334;font-size:9px;display:block;margin-top:1px}
+
+/* TOP-CENTER: preview */
+#preview-panel{background:#080812;display:flex;flex-direction:column;overflow:hidden}
+#preview-tabs{display:flex;gap:1px;background:#0a0a18;flex-shrink:0}
+.ptab{padding:4px 10px;font-size:10px;color:#556;cursor:pointer;background:#080812;border:none;
+  font-family:inherit;transition:all .15s}
+.ptab:hover,.ptab.active{color:#0af;background:#0af10}
+#preview-actions{display:flex;gap:4px;margin-left:auto;padding:0 6px;align-items:center}
+#preview-actions button{background:none;border:1px solid #1a2a3e;color:#556;font-size:10px;
+  padding:2px 6px;cursor:pointer;font-family:inherit;border-radius:2px}
+#preview-actions button:hover{color:#0af;border-color:#0af}
+#preview-frame{flex:1;border:none;background:#0c0c1a;width:100%;height:100%}
+.no-preview{flex:1;display:flex;align-items:center;justify-content:center;color:#223;font-size:12px;
+  letter-spacing:2px;flex-direction:column;gap:8px}
+.no-preview .glyph{font-size:36px;color:#1a2a3e}
+
+/* BOTTOM-CENTER: tool viz */
+#tool-panel{background:#080812;display:flex;flex-direction:column;overflow:hidden}
+#tool-log{flex:1;overflow-y:auto;padding:6px}
+.tool-entry{padding:4px 8px;font-size:10px;margin-bottom:3px;border-radius:2px;border-left:2px solid #1a2a3e}
+.tool-entry.create{border-color:#0f8;color:#0f8}.tool-entry.edit{border-color:#fc0;color:#fc0}
+.tool-entry.delete{border-color:#f44;color:#f44}.tool-entry.commit{border-color:#a8f;color:#a8f}
+.tool-entry.list{border-color:#0af;color:#0af}.tool-entry.preview{border-color:#f80;color:#f80}
+.tool-entry .tpath{color:#889}.tool-entry .ttime{color:#334;margin-left:8px}
+
+/* RIGHT: chat panel (spans both rows) */
+#chat-panel{grid-row:1/3;background:#080812;display:flex;flex-direction:column;overflow:hidden}
+#chat-messages{flex:1;overflow-y:auto;padding:8px}
+.msg{margin-bottom:8px;padding:6px 8px;border-radius:3px;font-size:11px;line-height:1.5;word-wrap:break-word}
+.msg.user{background:#0af10;border-left:2px solid #0af}
+.msg.ai{background:#0f810;border-left:2px solid #0f8}
+.msg.system{background:#fc010;border-left:2px solid #fc0;color:#aa8;font-size:10px}
+.msg .sender{font-size:9px;letter-spacing:1px;margin-bottom:3px;display:block}
+.msg.user .sender{color:#0af}.msg.ai .sender{color:#0f8}.msg.system .sender{color:#fc0}
+.msg .emotion-tag{font-size:9px;color:#a8f;margin-left:6px;opacity:.7}
+.msg code{background:#0a0a18;padding:1px 4px;border-radius:2px;color:#fc0;font-size:10px}
+.msg .tool-badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:9px;
+  margin:2px 0;letter-spacing:1px}
+.msg .tool-badge.create{background:#0f81a;color:#0f8}.msg .tool-badge.edit{background:#fc01a;color:#fc0}
+.msg .tool-badge.delete{background:#f441a;color:#f44}.msg .tool-badge.commit{background:#a8f1a;color:#a8f}
+#chat-input-area{border-top:1px solid #1a2a3e;padding:8px;display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+#mic-bar{height:3px;background:#1a2a3e;border-radius:2px;overflow:hidden}
+#mic-level{height:100%;width:0%;background:linear-gradient(90deg,#0af,#0f8);transition:width .1s}
+#voice-status{font-size:9px;color:#334;display:flex;align-items:center;gap:6px}
+#voice-status .emotion-dots{display:flex;gap:3px}
+#voice-status .emotion-dots span{width:5px;height:5px;border-radius:50%;background:#334}
+#chat-input-row{display:flex;gap:4px}
+#chat-input{flex:1;background:#0a0a18;border:1px solid #1a2a3e;color:#ccc;padding:6px 8px;
+  font-family:inherit;font-size:11px;border-radius:3px;outline:none;resize:none;min-height:32px;max-height:80px}
+#chat-input:focus{border-color:#0af}
+#send-btn{background:#0af;color:#060610;border:none;padding:6px 12px;font-family:inherit;
+  font-size:11px;font-weight:bold;cursor:pointer;border-radius:3px;letter-spacing:1px}
+#send-btn:hover{background:#4cf}
+#send-btn:disabled{background:#1a2a3e;color:#334;cursor:default}
+
+/* FOOTER */
+#footer{position:fixed;bottom:0;left:0;right:0;height:28px;background:#0a0a18;border-top:1px solid #1a2a3e;
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:#334;letter-spacing:2px;z-index:100}
+
+/* LOAD OVERLAY */
+#load-overlay{position:fixed;inset:0;background:#060610;z-index:1000;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px}
+#load-overlay.hidden{display:none}
+#load-overlay h1{color:#0af;font-size:18px;letter-spacing:4px}
+#load-overlay .sub{color:#556;font-size:11px;letter-spacing:2px}
+#load-overlay .webgpu-status{font-size:11px;margin:8px 0}
+#load-overlay .webgpu-status.ok{color:#0f8}
+#load-overlay .webgpu-status.no{color:#f44}
+#model-select{background:#0a0a18;border:1px solid #1a2a3e;color:#ccc;padding:8px 12px;
+  font-family:inherit;font-size:12px;border-radius:3px;width:320px;outline:none}
+#model-select:focus{border-color:#0af}
+#load-btn,#skip-btn{padding:8px 24px;font-family:inherit;font-size:12px;cursor:pointer;
+  border-radius:3px;letter-spacing:1px;border:1px solid}
+#load-btn{background:#0af;color:#060610;border-color:#0af;font-weight:bold}
+#load-btn:hover{background:#4cf}
+#skip-btn{background:none;color:#556;border-color:#1a2a3e}
+#skip-btn:hover{color:#ccc;border-color:#556}
+#load-progress{width:320px;height:4px;background:#1a2a3e;border-radius:2px;overflow:hidden;display:none}
+#load-progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#0af,#0f8);transition:width .3s}
+#load-status{font-size:10px;color:#334;min-height:14px}
+</style>
+</head>
+<body>
+
+<!-- LOAD OVERLAY -->
+<div id="load-overlay">
+  <h1>SHIELD LLM SANDBOX</h1>
+  <div class="sub">M&#x2087; = 127 &middot; CODE BUILDER</div>
+  <div id="webgpu-status" class="webgpu-status">Checking WebGPU...</div>
+  <select id="model-select">
+    <option value="SmolLM2-135M-Instruct-q4f16_1-MLC">SmolLM2-135M (tiny, fast)</option>
+    <option value="SmolLM2-360M-Instruct-q4f16_1-MLC">SmolLM2-360M (small)</option>
+    <option value="Qwen2.5-0.5B-Instruct-q4f16_1-MLC">Qwen2.5-0.5B (light)</option>
+    <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC" selected>Llama-3.2-1B (default)</option>
+    <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama-3.2-3B (large)</option>
+  </select>
+  <div style="display:flex;gap:10px;margin-top:8px">
+    <button id="load-btn">LOAD MODEL</button>
+    <button id="skip-btn">SKIP &mdash; SANDBOX ONLY</button>
+  </div>
+  <div id="load-progress"><div id="load-progress-bar"></div></div>
+  <div id="load-status"></div>
+</div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo">SHIELD LLM SANDBOX <span>v127</span></div>
+  <div class="repo-name" id="repo-label" title="Click to rename">untitled</div>
+  <div class="branch-tag" id="branch-label">main</div>
+  <button class="tb-btn" id="new-repo-btn">New Repo</button>
+  <button class="tb-btn" id="commit-btn">Commit</button>
+  <div class="model-status">
+    <span class="dot" id="model-dot"></span>
+    <span id="model-label">No model</span>
+  </div>
+</div>
+
+<!-- 4-PANEL GRID -->
+<div id="panels">
+  <!-- LEFT: File explorer + commits -->
+  <div id="file-panel">
+    <div class="panel-header">FILES <span class="count" id="file-count">0</span></div>
+    <div id="file-list"></div>
+    <div id="commit-section">
+      <div class="panel-header" style="color:#fc0">COMMITS <span class="count" id="commit-count">0</span></div>
+      <div id="commit-log"></div>
+    </div>
+  </div>
+
+  <!-- TOP-CENTER: Preview -->
+  <div id="preview-panel">
+    <div style="display:flex;align-items:center;border-bottom:1px solid #1a2a3e">
+      <div id="preview-tabs"></div>
+      <div id="preview-actions"><button id="refresh-btn" title="Refresh">&#x21bb; Refresh</button></div>
+    </div>
+    <div class="no-preview" id="preview-placeholder">
+      <div class="glyph">&#x25C7;</div>
+      <div>No preview yet</div>
+      <div style="font-size:10px;color:#1a2a3e">Create an .html file to see it here</div>
+    </div>
+    <iframe id="preview-frame" sandbox="allow-scripts" style="display:none"></iframe>
+  </div>
+
+  <!-- BOTTOM-CENTER: Tool viz -->
+  <div id="tool-panel">
+    <div class="panel-header">TOOL CALLS <span class="count" id="tool-count">0</span></div>
+    <div id="tool-log"></div>
+  </div>
+
+  <!-- RIGHT: Chat -->
+  <div id="chat-panel">
+    <div class="panel-header">CHAT <span class="count" id="chat-count">0</span></div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-area">
+      <div id="mic-bar"><div id="mic-level"></div></div>
+      <div id="voice-status">
+        <span id="voice-label">Voice: off</span>
+        <div class="emotion-dots"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <span id="emotion-label" style="color:#a8f"></span>
+      </div>
+      <div id="chat-input-row">
+        <textarea id="chat-input" rows="1" placeholder="Ask SHIELD-LLM to build something..."></textarea>
+        <button id="send-btn">SEND</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div id="footer">M&#x2087; = 127 &middot; PRIMORIAL 510,510 &middot; LIGHT TO LIGHT</div>
+
+<script>
+// ===== VIRTUAL FILESYSTEM =====
+const VFS = { files: {}, commits: [], branch: 'main', repoName: 'untitled' };
+
+function detectType(path) {
+  const ext = path.split('.').pop().toLowerCase();
+  return { html:'html', css:'css', js:'js', json:'json', md:'md' }[ext] || 'other';
+}
+
+function initRepo(name) {
+  VFS.files = {}; VFS.commits = []; VFS.branch = 'main';
+  VFS.repoName = name || 'untitled';
+  document.getElementById('repo-label').textContent = VFS.repoName;
+  document.getElementById('branch-label').textContent = VFS.branch;
+  refreshFileList(); refreshCommitLog(); refreshPreview();
+  addSystemMsg('Repository "' + VFS.repoName + '" initialized.');
+}
+
+function createFile(path, content) {
+  if (!path.startsWith('/')) path = '/' + path;
+  VFS.files[path] = { content: content || '', created: Date.now(), modified: Date.now() };
+  refreshFileList();
+  if (detectType(path) === 'html') refreshPreview(path);
+  return { ok: true, path };
+}
+
+function editFile(path, content) {
+  if (!path.startsWith('/')) path = '/' + path;
+  if (!VFS.files[path]) return createFile(path, content);
+  VFS.files[path].content = content;
+  VFS.files[path].modified = Date.now();
+  refreshFileList();
+  if (detectType(path) === 'html') refreshPreview(path);
+  return { ok: true, path };
+}
+
+function readFile(path) {
+  if (!path.startsWith('/')) path = '/' + path;
+  return VFS.files[path] ? VFS.files[path].content : null;
+}
+
+function deleteFile(path) {
+  if (!path.startsWith('/')) path = '/' + path;
+  if (VFS.files[path]) { delete VFS.files[path]; refreshFileList(); refreshPreview(); return { ok: true }; }
+  return { ok: false, error: 'not found' };
+}
+
+function listFiles() {
+  return Object.keys(VFS.files).map(p => ({
+    path: p, size: VFS.files[p].content.length, type: detectType(p)
+  }));
+}
+
+function commitChanges(message) {
+  const id = (VFS.commits.length + 1).toString(16).padStart(4, '0');
+  const snap = {};
+  for (const p in VFS.files) snap[p] = VFS.files[p].content;
+  VFS.commits.push({ id, message: message || 'update', timestamp: Date.now(), snapshot: snap, fileCount: Object.keys(snap).length });
+  refreshCommitLog();
+  return { ok: true, id, message };
+}
+
+function getLog(n) { return VFS.commits.slice(-(n || 10)); }
+
+function getPreviewableFiles() {
+  return Object.keys(VFS.files).filter(p => detectType(p) === 'html');
+}
+
+function getPreviewHTML(path) {
+  if (!path.startsWith('/')) path = '/' + path;
+  return VFS.files[path] ? VFS.files[path].content : null;
+}
+
+function getRepoState() {
+  return { fileCount: Object.keys(VFS.files).length, files: listFiles(), commitCount: VFS.commits.length, branch: VFS.branch };
+}
+
+// ===== UI REFRESH =====
+let selectedFile = null;
+
+function refreshFileList() {
+  const el = document.getElementById('file-list');
+  const files = listFiles();
+  document.getElementById('file-count').textContent = files.length;
+  el.innerHTML = '';
+  files.forEach(f => {
+    const d = document.createElement('div');
+    d.className = 'file-entry' + (f.path === selectedFile ? ' active' : '');
+    const icons = { html: '&#x25C7;', css: '&#x25C6;', js: '&#x25C8;', other: '&#x25AB;', json: '&#x25AB;', md: '&#x25AB;' };
+    d.innerHTML = '<span class="icon ' + f.type + '">' + (icons[f.type] || icons.other) + '</span>' +
+      '<span>' + f.path + '</span><span class="size">' + f.size + 'B</span>';
+    d.onclick = () => { selectedFile = f.path; refreshFileList(); if (f.type === 'html') refreshPreview(f.path); };
+    el.appendChild(d);
+  });
+}
+
+function refreshCommitLog() {
+  const el = document.getElementById('commit-log');
+  const commits = getLog(20);
+  document.getElementById('commit-count').textContent = VFS.commits.length;
+  el.innerHTML = '';
+  commits.reverse().forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'commit-entry';
+    const t = new Date(c.timestamp);
+    d.innerHTML = '<span class="cid">' + c.id + '</span><span class="cmsg">' + escHtml(c.message) + '</span>' +
+      '<span class="ctime">' + t.toLocaleTimeString() + ' &middot; ' + c.fileCount + ' files</span>';
+    el.appendChild(d);
+  });
+}
+
+let currentPreviewPath = null;
+
+function refreshPreview(path) {
+  const htmlFiles = getPreviewableFiles();
+  const tabsEl = document.getElementById('preview-tabs');
+  const frame = document.getElementById('preview-frame');
+  const placeholder = document.getElementById('preview-placeholder');
+
+  tabsEl.innerHTML = '';
+  if (htmlFiles.length === 0) {
+    frame.style.display = 'none'; placeholder.style.display = 'flex';
+    currentPreviewPath = null; return;
+  }
+  placeholder.style.display = 'none'; frame.style.display = 'block';
+  if (path && htmlFiles.includes(path)) currentPreviewPath = path;
+  else if (!currentPreviewPath || !htmlFiles.includes(currentPreviewPath)) currentPreviewPath = htmlFiles[0];
+
+  htmlFiles.forEach(f => {
+    const btn = document.createElement('button');
+    btn.className = 'ptab' + (f === currentPreviewPath ? ' active' : '');
+    btn.textContent = f.split('/').pop();
+    btn.onclick = () => { currentPreviewPath = f; refreshPreview(f); };
+    tabsEl.appendChild(btn);
+  });
+  frame.srcdoc = getPreviewHTML(currentPreviewPath) || '';
+}
+
+document.getElementById('refresh-btn').onclick = () => refreshPreview(currentPreviewPath);
+
+// ===== TOOL CALL PARSER =====
+let toolCallCount = 0;
+
+function logTool(type, detail) {
+  toolCallCount++;
+  document.getElementById('tool-count').textContent = toolCallCount;
+  const el = document.getElementById('tool-log');
+  const d = document.createElement('div');
+  d.className = 'tool-entry ' + type;
+  const now = new Date().toLocaleTimeString();
+  d.innerHTML = '<strong>' + type.toUpperCase() + '</strong> <span class="tpath">' + escHtml(detail) + '</span><span class="ttime">' + now + '</span>';
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function parseAndExecuteTools(text) {
+  const results = [];
+  // Match code fences: ```command /path or ```command message
+  const fenceRe = /```(create|edit|delete|commit|list|preview)([\s\S]*?)```/g;
+  let m;
+  while ((m = fenceRe.exec(text)) !== null) {
+    const cmd = m[1];
+    const body = m[2].trim();
+    let res;
+    if (cmd === 'create') {
+      const nl = body.indexOf('\n');
+      const path = nl > -1 ? body.substring(0, nl).trim() : body.trim();
+      const content = nl > -1 ? body.substring(nl + 1) : '';
+      res = createFile(path, content);
+      logTool('create', path);
+      results.push({ cmd, path, ok: true });
+    } else if (cmd === 'edit') {
+      const nl = body.indexOf('\n');
+      const path = nl > -1 ? body.substring(0, nl).trim() : body.trim();
+      const content = nl > -1 ? body.substring(nl + 1) : '';
+      res = editFile(path, content);
+      logTool('edit', path);
+      results.push({ cmd, path, ok: true });
+    } else if (cmd === 'delete') {
+      const path = body.split('\n')[0].trim();
+      res = deleteFile(path);
+      logTool('delete', path);
+      results.push({ cmd, path, ok: res.ok });
+    } else if (cmd === 'commit') {
+      const msg = body.split('\n')[0].trim() || 'update';
+      res = commitChanges(msg);
+      logTool('commit', msg);
+      results.push({ cmd, message: msg, id: res.id, ok: true });
+    } else if (cmd === 'list') {
+      const files = listFiles();
+      logTool('list', files.length + ' files');
+      results.push({ cmd, files, ok: true });
+    } else if (cmd === 'preview') {
+      const path = body.split('\n')[0].trim();
+      refreshPreview(path);
+      logTool('preview', path);
+      results.push({ cmd, path, ok: true });
+    }
+  }
+  return results;
+}
+
+// ===== CHAT =====
+const chatMessages = [];
+let chatCount = 0;
+
+const SYSTEM_PROMPT = `You are SHIELD-LLM, an AI code builder inside the M₇ = 127 Shield System sandbox. You can create web files using these tool commands in code fences:
+- \`\`\`create /path.html
+<content>
+\`\`\` to create files
+- \`\`\`edit /path.html
+<content>
+\`\`\` to edit files
+- \`\`\`delete /path
+\`\`\` to delete files
+- \`\`\`commit <message>
+\`\`\` to save changes
+- \`\`\`list
+\`\`\` to see files
+- \`\`\`preview /path.html
+\`\`\` to preview
+
+Build HTML/CSS/JS files. Use dark themes with colors #0af, #fc0, #f0a, #0f8. Reference M₇=127 and the 7 shield primes [2,3,5,7,11,13,17] in your creations. Be creative and mathematical.`;
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatAIMessage(text) {
+  // Replace tool fences with badges
+  let out = escHtml(text);
+  out = out.replace(/```(create|edit|delete|commit|list|preview)([\s\S]*?)```/g, (_, cmd, body) => {
+    const label = cmd.toUpperCase();
+    const preview = escHtml(body.trim().split('\n')[0]).substring(0, 50);
+    return '<span class="tool-badge ' + cmd + '">' + label + ' ' + preview + '</span>';
+  });
+  // Inline code
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Line breaks
+  out = out.replace(/\n/g, '<br>');
+  return out;
+}
+
+function addMsg(role, text, emotion) {
+  chatCount++;
+  document.getElementById('chat-count').textContent = chatCount;
+  const el = document.getElementById('chat-messages');
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  const labels = { user: 'YOU', ai: 'AI', system: 'SYSTEM' };
+  let content = role === 'ai' ? formatAIMessage(text) : escHtml(text).replace(/\n/g, '<br>');
+  const emotionTag = emotion ? '<span class="emotion-tag">' + emotion + '</span>' : '';
+  d.innerHTML = '<span class="sender">' + labels[role] + emotionTag + '</span>' + content;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+  return d;
+}
+
+function addSystemMsg(text) { addMsg('system', text); }
+
+function updateStreamMsg(el, text) {
+  const content = formatAIMessage(text);
+  el.innerHTML = '<span class="sender">AI</span>' + content;
+  el.parentElement.scrollTop = el.parentElement.scrollHeight;
+}
+
+// ===== WEBLLM =====
+let engine = null;
+let modelLoaded = false;
+
+async function checkWebGPU() {
+  const el = document.getElementById('webgpu-status');
+  if (navigator.gpu) {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) { el.textContent = 'WebGPU: Available ✓'; el.className = 'webgpu-status ok'; return true; }
+    } catch(e) {}
+  }
+  el.textContent = 'WebGPU: Not available — sandbox-only mode'; el.className = 'webgpu-status no';
+  return false;
+}
+
+async function loadModel() {
+  const modelId = document.getElementById('model-select').value;
+  const progress = document.getElementById('load-progress');
+  const bar = document.getElementById('load-progress-bar');
+  const status = document.getElementById('load-status');
+  const loadBtn = document.getElementById('load-btn');
+
+  loadBtn.disabled = true;
+  progress.style.display = 'block';
+  status.textContent = 'Importing WebLLM...';
+
+  try {
+    const mlc = await import('https://esm.run/@anthropic-ai/sdk').catch(() => null);
+    const { CreateMLCEngine } = await import('https://esm.run/@anthropic-ai/sdk').catch(async () => {
+      return await import('https://esm.run/@mlc-ai/web-llm');
+    });
+
+    status.textContent = 'Loading ' + modelId + '...';
+    engine = await CreateMLCEngine(modelId, {
+      initProgressCallback: (report) => {
+        const pct = Math.round((report.progress || 0) * 100);
+        bar.style.width = pct + '%';
+        status.textContent = report.text || ('Loading... ' + pct + '%');
+      }
+    });
+
+    modelLoaded = true;
+    document.getElementById('model-dot').classList.add('active');
+    document.getElementById('model-label').textContent = modelId.split('-').slice(0, 2).join('-');
+    document.getElementById('load-overlay').classList.add('hidden');
+    addSystemMsg('Model loaded: ' + modelId);
+  } catch(e) {
+    status.textContent = 'Failed: ' + e.message;
+    loadBtn.disabled = false;
+    console.error('Model load error:', e);
+  }
+}
+
+async function generateResponse(userText) {
+  if (!engine || !modelLoaded) {
+    addSystemMsg('No model loaded. Using sandbox-only mode.');
+    return;
+  }
+
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.disabled = true;
+
+  chatMessages.push({ role: 'user', content: userText });
+  const msgEl = addMsg('ai', '...');
+  let full = '';
+
+  try {
+    const messages = [{ role: 'system', content: SYSTEM_PROMPT }, ...chatMessages.slice(-10)];
+    const stream = await engine.chat.completions.create({ messages, stream: true, max_tokens: 1024, temperature: 0.7 });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      full += delta;
+      updateStreamMsg(msgEl, full);
+    }
+
+    chatMessages.push({ role: 'assistant', content: full });
+    const toolResults = parseAndExecuteTools(full);
+    if (toolResults.length > 0) {
+      addSystemMsg(toolResults.length + ' tool call(s) executed.');
+    }
+  } catch(e) {
+    updateStreamMsg(msgEl, 'Error: ' + e.message);
+    console.error(e);
+  }
+
+  sendBtn.disabled = false;
+}
+
+// ===== VOICE / AUDIO =====
+let audioCtx, analyser, micStream, speechRec;
+let voiceActive = false;
+let currentEmotion = '';
+const emotionColors = { excitement:'#f80', calm:'#0af', anger:'#f44', sadness:'#a8f', joy:'#fc0', curiosity:'#0f8' };
+
+function rms(data) {
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) { const v = data[i] / 128 - 1; sum += v * v; }
+  return Math.sqrt(sum / data.length);
+}
+
+function estimateF0(data, sampleRate) {
+  const n = data.length;
+  let bestOff = 0, bestCorr = 0;
+  for (let off = 20; off < Math.min(n / 2, 500); off++) {
+    let corr = 0;
+    for (let i = 0; i < n - off; i++) {
+      corr += ((data[i] / 128 - 1) * (data[i + off] / 128 - 1));
+    }
+    corr /= (n - off);
+    if (corr > bestCorr) { bestCorr = corr; bestOff = off; }
+  }
+  return bestOff > 0 ? sampleRate / bestOff : 0;
+}
+
+function detectOnset(data) {
+  let energy = 0;
+  for (let i = 0; i < data.length; i++) { const v = data[i] / 128 - 1; energy += v * v; }
+  return energy / data.length > 0.02;
+}
+
+function detectFormantVowel(f0, rmsVal) {
+  if (f0 < 150) return 'o';
+  if (f0 < 250) return 'a';
+  if (f0 < 400) return 'e';
+  if (f0 < 600) return 'i';
+  return 'u';
+}
+
+function classifyEmotion(rmsVal, f0, onset) {
+  if (rmsVal > 0.15 && f0 > 300) return 'excitement';
+  if (rmsVal > 0.12 && onset) return 'anger';
+  if (rmsVal < 0.03) return 'calm';
+  if (f0 > 250 && rmsVal > 0.05) return 'joy';
+  if (f0 < 150 && rmsVal < 0.06) return 'sadness';
+  return 'curiosity';
+}
+
+function updateEmotionDots(emotion) {
+  const dots = document.querySelectorAll('#voice-status .emotion-dots span');
+  const labels = ['excitement', 'calm', 'anger', 'sadness', 'joy', 'curiosity'];
+  dots.forEach((d, i) => {
+    d.style.background = labels[i] === emotion ? emotionColors[labels[i]] : '#223';
+    d.style.boxShadow = labels[i] === emotion ? '0 0 4px ' + emotionColors[labels[i]] : 'none';
+  });
+  document.getElementById('emotion-label').textContent = emotion;
+}
+
+async function initVoice() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+
+    const bufLen = analyser.frequencyBinCount;
+    const dataArr = new Uint8Array(bufLen);
+
+    function tick() {
+      if (!voiceActive) return;
+      analyser.getByteTimeDomainData(dataArr);
+      const r = rms(dataArr);
+      const f0 = estimateF0(dataArr, audioCtx.sampleRate);
+      const onset = detectOnset(dataArr);
+      currentEmotion = classifyEmotion(r, f0, onset);
+
+      document.getElementById('mic-level').style.width = Math.min(r * 500, 100) + '%';
+      updateEmotionDots(currentEmotion);
+      requestAnimationFrame(tick);
+    }
+
+    voiceActive = true;
+    tick();
+    document.getElementById('voice-label').textContent = 'Voice: on';
+    document.getElementById('voice-label').style.color = '#0f8';
+
+    // Speech recognition
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      speechRec = new SR();
+      speechRec.continuous = true;
+      speechRec.interimResults = true;
+      speechRec.lang = 'en-US';
+
+      let interimText = '';
+      speechRec.onresult = (e) => {
+        let final = '', interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) final += t; else interim += t;
+        }
+        if (final.trim()) {
+          document.getElementById('chat-input').value = final.trim();
+          handleSend();
+        }
+        interimText = interim;
+      };
+      speechRec.onerror = () => {};
+      speechRec.onend = () => { if (voiceActive) speechRec.start(); };
+      speechRec.start();
+    }
+  } catch(e) {
+    document.getElementById('voice-label').textContent = 'Voice: unavailable';
+  }
+}
+
+// ===== CHAT SEND =====
+function handleSend() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+
+  addMsg('user', text, currentEmotion || null);
+  chatMessages.push({ role: 'user', content: text });
+
+  if (modelLoaded) {
+    generateResponse(text);
+  } else {
+    // Sandbox-only: parse any tool calls the user typed directly
+    const results = parseAndExecuteTools(text);
+    if (results.length > 0) {
+      addSystemMsg(results.length + ' tool call(s) executed from input.');
+    } else {
+      addSystemMsg('No model loaded. Type tool commands with code fences, or load a model.');
+    }
+  }
+}
+
+document.getElementById('send-btn').onclick = handleSend;
+document.getElementById('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+});
+
+// Auto-resize textarea
+document.getElementById('chat-input').addEventListener('input', function() {
+  this.style.height = '32px';
+  this.style.height = Math.min(this.scrollHeight, 80) + 'px';
+});
+
+// ===== TOP BAR ACTIONS =====
+document.getElementById('new-repo-btn').onclick = () => {
+  const name = prompt('Repository name:', 'shield-project');
+  if (name) initRepo(name);
+};
+
+document.getElementById('commit-btn').onclick = () => {
+  const msg = prompt('Commit message:', 'update');
+  if (msg !== null) {
+    const res = commitChanges(msg || 'update');
+    logTool('commit', msg || 'update');
+    addSystemMsg('Committed: ' + res.id + ' — ' + (msg || 'update'));
+  }
+};
+
+document.getElementById('repo-label').onclick = () => {
+  const name = prompt('Rename repository:', VFS.repoName);
+  if (name) {
+    VFS.repoName = name;
+    document.getElementById('repo-label').textContent = name;
+  }
+};
+
+// ===== LOAD OVERLAY BUTTONS =====
+document.getElementById('load-btn').onclick = loadModel;
+document.getElementById('skip-btn').onclick = () => {
+  document.getElementById('load-overlay').classList.add('hidden');
+  addSystemMsg('Sandbox-only mode. Use tool commands to build files.');
+};
+
+// ===== INIT =====
+checkWebGPU();
+initVoice();
+addSystemMsg('SHIELD LLM SANDBOX initialized. M₇ = 2¹²⁷ − 1. Primes: [2, 3, 5, 7, 11, 13, 17].');
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
