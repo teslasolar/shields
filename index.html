@@ -10,18 +10,30 @@ html,body{height:100%;overflow:hidden}
 body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 
 /* NAV BAR */
-#nav{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:0;height:32px;background:rgba(6,6,16,.95);border-bottom:1px solid rgba(0,170,255,.15);backdrop-filter:blur(8px);padding:0 8px;overflow-x:auto;overflow-y:hidden}
-#nav::-webkit-scrollbar{height:2px}
-#nav::-webkit-scrollbar-thumb{background:rgba(0,170,255,.2)}
-#nav .brand{font-size:9px;letter-spacing:2px;color:#556;margin-right:8px;white-space:nowrap}
-#nav .sep{color:#223;margin:0 2px;font-size:10px}
-#nav a{font-size:8px;letter-spacing:1.5px;text-decoration:none;padding:5px 7px;border-radius:4px 4px 0 0;transition:all .2s;white-space:nowrap;border:1px solid transparent;border-bottom:none;position:relative;top:1px}
-#nav a:hover{background:rgba(0,170,255,.08)}
-#nav a.active{background:rgba(0,170,255,.1);border-color:rgba(0,170,255,.2)}
-#nav .gallery-btn{color:#0af;font-weight:bold}
+#nav{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:0;height:36px;background:rgba(6,6,16,.97);border-bottom:1px solid rgba(0,170,255,.15);backdrop-filter:blur(8px);padding:0 10px}
+#nav .brand{font-size:9px;letter-spacing:2px;color:#556;margin-right:10px;white-space:nowrap}
+#nav .gallery-btn{font-size:8px;letter-spacing:1.5px;text-decoration:none;padding:6px 10px;border-radius:4px;color:#0af;font-weight:bold;transition:all .2s;white-space:nowrap;border:1px solid transparent;cursor:pointer}
+#nav .gallery-btn:hover{background:rgba(0,170,255,.08)}
+#nav .gallery-btn.active{background:rgba(0,170,255,.1);border-color:rgba(0,170,255,.2)}
+#nav .sep{color:#223;margin:0 4px;font-size:10px}
+
+/* NAV DROPDOWNS */
+.nav-group{position:relative;display:inline-flex;align-items:center}
+.nav-group-btn{font-size:8px;letter-spacing:1.5px;text-decoration:none;padding:6px 10px;border-radius:4px;transition:all .2s;white-space:nowrap;border:1px solid transparent;cursor:pointer;background:none;font-family:inherit;display:flex;align-items:center;gap:4px}
+.nav-group-btn:hover{background:rgba(0,170,255,.08)}
+.nav-group-btn .arrow{font-size:6px;opacity:.5;transition:transform .2s}
+.nav-group:hover .arrow{transform:rotate(180deg)}
+.nav-group-btn.has-active{border-color:rgba(0,170,255,.2);background:rgba(0,170,255,.06)}
+.nav-dropdown{display:none;position:absolute;top:100%;left:0;min-width:180px;background:rgba(6,6,16,.97);border:1px solid rgba(0,170,255,.15);border-radius:0 6px 6px 6px;padding:4px 0;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.nav-group:hover .nav-dropdown{display:block}
+.nav-dropdown a{display:flex;align-items:center;gap:8px;font-size:8px;letter-spacing:1.5px;text-decoration:none;padding:7px 14px;transition:all .15s;white-space:nowrap}
+.nav-dropdown a:hover{background:rgba(0,170,255,.08)}
+.nav-dropdown a.active{background:rgba(0,170,255,.1)}
+.nav-dropdown .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.nav-dropdown .cat-label{font-size:7px;letter-spacing:2px;padding:6px 14px 3px;opacity:.4}
 
 /* CONTENT AREA */
-#content{position:absolute;top:32px;left:0;right:0;bottom:0}
+#content{position:absolute;top:36px;left:0;right:0;bottom:0}
 #viewer{width:100%;height:100%;border:none;background:#060610}
 
 /* GALLERY VIEW */
@@ -55,26 +67,48 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <span class="brand">M₇</span>
   <a href="#gallery" class="gallery-btn active" data-id="gallery">GALLERY</a>
   <span class="sep">|</span>
-  <a href="#orb" style="color:#604" data-id="orb">ORB</a>
-  <a href="#cascade" style="color:#fa0" data-id="cascade">CASCADE</a>
-  <a href="#breath" style="color:#a4f" data-id="breath">BREATH</a>
-  <a href="#flat" style="color:#0f8" data-id="flat">FLAT</a>
-  <a href="#tree" style="color:#4a4" data-id="tree">TREE</a>
-  <a href="#drug" style="color:#f44" data-id="drug">DRUG</a>
-  <a href="#network" style="color:#fc0" data-id="network">NETWORK</a>
-  <span class="sep">|</span>
-  <a href="#number" style="color:#0ff" data-id="number">NUMBER</a>
-  <a href="#spiral" style="color:#f0f" data-id="spiral">SPIRAL</a>
-  <a href="#sieve" style="color:#8f0" data-id="sieve">SIEVE</a>
-  <a href="#twin" style="color:#f80" data-id="twin">TWIN</a>
-  <a href="#perfect" style="color:#0cf" data-id="perfect">PERFECT</a>
-  <span class="sep">|</span>
-  <a href="#fibonacci" style="color:#fc0" data-id="fibonacci">FIBONACCI</a>
-  <a href="#fractal" style="color:#f0a" data-id="fractal">FRACTAL</a>
-  <a href="#goldbach" style="color:#4ff" data-id="goldbach">GOLDBACH</a>
-  <a href="#hexagon" style="color:#ff4" data-id="hexagon">HEXAGON</a>
-  <a href="#flow" style="color:#0f8" data-id="flow">FLOW</a>
-  <a href="#harmony" style="color:#f4a" data-id="harmony">HARMONY</a>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#604">GEOMETRY <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#orb" data-id="orb"><span class="dot" style="background:#604"></span><span style="color:#604">ORB</span></a>
+      <a href="#flat" data-id="flat"><span class="dot" style="background:#0f8"></span><span style="color:#0f8">FLAT</span></a>
+      <a href="#spiral" data-id="spiral"><span class="dot" style="background:#f0f"></span><span style="color:#f0f">SPIRAL</span></a>
+      <a href="#hexagon" data-id="hexagon"><span class="dot" style="background:#ff4"></span><span style="color:#ff4">HEXAGON</span></a>
+      <a href="#fractal" data-id="fractal"><span class="dot" style="background:#f0a"></span><span style="color:#f0a">FRACTAL</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#0ad">NUMBER THEORY <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#number" data-id="number"><span class="dot" style="background:#0ff"></span><span style="color:#0ff">NUMBER</span></a>
+      <a href="#sieve" data-id="sieve"><span class="dot" style="background:#8f0"></span><span style="color:#8f0">SIEVE</span></a>
+      <a href="#twin" data-id="twin"><span class="dot" style="background:#f80"></span><span style="color:#f80">TWIN</span></a>
+      <a href="#perfect" data-id="perfect"><span class="dot" style="background:#0cf"></span><span style="color:#0cf">PERFECT</span></a>
+      <a href="#fibonacci" data-id="fibonacci"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">FIBONACCI</span></a>
+      <a href="#goldbach" data-id="goldbach"><span class="dot" style="background:#4ff"></span><span style="color:#4ff">GOLDBACH</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#4a4">ORGANIC <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#breath" data-id="breath"><span class="dot" style="background:#a4f"></span><span style="color:#a4f">BREATH</span></a>
+      <a href="#tree" data-id="tree"><span class="dot" style="background:#4a4"></span><span style="color:#4a4">TREE</span></a>
+      <a href="#cascade" data-id="cascade"><span class="dot" style="background:#fa0"></span><span style="color:#fa0">CASCADE</span></a>
+      <a href="#flow" data-id="flow"><span class="dot" style="background:#0f8"></span><span style="color:#0f8">FLOW</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#fc0">SYSTEMS <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#drug" data-id="drug"><span class="dot" style="background:#f44"></span><span style="color:#f44">DRUG</span></a>
+      <a href="#network" data-id="network"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">NETWORK</span></a>
+      <a href="#harmony" data-id="harmony"><span class="dot" style="background:#f4a"></span><span style="color:#f4a">HARMONY</span></a>
+    </div>
+  </div>
 </nav>
 
 <div id="content">
@@ -199,6 +233,11 @@ function showVariant(id) {
   navLinks.forEach(a => {
     a.classList.toggle('active', a.dataset.id === id);
   });
+  document.querySelectorAll('.nav-group-btn').forEach(btn => btn.classList.remove('has-active'));
+  const activeLink = document.querySelector('#nav .nav-dropdown a.active');
+  if (activeLink) {
+    activeLink.closest('.nav-group').querySelector('.nav-group-btn').classList.add('has-active');
+  }
 }
 
 navLinks.forEach(a => {
