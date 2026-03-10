@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FACTOR</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#aab}
+#ui{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(6,6,16,.92);border-bottom:1px solid rgba(0,170,255,.12)}
+#ui .title{font-size:13px;letter-spacing:3px;color:#0af;text-transform:uppercase}
+#ui input{background:rgba(0,170,255,.08);border:1px solid rgba(0,170,255,.25);color:#0cf;font-family:'Courier New',monospace;font-size:14px;padding:5px 12px;width:140px;outline:none;border-radius:2px}
+#ui input:focus{border-color:#0af;box-shadow:0 0 8px rgba(0,170,255,.2)}
+#ui button{background:rgba(0,170,255,.12);border:1px solid rgba(0,170,255,.3);color:#0af;font-family:'Courier New',monospace;font-size:11px;padding:5px 14px;cursor:pointer;letter-spacing:1px;border-radius:2px}
+#ui button:hover{background:rgba(0,170,255,.25);border-color:#0af}
+.presets{display:flex;gap:6px;margin-left:10px}
+.presets button{font-size:10px;padding:4px 8px;color:#668}
+.presets button:hover{color:#0af}
+#stats{position:fixed;top:50px;right:10px;z-index:10;background:rgba(6,6,16,.9);border:1px solid rgba(0,170,255,.1);padding:12px 16px;font-size:11px;line-height:1.8;min-width:200px;border-radius:2px}
+#stats .label{color:#446;letter-spacing:1px;font-size:9px;text-transform:uppercase}
+#stats .value{color:#0cf}
+#stats .theorem{color:#0af;font-size:12px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(0,170,255,.1)}
+#tooltip{position:fixed;z-index:20;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.3);padding:8px 12px;font-size:11px;line-height:1.6;pointer-events:none;display:none;border-radius:2px}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="ui">
+  <span class="title">Shield-Factor</span>
+  <input type="text" id="numInput" placeholder="2–10000" maxlength="7">
+  <button onclick="factorize()">FACTORIZE</button>
+  <div class="presets">
+    <button onclick="setNum(510510)">510510</button>
+    <button onclick="setNum(127)">127</button>
+    <button onclick="setNum(360)">360</button>
+    <button onclick="setNum(1000)">1000</button>
+    <button onclick="setNum(2310)">2310</button>
+    <button onclick="setNum(5040)">5040</button>
+    <button onclick="setNum(7919)">7919</button>
+    <button onclick="setNum(9240)">9240</button>
+  </div>
+</div>
+<div id="stats"></div>
+<div id="tooltip"></div>
+<canvas id="c"></canvas>
+
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const tooltip=document.getElementById('tooltip');
+const statsEl=document.getElementById('stats');
+const input=document.getElementById('numInput');
+
+let W,H;
+let camX=0,camY=0,zoom=1;
+let dragStart=null,camStart=null;
+let tree=null,animating=false;
+let hoverNode=null;
+let time=0;
+
+const SHIELD_PRIMES=[2,3,5,7,11,13,17];
+const PRIME_COLORS={
+  2:'#ff3366',3:'#ff8800',5:'#ffdd00',7:'#33ff66',
+  11:'#00ccff',13:'#6644ff',17:'#ff44cc',
+  19:'#ff5555',23:'#ff9944',29:'#dddd33',31:'#44dd44',
+  37:'#44bbff',41:'#8855ff',43:'#ff55aa',47:'#ff6666',
+  53:'#ffaa55',59:'#cccc44',61:'#55cc55',67:'#55aaff',
+  71:'#9966ff',73:'#ff66bb',79:'#ff7777',83:'#ffbb66',
+  89:'#bbbb55',97:'#66bb66'
+};
+
+function getPrimeColor(p){
+  if(PRIME_COLORS[p])return PRIME_COLORS[p];
+  let h=(p*137)%360;
+  return `hsl(${h},70%,60%)`;
+}
+
+function isPrime(n){
+  if(n<2)return false;
+  if(n<4)return true;
+  if(n%2===0||n%3===0)return false;
+  for(let i=5;i*i<=n;i+=6){
+    if(n%i===0||n%(i+2)===0)return false;
+  }
+  return true;
+}
+
+function smallestFactor(n){
+  if(n%2===0)return 2;
+  if(n%3===0)return 3;
+  for(let i=5;i*i<=n;i+=6){
+    if(n%i===0)return i;
+    if(n%(i+2)===0)return i+2;
+  }
+  return n;
+}
+
+function primeFactors(n){
+  let factors=[];
+  let tmp=n;
+  while(tmp>1){
+    let f=smallestFactor(tmp);
+    factors.push(f);
+    tmp/=f;
+  }
+  return factors;
+}
+
+class TreeNode{
+  constructor(value,depth,parent){
+    this.value=value;
+    this.depth=depth;
+    this.parent=parent;
+    this.left=null;
+    this.right=null;
+    this.prime=isPrime(value);
+    this.x=0;this.y=0;
+    this.targetX=0;this.targetY=0;
+    this.animProgress=0;
+    this.splitAnim=0;
+    this.revealed=false;
+    this.branchAnim=0;
+  }
+}
+
+function buildTree(n,depth=0,parent=null){
+  let node=new TreeNode(n,depth,parent);
+  if(!isPrime(n)&&n>1){
+    let f=smallestFactor(n);
+    let other=n/f;
+    node.left=buildTree(f,depth+1,node);
+    node.right=buildTree(other,depth+1,node);
+  }
+  return node;
+}
+
+function treeDepth(node){
+  if(!node)return 0;
+  return 1+Math.max(treeDepth(node.left),treeDepth(node.right));
+}
+
+function countNodes(node){
+  if(!node)return 0;
+  return 1+countNodes(node.left)+countNodes(node.right);
+}
+
+function layoutTree(node,x,y,hSpacing,vSpacing){
+  if(!node)return;
+  node.targetX=x;
+  node.targetY=y;
+  if(node.left&&node.right){
+    let leftW=subtreeWidth(node.left);
+    let rightW=subtreeWidth(node.right);
+    let total=leftW+rightW;
+    let gap=Math.max(hSpacing*0.6,40);
+    let leftX=x-(rightW/(total||1))*gap*0.5-gap*0.25;
+    let rightX=x+(leftW/(total||1))*gap*0.5+gap*0.25;
+    layoutTree(node.left,leftX,y+vSpacing,hSpacing*0.55,vSpacing);
+    layoutTree(node.right,rightX,y+vSpacing,hSpacing*0.55,vSpacing);
+  }
+}
+
+function subtreeWidth(node){
+  if(!node)return 0;
+  if(!node.left&&!node.right)return 1;
+  return subtreeWidth(node.left)+subtreeWidth(node.right);
+}
+
+function layoutTreePretty(root){
+  let positions=new Map();
+  let nextX=0;
+  function inorder(node){
+    if(!node)return;
+    inorder(node.left);
+    positions.set(node,nextX);
+    nextX++;
+    inorder(node.right);
+  }
+  inorder(root);
+  let total=nextX;
+  let hGap=Math.max(60,Math.min(120,800/Math.max(total,1)));
+  let vGap=Math.max(55,Math.min(80,500/Math.max(treeDepth(root),1)));
+  function assign(node){
+    if(!node)return;
+    let idx=positions.get(node);
+    node.targetX=(idx-total/2)*hGap;
+    node.targetY=node.depth*vGap;
+    assign(node.left);
+    assign(node.right);
+  }
+  assign(root);
+}
+
+let animQueue=[];
+let animDelay=0;
+
+function revealTree(node,delay){
+  if(!node)return delay;
+  animQueue.push({node,time:delay});
+  delay+=80;
+  if(node.left)delay=revealTree(node.left,delay);
+  if(node.right)delay=revealTree(node.right,delay);
+  return delay;
+}
+
+function startAnimation(root){
+  animQueue=[];
+  animating=true;
+  let totalTime=revealTree(root,0);
+  let startT=performance.now();
+  function step(){
+    let elapsed=performance.now()-startT;
+    for(let item of animQueue){
+      if(elapsed>=item.time&&!item.node.revealed){
+        item.node.revealed=true;
+        item.node.animProgress=0;
+      }
+    }
+    let allDone=animQueue.every(i=>i.node.revealed&&i.node.animProgress>=1);
+    if(!allDone){
+      requestAnimationFrame(step);
+    }else{
+      animating=false;
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function setNum(n){
+  input.value=n;
+  factorize();
+}
+
+function factorize(){
+  let val=parseInt(input.value);
+  if(isNaN(val)||val<2||val>9999999){
+    input.style.borderColor='#f33';
+    setTimeout(()=>input.style.borderColor='',500);
+    return;
+  }
+  tree=buildTree(val);
+  layoutTreePretty(tree);
+  camX=0;camY=0;
+  let d=treeDepth(tree);
+  let n=countNodes(tree);
+  zoom=Math.min(1,Math.max(0.15,8/Math.max(d,1),12/Math.max(n,1)));
+  startAnimation(tree);
+  updateStats(val);
+}
+
+function updateStats(n){
+  let factors=primeFactors(n);
+  let unique=[...new Set(factors)];
+  let counts={};
+  factors.forEach(f=>{counts[f]=(counts[f]||0)+1});
+  let theorem=unique.map(p=>{
+    let e=counts[p];
+    return e>1?p+'<sup>'+e+'</sup>':''+p;
+  }).join(' × ');
+  let isP=isPrime(n);
+  let shieldFactors=unique.filter(p=>SHIELD_PRIMES.includes(p));
+  statsEl.innerHTML=`
+    <div class="label">Number</div>
+    <div class="value">${n.toLocaleString()}${isP?' (PRIME)':''}</div>
+    <div class="label" style="margin-top:8px">Unique Prime Factors</div>
+    <div class="value">${unique.length}: ${unique.join(', ')}</div>
+    <div class="label" style="margin-top:8px">Total Prime Factors</div>
+    <div class="value">${factors.length}</div>
+    ${shieldFactors.length?`<div class="label" style="margin-top:8px">Shield Primes</div>
+    <div class="value" style="color:#0af">${shieldFactors.join(', ')}</div>`:''}
+    <div class="theorem">${n.toLocaleString()} = ${isP?n:theorem}</div>
+  `;
+}
+
+function resize(){
+  W=canvas.width=window.innerWidth;
+  H=canvas.height=window.innerHeight;
+}
+window.addEventListener('resize',resize);
+resize();
+
+function worldToScreen(wx,wy){
+  return[(wx-camX)*zoom+W/2,(wy-camY)*zoom+H/2+30];
+}
+function screenToWorld(sx,sy){
+  return[(sx-W/2)/zoom+camX,(sy-H/2-30)/zoom+camY];
+}
+
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  let zf=e.deltaY>0?0.9:1.1;
+  let [wx,wy]=screenToWorld(e.clientX,e.clientY);
+  zoom*=zf;
+  zoom=Math.max(0.05,Math.min(3,zoom));
+  camX=wx-(e.clientX-W/2)/zoom;
+  camY=wy-(e.clientY-H/2-30)/zoom;
+},{passive:false});
+
+canvas.addEventListener('mousedown',e=>{
+  dragStart={x:e.clientX,y:e.clientY};
+  camStart={x:camX,y:camY};
+});
+canvas.addEventListener('mousemove',e=>{
+  if(dragStart){
+    camX=camStart.x-(e.clientX-dragStart.x)/zoom;
+    camY=camStart.y-(e.clientY-dragStart.y)/zoom;
+  }
+  updateHover(e.clientX,e.clientY);
+});
+canvas.addEventListener('mouseup',e=>{
+  if(dragStart&&Math.abs(e.clientX-dragStart.x)<4&&Math.abs(e.clientY-dragStart.y)<4){
+    handleClick(e.clientX,e.clientY);
+  }
+  dragStart=null;
+});
+canvas.addEventListener('mouseleave',()=>{
+  dragStart=null;
+  hoverNode=null;
+  tooltip.style.display='none';
+});
+
+function findNode(node,wx,wy){
+  if(!node||!node.revealed)return null;
+  let dx=node.x-wx,dy=node.y-wy;
+  let r=nodeRadius(node);
+  if(dx*dx+dy*dy<(r+5)*(r+5))return node;
+  let l=findNode(node.left,wx,wy);
+  if(l)return l;
+  return findNode(node.right,wx,wy);
+}
+
+function nodeRadius(node){
+  let digits=node.value.toString().length;
+  return Math.max(16,8+digits*5);
+}
+
+function updateHover(mx,my){
+  if(!tree)return;
+  let [wx,wy]=screenToWorld(mx,my);
+  hoverNode=findNode(tree,wx,wy);
+  if(hoverNode){
+    tooltip.style.display='block';
+    tooltip.style.left=(mx+15)+'px';
+    tooltip.style.top=(my+15)+'px';
+    let n=hoverNode;
+    let type=n.prime?'<span style="color:'+getPrimeColor(n.value)+'">PRIME</span>':'<span style="color:#888">COMPOSITE</span>';
+    let shield=SHIELD_PRIMES.includes(n.value)?'<br><span style="color:#0af">SHIELD PRIME</span>':'';
+    tooltip.innerHTML=`<b style="color:#fff">${n.value.toLocaleString()}</b> ${type}${shield}<br><span style="color:#556">Depth: ${n.depth}</span>`;
+    canvas.style.cursor='pointer';
+  }else{
+    tooltip.style.display='none';
+    canvas.style.cursor=dragStart?'grabbing':'grab';
+  }
+}
+
+function handleClick(mx,my){
+  if(!tree)return;
+  let [wx,wy]=screenToWorld(mx,my);
+  let node=findNode(tree,wx,wy);
+  if(node&&!node.prime&&node.value>1&&!node.left){
+    let f=smallestFactor(node.value);
+    let other=node.value/f;
+    node.left=new TreeNode(f,node.depth+1,node);
+    node.right=new TreeNode(other,node.depth+1,node);
+    node.left.revealed=true;node.left.animProgress=0;
+    node.right.revealed=true;node.right.animProgress=0;
+    layoutTreePretty(tree);
+    if(!node.left.prime&&node.left.value>1){
+      // leave for user to click
+    }
+    if(!node.right.prime&&node.right.value>1){
+      // leave for user to click
+    }
+    updateStats(tree.value);
+  }
+}
+
+function drawNode(node){
+  if(!node||!node.revealed)return;
+  let p=Math.min(1,node.animProgress);
+  if(p<=0)return;
+
+  node.x+=(node.targetX-node.x)*0.12;
+  node.y+=(node.targetY-node.y)*0.12;
+  node.animProgress=Math.min(1,node.animProgress+0.03);
+
+  let [sx,sy]=worldToScreen(node.x,node.y);
+  let r=nodeRadius(node)*zoom;
+
+  // Draw branches to children
+  if(node.left&&node.left.revealed){
+    let [cx,cy]=worldToScreen(node.left.x,node.left.y);
+    let bp=Math.min(1,node.left.animProgress);
+    let mx=sx+(cx-sx)*bp;
+    let my=sy+(cy-sy)*bp;
+    ctx.beginPath();
+    ctx.moveTo(sx,sy+r);
+    ctx.quadraticCurveTo(sx,sy+r+(my-sy-r)*0.5,mx,my);
+    ctx.strokeStyle=`rgba(0,170,255,${0.2*bp})`;
+    ctx.lineWidth=Math.max(1,1.5*zoom);
+    ctx.stroke();
+  }
+  if(node.right&&node.right.revealed){
+    let [cx,cy]=worldToScreen(node.right.x,node.right.y);
+    let bp=Math.min(1,node.right.animProgress);
+    let mx=sx+(cx-sx)*bp;
+    let my=sy+(cy-sy)*bp;
+    ctx.beginPath();
+    ctx.moveTo(sx,sy+r);
+    ctx.quadraticCurveTo(sx,sy+r+(my-sy-r)*0.5,mx,my);
+    ctx.strokeStyle=`rgba(0,170,255,${0.2*bp})`;
+    ctx.lineWidth=Math.max(1,1.5*zoom);
+    ctx.stroke();
+  }
+
+  // Node circle
+  let isShield=SHIELD_PRIMES.includes(node.value)&&node.prime;
+  let col=node.prime?getPrimeColor(node.value):'#334';
+  let alpha=p;
+
+  // Glow for primes
+  if(node.prime&&p>0.5){
+    let glowR=r*2.5;
+    let grd=ctx.createRadialGradient(sx,sy,r*0.5,sx,sy,glowR);
+    let c=getPrimeColor(node.value);
+    grd.addColorStop(0,c.replace(')',',0.15)').replace('rgb','rgba').replace('#',''));
+    grd.addColorStop(1,'rgba(0,0,0,0)');
+    // Simpler glow
+    ctx.save();
+    ctx.globalAlpha=0.3*p*(0.7+0.3*Math.sin(time*2+node.value));
+    ctx.beginPath();
+    ctx.arc(sx,sy,glowR,0,Math.PI*2);
+    ctx.fillStyle=col;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Shield prime extra ring
+  if(isShield){
+    ctx.save();
+    ctx.globalAlpha=0.4+0.2*Math.sin(time*3+node.value);
+    ctx.beginPath();
+    ctx.arc(sx,sy,r+4*zoom,0,Math.PI*2);
+    ctx.strokeStyle='#0af';
+    ctx.lineWidth=Math.max(1,2*zoom);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Main circle
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.beginPath();
+  ctx.arc(sx,sy,r,0,Math.PI*2);
+  if(node.prime){
+    ctx.fillStyle='rgba(6,6,16,0.9)';
+    ctx.fill();
+    ctx.strokeStyle=col;
+    ctx.lineWidth=Math.max(1,2*zoom);
+    ctx.stroke();
+  }else{
+    ctx.fillStyle='rgba(20,20,40,0.8)';
+    ctx.fill();
+    ctx.strokeStyle='rgba(0,170,255,0.2)';
+    ctx.lineWidth=Math.max(1,1*zoom);
+    ctx.stroke();
+  }
+
+  // Text
+  let fontSize=Math.max(8,Math.min(14,10+zoom*2))*zoom/Math.max(zoom,0.5);
+  fontSize=Math.max(6,Math.min(18,fontSize));
+  ctx.font=`${fontSize}px 'Courier New',monospace`;
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillStyle=node.prime?col:'#889';
+  let label=node.value.toString();
+  if(label.length>6)label=label.substring(0,5)+'…';
+  ctx.fillText(label,sx,sy);
+  ctx.restore();
+
+  // Hover highlight
+  if(node===hoverNode){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(sx,sy,r+3*zoom,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,170,255,0.6)';
+    ctx.lineWidth=Math.max(1,2*zoom);
+    ctx.setLineDash([4,4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  drawNode(node.left);
+  drawNode(node.right);
+}
+
+function drawGrid(){
+  ctx.save();
+  ctx.globalAlpha=0.03;
+  let gridSize=100;
+  let [x0,y0]=screenToWorld(0,0);
+  let [x1,y1]=screenToWorld(W,H);
+  let startX=Math.floor(x0/gridSize)*gridSize;
+  let startY=Math.floor(y0/gridSize)*gridSize;
+  ctx.strokeStyle='#0af';
+  ctx.lineWidth=1;
+  for(let x=startX;x<=x1;x+=gridSize){
+    let [sx]=worldToScreen(x,0);
+    ctx.beginPath();ctx.moveTo(sx,0);ctx.lineTo(sx,H);ctx.stroke();
+  }
+  for(let y=startY;y<=y1;y+=gridSize){
+    let [,sy]=worldToScreen(0,y);
+    ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(W,sy);ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function render(){
+  time=performance.now()/1000;
+  ctx.fillStyle='#060610';
+  ctx.fillRect(0,0,W,H);
+  drawGrid();
+  if(tree)drawNode(tree);
+
+  // Title watermark if no tree
+  if(!tree){
+    ctx.save();
+    ctx.globalAlpha=0.08;
+    ctx.font="60px 'Courier New',monospace";
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillStyle='#0af';
+    ctx.fillText('SHIELD-FACTOR',W/2,H/2-20);
+    ctx.font="14px 'Courier New',monospace";
+    ctx.fillText('Enter a number to begin',W/2,H/2+30);
+    ctx.restore();
+  }
+
+  requestAnimationFrame(render);
+}
+
+input.addEventListener('keydown',e=>{
+  if(e.key==='Enter')factorize();
+});
+
+// Start with 510510
+input.value='510510';
+factorize();
+render();
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
