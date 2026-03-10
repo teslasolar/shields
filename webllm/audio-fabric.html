@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Fabric — Voice-Reactive Prime Harmonics</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas#fabric {
+  display: block;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Panels */
+.panel {
+  position: fixed;
+  z-index: 100;
+  background: rgba(6,6,16,.88);
+  border: 1px solid rgba(0,170,255,.18);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  backdrop-filter: blur(10px);
+  pointer-events: all;
+  min-width: 180px;
+}
+.panel h3 {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #0af;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-weight: normal;
+}
+.panel-label { color: #556; font-size: 9px; margin-top: 6px; }
+.panel-value { color: #c0c0d0; font-size: 11px; }
+
+/* Voice panel - bottom left */
+#voice-panel { bottom: 52px; left: 14px; }
+#mic-bar-wrap { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+#mic-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #0af; flex-shrink: 0; transition: background .15s;
+}
+#mic-bar {
+  flex: 1; height: 6px;
+  background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden;
+}
+#mic-bar-fill {
+  height: 100%; width: 0%;
+  background: #0af; border-radius: 3px;
+  transition: width .05s, background .2s;
+}
+#dominant-vowel { font-size: 14px; color: #fc0; margin-top: 4px; min-height: 18px; }
+#voice-transcript {
+  font-size: 9px; color: #0f8; margin-top: 6px;
+  max-width: 220px; word-wrap: break-word; min-height: 14px; opacity: .7;
+}
+
+/* Ring panel - top right */
+#ring-panel { top: 50px; right: 14px; min-width: 170px; }
+.ring-row {
+  display: flex; align-items: center; gap: 6px;
+  margin: 3px 0; font-size: 9px;
+}
+.ring-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  transition: transform .2s, box-shadow .2s; opacity: .4;
+}
+.ring-dot.active { opacity: 1; transform: scale(1.4); }
+.ring-hz { color: #556; width: 38px; text-align: right; }
+.ring-name { flex: 1; }
+.ring-energy {
+  width: 40px; height: 4px;
+  background: rgba(255,255,255,.06); border-radius: 2px; overflow: hidden;
+}
+.ring-energy-fill {
+  height: 100%; width: 0%; border-radius: 2px;
+  transition: width .08s;
+}
+
+/* Harmony controls - bottom right */
+#harmony-panel { bottom: 52px; right: 14px; min-width: 200px; }
+.harm-row { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
+.harm-btn {
+  padding: 4px 10px; font: 10px monospace;
+  background: rgba(255,255,255,.03); border: 1px solid #222;
+  border-radius: 4px; color: #777; cursor: pointer; transition: all .2s;
+}
+.harm-btn:hover { border-color: #ff88cc; color: #ff88cc; }
+.harm-btn.active { border-color: #44ff88; color: #44ff88; background: rgba(68,255,136,.05); }
+#synth-vol {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 9px; color: #888; margin-top: 6px;
+}
+#synth-vol input { flex: 1; height: 4px; accent-color: #4af; }
+
+/* Lissajous panel - top left */
+#lissajous-panel { top: 50px; left: 14px; padding: 8px; }
+#lissajous-canvas { border-radius: 50%; border: 1px solid rgba(0,170,255,.15); }
+#liss-label { font-size: 9px; color: #556; margin-top: 4px; text-align: center; }
+#liss-pair-label { font-size: 11px; color: #0af; text-align: center; margin-top: 2px; }
+
+/* 7-band spectrum - bottom center */
+#band-viz {
+  position: fixed; left: 50%; bottom: 56px;
+  transform: translateX(-50%); z-index: 55;
+  display: flex; gap: 6px; pointer-events: none;
+  align-items: flex-end; height: 70px;
+}
+.band-col {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.band-bar-wrap {
+  width: 16px; height: 60px; position: relative; overflow: hidden;
+}
+.band-fill {
+  position: absolute; bottom: 0; left: 1px; right: 1px;
+  border-radius: 2px 2px 0 0; transition: height .06s;
+  box-shadow: 0 0 6px currentColor;
+}
+.band-peak {
+  position: absolute; left: 1px; right: 1px; height: 2px;
+  border-radius: 1px; transition: bottom .1s;
+}
+.band-label { font-size: 7px; color: #556; white-space: nowrap; }
+.band-prime { font-size: 8px; opacity: .6; }
+
+/* Phoneme ring display */
+#phoneme-ring {
+  position: fixed; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50; pointer-events: none;
+}
+
+/* Footer */
+#footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(140,140,160,.35);
+  padding: 10px;
+  background: rgba(6,6,16,.85);
+  border-top: 1px solid rgba(0,170,255,.08);
+}
+</style>
+</head>
+<body>
+
+<canvas id="fabric"></canvas>
+
+<!-- Voice Analysis Panel -->
+<div class="panel" id="voice-panel">
+  <h3>VOICE INPUT</h3>
+  <div class="panel-label">MIC LEVEL</div>
+  <div id="mic-bar-wrap">
+    <div id="mic-dot"></div>
+    <div id="mic-bar"><div id="mic-bar-fill"></div></div>
+  </div>
+  <div class="panel-label">DETECTED VOWEL</div>
+  <div id="dominant-vowel">--</div>
+  <div class="panel-label">ACTIVE RING</div>
+  <div id="active-ring-name" style="color:#0ff;font-size:11px;margin-top:2px">--</div>
+  <div id="voice-transcript"></div>
+</div>
+
+<!-- Ring Status Panel -->
+<div class="panel" id="ring-panel">
+  <h3>7 PRIME RINGS</h3>
+  <div id="ring-rows"></div>
+  <div class="panel-label" style="margin-top:8px">GEOMETRIC TIER</div>
+  <div id="tier-display" style="color:#4af;font-size:12px;margin-top:2px">POINT</div>
+  <div id="tier-shape" style="color:#556;font-size:9px">Tier 0</div>
+</div>
+
+<!-- Harmony Controls -->
+<div class="panel" id="harmony-panel">
+  <h3>SONGBIRD HARMONY</h3>
+  <div class="panel-label">MODE</div>
+  <div class="harm-row">
+    <button class="harm-btn active" data-h="off">OFF</button>
+    <button class="harm-btn" data-h="unison">UNI</button>
+    <button class="harm-btn" data-h="third">3rd</button>
+    <button class="harm-btn" data-h="fifth">5th</button>
+  </div>
+  <div class="harm-row">
+    <button class="harm-btn" data-h="octave">OCT</button>
+    <button class="harm-btn" data-h="seventh">7th</button>
+    <button class="harm-btn" data-h="cascade">ALL</button>
+  </div>
+  <div id="synth-vol">
+    <span>VOL</span>
+    <input type="range" min="0" max="100" value="40" id="synth-vol-slider">
+    <span id="synth-vol-val">40%</span>
+  </div>
+</div>
+
+<!-- Lissajous Panel -->
+<div class="panel" id="lissajous-panel">
+  <h3>LISSAJOUS</h3>
+  <canvas id="lissajous-canvas" width="130" height="130"></canvas>
+  <div id="liss-label">PRIME RATIO</div>
+  <div id="liss-pair-label">2 : 3</div>
+</div>
+
+<!-- 7-Band Prime Spectrum -->
+<div id="band-viz"></div>
+
+<!-- Footer -->
+<div id="footer">
+  <span style="color:#f4a">510,510</span> = 2&times;3&times;5&times;7&times;11&times;13&times;17 &middot; AUDIO FABRIC &middot; VOICE &rarr; PRIME HARMONICS
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ════════════════════════════════════════════
+// CONSTANTS — M₇ SHIELD SYSTEM
+// ════════════════════════════════════════════
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = Math.PI * 2;
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+const RING_NAMES = ['GROUND','SENSE','GATE','HEART','VOICE','SIGHT','OBSERVER'];
+const RING_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_COLORS = RING_HUES.map(h => `hsl(${h},85%,55%)`);
+const RING_COLORS_RGB = [
+  [204,47,47],[204,140,30],[180,180,30],[40,180,100],[40,140,220],[120,60,230],[200,50,170]
+];
+
+// Vowel → Ring mapping
+const VOWEL_RING = { oo:0, oh:1, ah:2, eh:3, ee:4 };
+const VOWEL_LABELS = { oo:'OO (oo)', oh:'OH (oh)', ah:'AH (ah)', eh:'EH (eh)', ee:'EE (ee)' };
+
+// Geometric tiers
+const TIERS = [
+  {name:'POINT',    sides:0}, {name:'LINE',      sides:2},
+  {name:'TRIANGLE', sides:3}, {name:'SQUARE',    sides:4},
+  {name:'PENTAGON', sides:5}, {name:'HEXAGON',   sides:6},
+  {name:'HEPTAGON', sides:7}, {name:'OCTAGON',   sides:8},
+  {name:'ENNEAGON', sides:9}, {name:'DECAGON',   sides:10},
+  {name:'HENDECAGON',sides:11},{name:'DODECAGON',sides:12}
+];
+
+// Lissajous pairs from 7 primes
+const LISS_PAIRS = [];
+for (let i = 0; i < PRIMES.length; i++)
+  for (let j = i+1; j < PRIMES.length; j++)
+    LISS_PAIRS.push([i, j]);
+
+// ════════════════════════════════════════════
+// CANVAS SETUP
+// ════════════════════════════════════════════
+const canvas = document.getElementById('fabric');
+const ctx = canvas.getContext('2d');
+const lissCanvas = document.getElementById('lissajous-canvas');
+const lissCtx = lissCanvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2; cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ════════════════════════════════════════════
+// VOICE ENGINE — Mic + Analysis
+// ════════════════════════════════════════════
+let audioCtx, analyser, micStream;
+let timeData, freqData;
+let voiceRMS = 0, voiceF0 = 0, voiceVowel = null, voiceSounding = false;
+let onsetRate = 0, pitchHistory = [], pitchVariance = 0;
+let lastOnsetTime = 0, onsetCount = 0;
+let ringEnergies = new Float32Array(7);
+let ringPeaks = new Float32Array(7);
+let totalEnergy = 0;
+let currentTier = 0;
+
+async function initVoice() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = stream;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.8;
+    src.connect(analyser);
+    timeData = new Float32Array(analyser.fftSize);
+    freqData = new Float32Array(analyser.frequencyBinCount);
+    document.getElementById('mic-dot').style.background = '#0f0';
+  } catch(e) {
+    console.warn('Mic init failed:', e);
+    document.getElementById('mic-dot').style.background = '#f44';
+  }
+}
+
+function calcRMS() {
+  if (!analyser) return 0;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  return Math.sqrt(sum / timeData.length);
+}
+
+function calcF0() {
+  if (!analyser) return 0;
+  const buf = timeData;
+  const n = buf.length;
+  const sr = audioCtx.sampleRate;
+  const minP = Math.floor(sr / 500);
+  const maxP = Math.floor(sr / 60);
+  let bestCorr = 0, bestLag = minP;
+  for (let lag = minP; lag <= maxP && lag < n; lag++) {
+    let corr = 0;
+    for (let i = 0; i < n - lag; i++) corr += buf[i] * buf[i + lag];
+    if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+  }
+  if (bestCorr < 0.01) return 0;
+  return sr / bestLag;
+}
+
+function detectVowel(f0) {
+  if (!analyser || f0 < 60) return null;
+  analyser.getFloatFrequencyData(freqData);
+  const sr = audioCtx.sampleRate;
+  const binHz = sr / analyser.fftSize;
+  function energyAt(hz, bw) {
+    const lo = Math.floor((hz - bw) / binHz);
+    const hi = Math.ceil((hz + bw) / binHz);
+    let e = 0;
+    for (let i = Math.max(0,lo); i <= Math.min(hi, freqData.length-1); i++)
+      e += Math.pow(10, freqData[i] / 20);
+    return e;
+  }
+  // Formant energy bands
+  const f1low = energyAt(300, 80);   // oo
+  const f1mid = energyAt(500, 80);   // oh/ah
+  const f1high = energyAt(700, 100); // ah/eh
+  const f2low = energyAt(900, 100);  // oh
+  const f2mid = energyAt(1500, 150); // eh
+  const f2high = energyAt(2300, 200);// ee
+
+  const scores = {
+    oo: f1low * 1.5 + (1 / (1 + f2high * 0.01)),
+    oh: f1mid * 1.2 + f2low * 0.8,
+    ah: f1high * 1.4 + f1mid * 0.6,
+    eh: f1high * 0.8 + f2mid * 1.2,
+    ee: f1low * 0.5 + f2high * 1.5
+  };
+  let best = null, bestScore = 0;
+  for (const [v, s] of Object.entries(scores)) {
+    if (s > bestScore) { bestScore = s; best = v; }
+  }
+  return best;
+}
+
+function calcRingEnergies() {
+  if (!analyser) return;
+  analyser.getFloatFrequencyData(freqData);
+  const sr = audioCtx.sampleRate;
+  const binHz = sr / analyser.fftSize;
+  totalEnergy = 0;
+
+  for (let r = 0; r < 7; r++) {
+    const centerHz = RING_HZ[r];
+    // Bandwidth proportional to prime
+    const bw = centerHz * 0.15;
+    const lo = Math.max(0, Math.floor((centerHz - bw) / binHz));
+    const hi = Math.min(freqData.length - 1, Math.ceil((centerHz + bw) / binHz));
+    let e = 0;
+    for (let i = lo; i <= hi; i++) {
+      const linear = Math.pow(10, freqData[i] / 20);
+      e += linear;
+    }
+    e = e / Math.max(1, hi - lo + 1);
+    // Also check harmonics (2x, 3x)
+    for (let h = 2; h <= 3; h++) {
+      const hHz = centerHz * h;
+      if (hHz > sr / 2) break;
+      const hlo = Math.max(0, Math.floor((hHz - bw * 0.5) / binHz));
+      const hhi = Math.min(freqData.length - 1, Math.ceil((hHz + bw * 0.5) / binHz));
+      let he = 0;
+      for (let i = hlo; i <= hhi; i++) he += Math.pow(10, freqData[i] / 20);
+      e += (he / Math.max(1, hhi - hlo + 1)) * (0.5 / h);
+    }
+    ringEnergies[r] = ringEnergies[r] * 0.85 + e * 0.15;
+    ringPeaks[r] = Math.max(ringPeaks[r] * 0.995, ringEnergies[r]);
+    totalEnergy += ringEnergies[r];
+  }
+}
+
+function detectOnset() {
+  const now = performance.now();
+  if (voiceRMS > 0.04 && (now - lastOnsetTime) > 150) {
+    lastOnsetTime = now;
+    onsetCount++;
+  }
+  // Decay onset rate
+  if (now % 1000 < 20) {
+    onsetRate = onsetRate * 0.7 + onsetCount * 0.3;
+    onsetCount = 0;
+  }
+}
+
+function updatePitchVariance() {
+  if (voiceF0 > 60) {
+    pitchHistory.push(voiceF0);
+    if (pitchHistory.length > 30) pitchHistory.shift();
+  }
+  if (pitchHistory.length > 2) {
+    const mean = pitchHistory.reduce((a, b) => a + b) / pitchHistory.length;
+    pitchVariance = pitchHistory.reduce((s, v) => s + (v - mean) * (v - mean), 0) / pitchHistory.length;
+    pitchVariance = Math.sqrt(pitchVariance);
+  }
+}
+
+function updateTier() {
+  const energy = Math.min(totalEnergy * 2, 1);
+  const sustained = ringEnergies.filter(e => e > 0.02).length;
+  const rawTier = Math.min(11, Math.floor(sustained + energy * 5));
+  if (rawTier > currentTier) currentTier = Math.min(currentTier + 1, rawTier);
+  else if (rawTier < currentTier) currentTier = Math.max(0, currentTier - 0.02);
+  const tierIdx = Math.floor(currentTier);
+  document.getElementById('tier-display').textContent = TIERS[tierIdx].name;
+  document.getElementById('tier-display').style.color = RING_COLORS[tierIdx % 7];
+  document.getElementById('tier-shape').textContent = 'Tier ' + tierIdx;
+}
+
+// ════════════════════════════════════════════
+// SYNTH ENGINE — Prime Harmony Generation
+// ════════════════════════════════════════════
+let synthCtx, synthGain;
+let oscillators = [];
+let harmonyMode = 'off';
+let synthVolume = 0.4;
+const HARMONY_RATIOS = {
+  unison: [1],
+  third: [1, 5/4],
+  fifth: [1, 3/2],
+  octave: [1, 2],
+  seventh: [1, 5/4, 3/2, 7/4],
+  cascade: [1, 5/4, 3/2, 2, 5/2, 3, 7/2]
+};
+
+function initSynth() {
+  synthCtx = new (window.AudioContext || window.webkitAudioContext)();
+  synthGain = synthCtx.createGain();
+  synthGain.gain.value = 0;
+  synthGain.connect(synthCtx.destination);
+}
+
+function updateSynth(f0, rms) {
+  if (!synthCtx || harmonyMode === 'off') {
+    if (synthGain) synthGain.gain.value *= 0.95;
+    return;
+  }
+  if (f0 < 60 || rms < 0.02) {
+    synthGain.gain.setTargetAtTime(0, synthCtx.currentTime, 0.1);
+    return;
+  }
+
+  const ratios = HARMONY_RATIOS[harmonyMode] || [1];
+  // Ensure enough oscillators
+  while (oscillators.length < ratios.length) {
+    const osc = synthCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 220;
+    const g = synthCtx.createGain();
+    g.gain.value = 0;
+    osc.connect(g);
+    g.connect(synthGain);
+    osc.start();
+    oscillators.push({ osc, gain: g });
+  }
+  // Mute extras
+  for (let i = ratios.length; i < oscillators.length; i++) {
+    oscillators[i].gain.gain.setTargetAtTime(0, synthCtx.currentTime, 0.05);
+  }
+
+  // Snap f0 to nearest prime harmonic
+  let nearestHz = RING_HZ[0];
+  let minDist = Infinity;
+  for (const hz of RING_HZ) {
+    // Check octaves
+    for (let oct = 0; oct < 4; oct++) {
+      const candidate = hz * Math.pow(2, oct);
+      const dist = Math.abs(f0 - candidate);
+      if (dist < minDist) { minDist = dist; nearestHz = candidate; }
+    }
+  }
+  const baseHz = minDist < f0 * 0.15 ? nearestHz : f0;
+
+  const targetVol = Math.min(rms * synthVolume * 2, synthVolume * 0.5);
+  synthGain.gain.setTargetAtTime(targetVol, synthCtx.currentTime, 0.05);
+
+  ratios.forEach((ratio, i) => {
+    if (i >= oscillators.length) return;
+    const freq = baseHz * ratio;
+    oscillators[i].osc.frequency.setTargetAtTime(freq, synthCtx.currentTime, 0.05);
+    const vol = 1 / (1 + i * 0.5); // diminishing volume for higher harmonics
+    oscillators[i].gain.gain.setTargetAtTime(vol, synthCtx.currentTime, 0.05);
+  });
+}
+
+// ════════════════════════════════════════════
+// SPEECH RECOGNITION
+// ════════════════════════════════════════════
+let recognition;
+function initSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.onresult = (e) => {
+    let transcript = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
+    }
+    const el = document.getElementById('voice-transcript');
+    if (el) el.textContent = transcript.slice(-60);
+  };
+  recognition.onerror = () => {};
+  recognition.onend = () => { try { recognition.start(); } catch(e) {} };
+  try { recognition.start(); } catch(e) {}
+}
+
+// ════════════════════════════════════════════
+// BUILD UI
+// ════════════════════════════════════════════
+function buildRingRows() {
+  const cont = document.getElementById('ring-rows');
+  PRIMES.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'ring-row';
+    row.innerHTML =
+      `<span class="ring-dot" id="rdot-${i}" style="background:${RING_COLORS[i]}"></span>` +
+      `<span class="ring-hz">${RING_HZ[i]}Hz</span>` +
+      `<span class="ring-name" style="color:${RING_COLORS[i]}">${RING_NAMES[i]}</span>` +
+      `<div class="ring-energy"><div class="ring-energy-fill" id="renergy-${i}" style="background:${RING_COLORS[i]}"></div></div>`;
+    cont.appendChild(row);
+  });
+}
+
+function buildBandViz() {
+  const cont = document.getElementById('band-viz');
+  PRIMES.forEach((p, i) => {
+    const col = document.createElement('div');
+    col.className = 'band-col';
+    col.innerHTML =
+      `<div class="band-bar-wrap">` +
+        `<div class="band-fill" id="bfill-${i}" style="background:${RING_COLORS[i]};color:${RING_COLORS[i]};height:0%"></div>` +
+        `<div class="band-peak" id="bpeak-${i}" style="background:${RING_COLORS[i]};bottom:0"></div>` +
+      `</div>` +
+      `<span class="band-prime" style="color:${RING_COLORS[i]}">${p}</span>` +
+      `<span class="band-label">${RING_HZ[i]}</span>`;
+    cont.appendChild(col);
+  });
+}
+
+function setupHarmonyButtons() {
+  document.querySelectorAll('.harm-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.harm-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      harmonyMode = btn.dataset.h;
+      if (harmonyMode !== 'off' && !synthCtx) initSynth();
+    });
+  });
+  document.getElementById('synth-vol-slider').addEventListener('input', (e) => {
+    synthVolume = parseInt(e.target.value) / 100;
+    document.getElementById('synth-vol-val').textContent = e.target.value + '%';
+  });
+}
+
+// ════════════════════════════════════════════
+// DRAWING — Main Canvas
+// ════════════════════════════════════════════
+let t = 0;
+let bgStars = [];
+function initStars() {
+  for (let i = 0; i < M7; i++) {
+    const theta = TAU * i / PHI;
+    const phi = Math.acos(1 - 2 * (i + 0.5) / M7);
+    bgStars.push({
+      x: Math.sin(phi) * Math.cos(theta),
+      y: Math.sin(phi) * Math.sin(theta),
+      z: Math.cos(phi),
+      dim: i
+    });
+  }
+}
+
+function drawBackground() {
+  ctx.fillStyle = 'rgba(6,6,16,0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  // M7 Fibonacci sphere stars
+  const pulse = 0.5 + 0.5 * Math.sin(t * 0.3);
+  bgStars.forEach(s => {
+    const rotY = t * 0.05;
+    const rx = s.x * Math.cos(rotY) - s.z * Math.sin(rotY);
+    const rz = s.x * Math.sin(rotY) + s.z * Math.cos(rotY);
+    const scale = 1 / (1.5 - rz * 0.3);
+    const sx = cx + rx * Math.min(W, H) * 0.45 * scale;
+    const sy = cy + s.y * Math.min(W, H) * 0.45 * scale;
+    const ring = s.dim % 7;
+    const energy = ringEnergies[ring] || 0;
+    const size = (1 + energy * 8) * scale * (0.8 + pulse * 0.2);
+    const alpha = (0.15 + energy * 2) * scale;
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(0.5, size), 0, TAU);
+    ctx.fillStyle = RING_COLORS[ring].replace('55%', (55 + energy * 30) + '%').replace(')', `,${Math.min(1, alpha)})`).replace('hsl', 'hsla');
+    ctx.fill();
+  });
+}
+
+function drawPrimeRings() {
+  const maxR = Math.min(W, H) * 0.38;
+
+  for (let r = 0; r < 7; r++) {
+    const energy = ringEnergies[r] || 0;
+    const radius = (maxR * (r + 1) / 7) * (1 + energy * 0.15);
+    const hue = RING_HUES[r];
+    const alpha = 0.08 + energy * 0.6;
+    const glow = energy * 20;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // Ring circle
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, TAU);
+    ctx.strokeStyle = `hsla(${hue},85%,55%,${alpha})`;
+    ctx.lineWidth = 1 + energy * 3;
+    if (glow > 1) {
+      ctx.shadowColor = `hsla(${hue},85%,55%,0.6)`;
+      ctx.shadowBlur = glow;
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Prime-count nodes on ring
+    const p = PRIMES[r];
+    for (let n = 0; n < p; n++) {
+      const angle = (TAU * n / p) + t * (0.1 + energy * 0.5) * (r % 2 === 0 ? 1 : -1);
+      const nx = Math.cos(angle) * radius;
+      const ny = Math.sin(angle) * radius;
+      const nodeSize = 2 + energy * 6;
+      const nodeAlpha = 0.2 + energy * 0.8;
+
+      ctx.beginPath();
+      ctx.arc(nx, ny, nodeSize, 0, TAU);
+      ctx.fillStyle = `hsla(${hue},85%,65%,${nodeAlpha})`;
+      ctx.fill();
+
+      // Connection lines between adjacent nodes (for active rings)
+      if (energy > 0.03 && n > 0) {
+        const prevAngle = (TAU * (n - 1) / p) + t * (0.1 + energy * 0.5) * (r % 2 === 0 ? 1 : -1);
+        const px = Math.cos(prevAngle) * radius;
+        const py = Math.sin(prevAngle) * radius;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(nx, ny);
+        ctx.strokeStyle = `hsla(${hue},85%,55%,${energy * 0.4})`;
+        ctx.lineWidth = 0.5 + energy * 2;
+        ctx.stroke();
+      }
+    }
+
+    // Ring label
+    if (energy > 0.02) {
+      const labelAngle = -Math.PI / 2 + t * 0.02;
+      const lx = Math.cos(labelAngle) * (radius + 12);
+      const ly = Math.sin(labelAngle) * (radius + 12);
+      ctx.font = '8px Courier New';
+      ctx.fillStyle = `hsla(${hue},85%,55%,${Math.min(1, energy * 3)})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`${RING_NAMES[r]} p=${PRIMES[r]}`, lx, ly);
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawHarmonicWeave() {
+  if (totalEnergy < 0.02) return;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.globalCompositeOperation = 'screen';
+
+  const maxR = Math.min(W, H) * 0.38;
+
+  // Draw connections between active rings
+  for (let i = 0; i < 7; i++) {
+    if (ringEnergies[i] < 0.02) continue;
+    for (let j = i + 1; j < 7; j++) {
+      if (ringEnergies[j] < 0.02) continue;
+      const combined = (ringEnergies[i] + ringEnergies[j]) * 0.5;
+      if (combined < 0.02) continue;
+
+      const r1 = maxR * (i + 1) / 7;
+      const r2 = maxR * (j + 1) / 7;
+      const segments = PRIMES[i]; // Use prime count for segments
+
+      for (let s = 0; s < segments; s++) {
+        const a1 = (TAU * s / segments) + t * 0.15 * (i % 2 === 0 ? 1 : -1);
+        const a2 = (TAU * s / PRIMES[j]) + t * 0.15 * (j % 2 === 0 ? 1 : -1);
+        const x1 = Math.cos(a1) * r1;
+        const y1 = Math.sin(a1) * r1;
+        const x2 = Math.cos(a2) * r2;
+        const y2 = Math.sin(a2) * r2;
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        // Bezier curve through center
+        const cpx = (x1 + x2) * 0.3 + Math.sin(t + s) * 10;
+        const cpy = (y1 + y2) * 0.3 + Math.cos(t + s) * 10;
+        ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+        const mixHue = (RING_HUES[i] + RING_HUES[j]) / 2;
+        ctx.strokeStyle = `hsla(${mixHue},70%,50%,${combined * 0.3})`;
+        ctx.lineWidth = 0.5 + combined * 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+}
+
+function drawTierGeometry() {
+  const tierIdx = Math.floor(currentTier);
+  if (tierIdx < 2) return;
+
+  const sides = TIERS[tierIdx].sides;
+  const maxR = Math.min(W, H) * 0.15;
+  const breathe = 1 + 0.05 * Math.sin(t * 2);
+  const radius = maxR * breathe;
+  const alpha = Math.min(0.6, (currentTier - 1) * 0.1);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // Draw regular polygon
+  ctx.beginPath();
+  for (let i = 0; i <= sides; i++) {
+    const angle = (TAU * i / sides) - Math.PI / 2 + t * 0.1;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const tierHue = RING_HUES[tierIdx % 7];
+  ctx.strokeStyle = `hsla(${tierHue},80%,60%,${alpha})`;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = `hsla(${tierHue},80%,60%,0.5)`;
+  ctx.shadowBlur = 15;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Vertices
+  for (let i = 0; i < sides; i++) {
+    const angle = (TAU * i / sides) - Math.PI / 2 + t * 0.1;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, TAU);
+    ctx.fillStyle = `hsla(${tierHue},80%,70%,${alpha})`;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawVoiceWaveform() {
+  if (!analyser || voiceRMS < 0.01) return;
+
+  const waveW = W * 0.5;
+  const waveH = 40;
+  const startX = cx - waveW / 2;
+  const startY = H * 0.75;
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, voiceRMS * 5);
+
+  // Draw time-domain waveform
+  const step = Math.max(1, Math.floor(timeData.length / waveW));
+  ctx.beginPath();
+  for (let x = 0; x < waveW; x++) {
+    const idx = x * step;
+    if (idx >= timeData.length) break;
+    const val = timeData[idx];
+    const py = startY + val * waveH;
+    if (x === 0) ctx.moveTo(startX + x, py);
+    else ctx.lineTo(startX + x, py);
+  }
+
+  const vowelRing = VOWEL_RING[voiceVowel] ?? 2;
+  const hue = RING_HUES[vowelRing];
+  ctx.strokeStyle = `hsla(${hue},80%,55%,0.6)`;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = `hsla(${hue},80%,55%,0.4)`;
+  ctx.shadowBlur = 8;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+// ════════════════════════════════════════════
+// LISSAJOUS
+// ════════════════════════════════════════════
+let lissIdx = 0;
+let lissTimer = 0;
+const LISS_INTERVAL = 5000;
+
+function drawLissajous() {
+  const cw = lissCanvas.width, ch = lissCanvas.height;
+  const lcx = cw / 2, lcy = ch / 2;
+  const r = cw * 0.42;
+
+  lissCtx.fillStyle = 'rgba(6,6,16,0.12)';
+  lissCtx.fillRect(0, 0, cw, ch);
+
+  const pair = LISS_PAIRS[lissIdx];
+  const a = pair[0], b = pair[1];
+  const pA = PRIMES[a], pB = PRIMES[b];
+  const rgbA = RING_COLORS_RGB[a], rgbB = RING_COLORS_RGB[b];
+
+  // Voice modulation
+  const voiceMod = 1 + voiceRMS * 3;
+  const pitchMod = voiceF0 > 60 ? voiceF0 / 220 : 1;
+
+  document.getElementById('liss-pair-label').textContent = pA + ' : ' + pB;
+
+  lissCtx.lineWidth = 1 + voiceRMS * 3;
+  lissCtx.beginPath();
+  const steps = 500;
+  for (let i = 0; i <= steps; i++) {
+    const th = (i / steps) * TAU * pB;
+    const lx = lcx + r * Math.sin(pA * th / pB + t * 0.5 * pitchMod);
+    const ly = lcy + r * Math.cos(th + t * 0.3 * voiceMod);
+    if (i === 0) lissCtx.moveTo(lx, ly);
+    else lissCtx.lineTo(lx, ly);
+  }
+
+  const mixR = Math.round((rgbA[0] + rgbB[0]) / 2);
+  const mixG = Math.round((rgbA[1] + rgbB[1]) / 2);
+  const mixB = Math.round((rgbA[2] + rgbB[2]) / 2);
+  lissCtx.strokeStyle = `rgba(${mixR},${mixG},${mixB},0.7)`;
+  lissCtx.shadowColor = `rgba(${mixR},${mixG},${mixB},0.5)`;
+  lissCtx.shadowBlur = 6;
+  lissCtx.stroke();
+  lissCtx.shadowBlur = 0;
+}
+
+// ════════════════════════════════════════════
+// HUD UPDATES
+// ════════════════════════════════════════════
+function updateHUD() {
+  // Mic bar
+  const barFill = document.getElementById('mic-bar-fill');
+  const pct = Math.min(100, voiceRMS * 500);
+  barFill.style.width = pct + '%';
+  if (pct > 70) barFill.style.background = '#f80';
+  else if (pct > 40) barFill.style.background = '#0f8';
+  else barFill.style.background = '#0af';
+
+  // Vowel
+  const vowelEl = document.getElementById('dominant-vowel');
+  if (voiceVowel && voiceSounding) {
+    vowelEl.textContent = VOWEL_LABELS[voiceVowel] || voiceVowel;
+    const ringIdx = VOWEL_RING[voiceVowel] ?? 0;
+    vowelEl.style.color = RING_COLORS[ringIdx];
+    document.getElementById('active-ring-name').textContent = RING_NAMES[ringIdx];
+    document.getElementById('active-ring-name').style.color = RING_COLORS[ringIdx];
+  } else {
+    vowelEl.textContent = '--';
+    document.getElementById('active-ring-name').textContent = '--';
+  }
+
+  // Ring energy bars
+  for (let i = 0; i < 7; i++) {
+    const fill = document.getElementById('renergy-' + i);
+    const dot = document.getElementById('rdot-' + i);
+    const norm = ringPeaks[i] > 0 ? ringEnergies[i] / ringPeaks[i] : 0;
+    if (fill) fill.style.width = Math.min(100, norm * 100) + '%';
+    if (dot) {
+      if (ringEnergies[i] > 0.03) dot.classList.add('active');
+      else dot.classList.remove('active');
+    }
+  }
+
+  // Band viz
+  for (let i = 0; i < 7; i++) {
+    const bfill = document.getElementById('bfill-' + i);
+    const bpeak = document.getElementById('bpeak-' + i);
+    const norm = ringPeaks[i] > 0 ? ringEnergies[i] / ringPeaks[i] : 0;
+    if (bfill) bfill.style.height = Math.min(100, norm * 100) + '%';
+    if (bpeak) bpeak.style.bottom = Math.min(100, norm * 100 + 2) + '%';
+  }
+}
+
+// ════════════════════════════════════════════
+// MAIN LOOP
+// ════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate);
+  t = performance.now() * 0.001;
+
+  // Voice analysis
+  voiceRMS = calcRMS();
+  voiceSounding = voiceRMS > 0.015;
+  voiceF0 = calcF0();
+  if (voiceSounding) {
+    voiceVowel = detectVowel(voiceF0);
+  }
+  detectOnset();
+  updatePitchVariance();
+  calcRingEnergies();
+  updateTier();
+
+  // Synth
+  updateSynth(voiceF0, voiceRMS);
+
+  // Draw
+  drawBackground();
+  drawPrimeRings();
+  drawHarmonicWeave();
+  drawTierGeometry();
+  drawVoiceWaveform();
+
+  // Lissajous
+  if (performance.now() - lissTimer > LISS_INTERVAL) {
+    lissTimer = performance.now();
+    lissIdx = (lissIdx + 1) % LISS_PAIRS.length;
+    lissCtx.clearRect(0, 0, lissCanvas.width, lissCanvas.height);
+  }
+  drawLissajous();
+
+  // HUD
+  updateHUD();
+}
+
+// ════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════
+async function boot() {
+  initStars();
+  buildRingRows();
+  buildBandViz();
+  setupHarmonyButtons();
+  await initVoice();
+  initSpeech();
+  animate();
+  console.log('%c AUDIO FABRIC ONLINE ', 'background:#060610;color:#0af;font-size:16px;padding:8px');
+}
+
+window.addEventListener('load', boot);
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
