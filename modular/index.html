@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-MODULAR · Modular Arithmetic with Primes · M₇ = 2⁷-1</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:#060610;font-family:'Courier New',monospace;color:#aac}
+
+canvas{display:block;position:absolute;top:0;left:0}
+
+#ui{position:fixed;top:44px;left:0;right:0;bottom:28px;pointer-events:none;z-index:10}
+
+#stats{position:fixed;top:44px;right:8px;width:260px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:12px 14px;font-size:10px;line-height:1.7;pointer-events:auto;z-index:20;max-height:calc(100vh - 100px);overflow-y:auto}
+#stats h3{font-size:9px;letter-spacing:2px;color:#0af;margin-bottom:6px;border-bottom:1px solid rgba(0,170,255,.15);padding-bottom:4px}
+#stats .row{display:flex;justify-content:space-between;color:#889}
+#stats .row .val{color:#aac}
+#stats .prim-roots{color:#f80;font-size:9px;margin-top:4px}
+#stats .orders{font-size:8px;color:#667;margin-top:4px;line-height:1.5}
+
+#controls{position:fixed;bottom:36px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:8px 18px;pointer-events:auto;z-index:20}
+#controls label{font-size:8px;letter-spacing:1.5px;color:#667}
+#controls input[type=range]{width:140px;accent-color:#0af}
+#controls .k-val{font-size:12px;color:#0af;min-width:24px;text-align:center}
+#controls button{background:rgba(0,170,255,.1);border:1px solid rgba(0,170,255,.2);color:#0af;font-family:inherit;font-size:8px;letter-spacing:1px;padding:4px 10px;border-radius:3px;cursor:pointer}
+#controls button:hover{background:rgba(0,170,255,.2)}
+#controls button.active{background:rgba(0,170,255,.25);border-color:#0af}
+
+#tooltip{position:fixed;display:none;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.25);border-radius:4px;padding:6px 10px;font-size:10px;color:#aac;pointer-events:none;z-index:30;white-space:nowrap}
+
+#overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;z-index:40;cursor:pointer}
+#detail{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);display:none;z-index:50;pointer-events:auto}
+#detail canvas{border:1px solid rgba(0,170,255,.15);border-radius:8px}
+#detail-info{position:absolute;right:-270px;top:0;width:260px;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:12px;font-size:9px;line-height:1.6;max-height:500px;overflow-y:auto}
+#detail-info h3{font-size:9px;letter-spacing:2px;color:#0af;margin-bottom:6px}
+#detail-info table{border-collapse:collapse;width:100%;margin-top:6px}
+#detail-info td,#detail-info th{padding:2px 4px;font-size:8px;text-align:center;border:1px solid rgba(0,170,255,.08);color:#889}
+#detail-info th{color:#0af;background:rgba(0,170,255,.05)}
+#close-detail{position:absolute;top:-12px;right:-12px;width:24px;height:24px;border-radius:50%;background:#111;border:1px solid rgba(0,170,255,.3);color:#0af;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:55}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <h3>MODULAR STATS</h3>
+  <div id="stats-content"></div>
+</div>
+
+<div id="controls">
+  <label>MULTIPLIER k</label>
+  <input type="range" id="k-slider" min="1" max="16" value="1">
+  <span class="k-val" id="k-display">1</span>
+  <button id="auto-btn">AUTO</button>
+  <label style="margin-left:8px">SPEED</label>
+  <input type="range" id="speed-slider" min="1" max="10" value="4" style="width:60px">
+</div>
+
+<div id="tooltip"></div>
+
+<div id="overlay"></div>
+<div id="detail">
+  <button id="close-detail">&times;</button>
+  <canvas id="detail-canvas" width="400" height="400"></canvas>
+  <div id="detail-info"></div>
+</div>
+
+<script>
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statsContent = document.getElementById('stats-content');
+const kSlider = document.getElementById('k-slider');
+const kDisplay = document.getElementById('k-display');
+const autoBtn = document.getElementById('auto-btn');
+const speedSlider = document.getElementById('speed-slider');
+const overlay = document.getElementById('overlay');
+const detailDiv = document.getElementById('detail');
+const detailCanvas = document.getElementById('detail-canvas');
+const detailCtx = detailCanvas.getContext('2d');
+const detailInfo = document.getElementById('detail-info');
+const closeDetail = document.getElementById('close-detail');
+
+let W, H;
+let currentK = 1;
+let autoPlay = true;
+let autoTimer = 0;
+let zoom = 1;
+let panX = 0, panY = 0;
+let clockRects = [];
+let hoveredClock = -1;
+let hoveredNode = -1;
+let detailPrime = -1;
+let animProgress = 0;
+let lastTime = 0;
+
+autoBtn.classList.add('active');
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Math helpers
+function modPow(base, exp, mod) {
+  let r = 1; base %= mod;
+  while (exp > 0) {
+    if (exp & 1) r = (r * base) % mod;
+    exp >>= 1; base = (base * base) % mod;
+  }
+  return r;
+}
+
+function order(a, p) {
+  for (let d = 1; d < p; d++) {
+    if (modPow(a, d, p) === 1) return d;
+  }
+  return p - 1;
+}
+
+function primitiveRoots(p) {
+  if (p === 2) return [1];
+  const roots = [];
+  for (let g = 2; g < p; g++) {
+    if (order(g, p) === p - 1) roots.push(g);
+  }
+  return roots;
+}
+
+function isPrimitiveRoot(g, p) {
+  return order(g, p) === p - 1;
+}
+
+// Drawing
+function hueForK(k, maxK) {
+  return (k / maxK) * 360;
+}
+
+function drawClock(cx, cy, radius, p, k, ctx, detailed, anim) {
+  const positions = [];
+  for (let i = 0; i < p; i++) {
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / p;
+    positions.push({
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius
+    });
+  }
+
+  // Circle outline
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,170,255,.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Inner glow
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.03, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,170,255,.15)';
+  ctx.fill();
+
+  // Draw chords n -> (n*k) mod p
+  const hue = hueForK(k, p);
+  const effectiveK = ((k - 1) % (p - 1)) + 1;
+
+  for (let n = 0; n < p; n++) {
+    const target = (n * effectiveK) % p;
+    if (n === target) continue; // skip identity
+
+    const progress = anim !== undefined ? Math.min(1, anim * p / (n + 1)) : 1;
+    if (progress <= 0) continue;
+
+    const chordHue = (hue + n * 20) % 360;
+    const alpha = 0.4 * progress;
+
+    ctx.beginPath();
+    ctx.moveTo(positions[n].x, positions[n].y);
+
+    if (progress < 1) {
+      const tx = positions[n].x + (positions[target].x - positions[n].x) * progress;
+      const ty = positions[n].y + (positions[target].y - positions[n].y) * progress;
+      ctx.lineTo(tx, ty);
+    } else {
+      ctx.lineTo(positions[target].x, positions[target].y);
+    }
+
+    ctx.strokeStyle = `hsla(${chordHue},80%,60%,${alpha})`;
+    ctx.lineWidth = detailed ? 2 : 1.2;
+    ctx.stroke();
+
+    // Arrowhead for detailed view
+    if (detailed && progress >= 1) {
+      const dx = positions[target].x - positions[n].x;
+      const dy = positions[target].y - positions[n].y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) {
+        const ux = dx / len, uy = dy / len;
+        const arrX = positions[target].x - ux * 8;
+        const arrY = positions[target].y - uy * 8;
+        ctx.beginPath();
+        ctx.moveTo(positions[target].x, positions[target].y);
+        ctx.lineTo(arrX - uy * 3, arrY + ux * 3);
+        ctx.lineTo(arrX + uy * 3, arrY - ux * 3);
+        ctx.closePath();
+        ctx.fillStyle = `hsla(${chordHue},80%,60%,${alpha})`;
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw nodes
+  for (let i = 0; i < p; i++) {
+    const isHighlight = detailed && hoveredNode === i;
+    const r = detailed ? 6 : (p <= 7 ? 4 : 3);
+
+    ctx.beginPath();
+    ctx.arc(positions[i].x, positions[i].y, r, 0, Math.PI * 2);
+    ctx.fillStyle = isHighlight ? '#fff' : (i === 0 ? 'rgba(255,100,50,.8)' : 'rgba(0,170,255,.7)');
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = isHighlight ? '#fff' : '#aac';
+    ctx.font = `${detailed ? 12 : (p <= 7 ? 10 : 8)}px 'Courier New'`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const labelRadius = radius + (detailed ? 18 : 12);
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / p;
+    const lx = cx + Math.cos(angle) * labelRadius;
+    const ly = cy + Math.sin(angle) * labelRadius;
+    ctx.fillText(i.toString(), lx, ly);
+  }
+
+  // Title
+  const titleY = cy - radius - (detailed ? 28 : 18);
+  ctx.fillStyle = '#0af';
+  ctx.font = `${detailed ? 14 : 10}px 'Courier New'`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`mod ${p}`, cx, titleY);
+
+  if (!detailed) {
+    ctx.fillStyle = '#556';
+    ctx.font = "8px 'Courier New'";
+    ctx.fillText(`k=${effectiveK}`, cx, cy + radius + 22);
+  }
+
+  return positions;
+}
+
+function layoutClocks() {
+  clockRects = [];
+  const navH = 44;
+  const botH = 72;
+  const statsW = 276;
+  const availW = (W - statsW - 20) * zoom;
+  const availH = (H - navH - botH) * zoom;
+
+  // Layout: 4 on top, 3 on bottom
+  const rows = [[2, 3, 5, 7], [11, 13, 17]];
+  const cellW = availW / 4;
+  const cellH = availH / 2;
+  const radius = Math.min(cellW, cellH) * 0.32;
+
+  const offsetX = panX + 10;
+  const offsetY = panY + navH + 8;
+
+  let idx = 0;
+  for (let row = 0; row < rows.length; row++) {
+    const cols = rows[row].length;
+    const rowOffsetX = (4 - cols) * cellW / 2;
+    for (let col = 0; col < cols; col++) {
+      const p = rows[row][col];
+      const cx = offsetX + rowOffsetX + col * cellW + cellW / 2;
+      const cy = offsetY + row * cellH + cellH / 2;
+      clockRects.push({ p, cx, cy, radius, idx });
+      idx++;
+    }
+  }
+  return { radius };
+}
+
+function updateStats() {
+  let html = '';
+  const effectiveK = {};
+  PRIMES.forEach(p => {
+    const ek = ((currentK - 1) % (p - 1)) + 1;
+    effectiveK[p] = ek;
+  });
+
+  html += `<div class="row"><span>Global k slider:</span><span class="val">${currentK}</span></div>`;
+  html += `<div style="margin-top:8px;border-top:1px solid rgba(0,170,255,.08);padding-top:6px"></div>`;
+
+  PRIMES.forEach(p => {
+    const ek = effectiveK[p];
+    const roots = primitiveRoots(p);
+    const isRoot = p > 2 && isPrimitiveRoot(ek, p);
+    const ord = p > 2 ? order(ek, p) : 1;
+
+    html += `<div style="margin-bottom:8px">`;
+    html += `<div class="row"><span>mod ${p}, k=${ek}</span><span class="val">ord=${ord}${isRoot ? ' <span style="color:#f80">ROOT</span>' : ''}</span></div>`;
+    if (p <= 13) {
+      html += `<div class="prim-roots">roots: {${roots.join(',')}}</div>`;
+    }
+
+    // Orders of all elements
+    if (p <= 7) {
+      let orderStr = '';
+      for (let a = 1; a < p; a++) {
+        orderStr += `${a}:${order(a, p)} `;
+      }
+      html += `<div class="orders">orders: ${orderStr.trim()}</div>`;
+    }
+    html += `</div>`;
+  });
+
+  // Zero divisor note
+  html += `<div style="margin-top:8px;border-top:1px solid rgba(0,170,255,.08);padding-top:6px;font-size:8px;color:#556">`;
+  html += `Prime moduli: no zero divisors<br>`;
+  html += `All non-zero k create<br>complete permutations of Z*<sub>p</sub>`;
+  html += `</div>`;
+
+  statsContent.innerHTML = html;
+}
+
+function getClockAt(mx, my) {
+  for (let i = 0; i < clockRects.length; i++) {
+    const c = clockRects[i];
+    const dx = mx - c.cx, dy = my - c.cy;
+    if (dx * dx + dy * dy < (c.radius + 20) * (c.radius + 20)) return i;
+  }
+  return -1;
+}
+
+function getNodeAt(mx, my, clockIdx) {
+  if (clockIdx < 0) return -1;
+  const c = clockRects[clockIdx];
+  for (let i = 0; i < c.p; i++) {
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / c.p;
+    const nx = c.cx + Math.cos(angle) * c.radius;
+    const ny = c.cy + Math.sin(angle) * c.radius;
+    const dx = mx - nx, dy = my - ny;
+    if (dx * dx + dy * dy < 100) return i;
+  }
+  return -1;
+}
+
+// Mouse events
+canvas.addEventListener('mousemove', e => {
+  const mx = e.clientX, my = e.clientY;
+  hoveredClock = getClockAt(mx, my);
+  hoveredNode = hoveredClock >= 0 ? getNodeAt(mx, my, hoveredClock) : -1;
+
+  if (hoveredNode >= 0 && hoveredClock >= 0) {
+    const c = clockRects[hoveredClock];
+    const ek = ((currentK - 1) % (c.p - 1)) + 1;
+    const result = (hoveredNode * ek) % c.p;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (mx + 14) + 'px';
+    tooltip.style.top = (my - 10) + 'px';
+    tooltip.innerHTML = `${hoveredNode} &times; ${ek} &equiv; ${result} (mod ${c.p})`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('click', e => {
+  const ci = getClockAt(e.clientX, e.clientY);
+  if (ci >= 0) showDetail(clockRects[ci].p);
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const dz = e.deltaY > 0 ? 0.95 : 1.05;
+  zoom = Math.max(0.5, Math.min(3, zoom * dz));
+
+  // Pan toward mouse
+  const mx = e.clientX, my = e.clientY;
+  panX = mx - (mx - panX) * dz;
+  panY = my - (my - panY) * dz;
+}, { passive: false });
+
+// Slider
+kSlider.addEventListener('input', () => {
+  currentK = parseInt(kSlider.value);
+  kDisplay.textContent = currentK;
+  animProgress = 0;
+  updateStats();
+});
+
+autoBtn.addEventListener('click', () => {
+  autoPlay = !autoPlay;
+  autoBtn.classList.toggle('active', autoPlay);
+});
+
+// Detail view
+function showDetail(p) {
+  detailPrime = p;
+  overlay.style.display = 'block';
+  detailDiv.style.display = 'block';
+
+  const size = Math.min(500, Math.min(W - 300, H - 120));
+  detailCanvas.width = size;
+  detailCanvas.height = size;
+
+  drawDetailClock(p, size);
+  drawDetailInfo(p);
+}
+
+function drawDetailClock(p, size) {
+  const dctx = detailCtx;
+  dctx.clearRect(0, 0, size, size);
+  dctx.fillStyle = '#060610';
+  dctx.fillRect(0, 0, size, size);
+
+  const ek = ((currentK - 1) % (p - 1)) + 1;
+  drawClock(size / 2, size / 2, size * 0.35, p, ek, dctx, true, 1);
+}
+
+function drawDetailInfo(p) {
+  const ek = ((currentK - 1) % (p - 1)) + 1;
+  let html = `<h3>Z/${p}Z &mdash; MULTIPLICATION TABLE (k=${ek})</h3>`;
+
+  // Multiplication table for current k
+  html += '<table>';
+  html += '<tr><th>n</th><th>n&times;k</th><th>mod ${p}</th></tr>'.replace('${p}', p);
+  for (let n = 0; n < p; n++) {
+    const res = (n * ek) % p;
+    html += `<tr><td>${n}</td><td>${n * ek}</td><td style="color:#0af">${res}</td></tr>`;
+  }
+  html += '</table>';
+
+  // Primitive roots
+  const roots = primitiveRoots(p);
+  html += `<div style="margin-top:10px;color:#f80">Primitive roots: {${roots.join(', ')}}</div>`;
+
+  // Full order table
+  html += `<div style="margin-top:8px"><strong style="color:#0af;font-size:8px">ELEMENT ORDERS:</strong></div>`;
+  html += '<table><tr><th>a</th><th>ord(a)</th><th>root?</th></tr>';
+  for (let a = 1; a < p; a++) {
+    const o = order(a, p);
+    const isR = o === p - 1;
+    html += `<tr><td>${a}</td><td>${o}</td><td style="color:${isR ? '#f80' : '#445'}">${isR ? 'YES' : '-'}</td></tr>`;
+  }
+  html += '</table>';
+
+  // Zero divisor note
+  html += `<div style="margin-top:10px;font-size:8px;color:#556;border-top:1px solid rgba(0,170,255,.08);padding-top:6px">`;
+  html += `Since ${p} is prime, Z/${p}Z is a field.<br>No zero divisors exist: if ab &equiv; 0 (mod ${p}),<br>then a=0 or b=0.`;
+  html += `</div>`;
+
+  detailInfo.innerHTML = html;
+}
+
+function hideDetail() {
+  detailPrime = -1;
+  overlay.style.display = 'none';
+  detailDiv.style.display = 'none';
+}
+
+overlay.addEventListener('click', hideDetail);
+closeDetail.addEventListener('click', hideDetail);
+
+// Main loop
+function draw(time) {
+  const dt = (time - lastTime) / 1000;
+  lastTime = time;
+
+  // Auto advance
+  if (autoPlay) {
+    const speed = parseInt(speedSlider.value);
+    autoTimer += dt * speed * 0.3;
+    if (autoTimer > 1) {
+      autoTimer = 0;
+      currentK++;
+      if (currentK > 16) currentK = 1;
+      kSlider.value = currentK;
+      kDisplay.textContent = currentK;
+      animProgress = 0;
+      updateStats();
+    }
+  }
+
+  animProgress = Math.min(1, animProgress + dt * 1.5);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(0,170,255,.02)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Title
+  ctx.fillStyle = '#0af';
+  ctx.font = "11px 'Courier New'";
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-MODULAR', 12, 58);
+  ctx.fillStyle = '#445';
+  ctx.font = "8px 'Courier New'";
+  ctx.fillText('Multiplication tables mod p for shield primes', 12, 70);
+
+  // Layout and draw clocks
+  layoutClocks();
+  clockRects.forEach((c, i) => {
+    const ek = ((currentK - 1) % (c.p - 1)) + 1;
+    const isHovered = hoveredClock === i;
+
+    ctx.save();
+    if (isHovered) {
+      ctx.shadowColor = 'rgba(0,170,255,.3)';
+      ctx.shadowBlur = 20;
+    }
+    drawClock(c.cx, c.cy, c.radius, c.p, ek, ctx, false, animProgress);
+    ctx.restore();
+  });
+
+  // Update detail if open
+  if (detailPrime > 0) {
+    const size = detailCanvas.width;
+    drawDetailClock(detailPrime, size);
+  }
+
+  requestAnimationFrame(draw);
+}
+
+updateStats();
+requestAnimationFrame(draw);
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

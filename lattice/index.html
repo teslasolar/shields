@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-LATTICE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 12px; right: 12px;
+  background: rgba(6,6,16,.92); border: 1px solid rgba(0,170,255,.15);
+  padding: 14px 18px; font-size: 11px; color: #8899aa;
+  font-family: 'Courier New', monospace; line-height: 1.7;
+  pointer-events: none; border-radius: 4px; min-width: 220px;
+  max-height: 90vh; overflow-y: auto;
+}
+#stats .title { color: #0af; font-size: 13px; letter-spacing: 3px; margin-bottom: 8px; }
+#stats .hc { color: #fa0; }
+#stats .level-line { color: #667; }
+#tooltip {
+  position: fixed; display: none;
+  background: rgba(6,6,16,.95); border: 1px solid rgba(0,170,255,.3);
+  padding: 10px 14px; font-size: 12px; color: #aabbcc;
+  font-family: 'Courier New', monospace; line-height: 1.6;
+  pointer-events: none; border-radius: 4px; z-index: 100;
+}
+#tooltip .num { color: #0ef; font-size: 16px; font-weight: bold; }
+#tooltip .fact { color: #8af; }
+#tooltip .info { color: #889; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats"></div>
+<div id="tooltip"></div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>M&#x2087; = 2&#x2077; - 1 = 127</span><span style="color:#223">|</span>
+  <span>510,510 = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statsEl = document.getElementById('stats');
+const tooltipEl = document.getElementById('tooltip');
+
+const MAX_N = 120;
+const PRIMES = [2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97,101,103,107,109,113];
+const PRIME_COLORS = {
+  2:'#ff3344', 3:'#3388ff', 5:'#33dd55', 7:'#ffdd33',
+  11:'#ff8833', 13:'#bb44ff', 17:'#33dddd',
+  19:'#ff6699', 23:'#99ff33', 29:'#ff99cc', 31:'#66ccff',
+  37:'#ddaa33', 41:'#aa66ff', 43:'#33ffaa', 47:'#ff4466',
+  53:'#7799ff', 59:'#ffaa77', 61:'#44ddbb', 67:'#dd77ff',
+  71:'#88ee44', 73:'#ff5588', 79:'#55bbdd', 83:'#dddd44',
+  89:'#cc55aa', 97:'#55ff99', 101:'#ff7744', 103:'#6688ee',
+  107:'#aadd55', 109:'#ee55cc', 113:'#55ddaa'
+};
+
+const OMEGA_COLORS = [
+  '#445566',
+  '#ff4466',
+  '#33aaff',
+  '#44dd88',
+  '#ffaa33',
+  '#cc55ff',
+  '#33ddcc',
+  '#ff6699'
+];
+
+function factorize(n) {
+  if (n === 1) return [];
+  let factors = [];
+  let temp = n;
+  for (let p of PRIMES) {
+    if (p * p > temp) break;
+    while (temp % p === 0) { factors.push(p); temp /= p; }
+  }
+  if (temp > 1) factors.push(temp);
+  return factors;
+}
+
+function omega(n) { return new Set(factorize(n)).size; }
+function bigOmega(n) { return factorize(n).length; }
+
+function divisorCount(n) {
+  let c = 0;
+  for (let i = 1; i * i <= n; i++) {
+    if (n % i === 0) { c++; if (i !== n / i) c++; }
+  }
+  return c;
+}
+
+function factorizationStr(n) {
+  if (n === 1) return '1';
+  let f = factorize(n);
+  let counts = {};
+  f.forEach(p => counts[p] = (counts[p]||0) + 1);
+  let parts = [];
+  for (let p in counts) {
+    if (counts[p] === 1) parts.push(p);
+    else parts.push(p + '^' + counts[p]);
+  }
+  return parts.join(' x ');
+}
+
+// Build nodes
+let nodes = [];
+let levels = {};
+let maxLevel = 0;
+
+for (let n = 1; n <= MAX_N; n++) {
+  let lv = bigOmega(n);
+  if (!levels[lv]) levels[lv] = [];
+  levels[lv].push(n);
+  if (lv > maxLevel) maxLevel = lv;
+  let om = omega(n);
+  let col;
+  if (n === 1) col = '#556677';
+  else if (om <= OMEGA_COLORS.length - 1) col = OMEGA_COLORS[om];
+  else col = '#ffffff';
+
+  nodes.push({
+    n, level: lv, omega: om,
+    factors: factorize(n),
+    factStr: factorizationStr(n),
+    divCount: divisorCount(n),
+    color: col,
+    x: 0, y: 0, targetX: 0, targetY: 0,
+    radius: n === 1 ? 10 : (om === 1 ? 8 : Math.max(5, 8 - om * 0.5)),
+    visible: false, appear: 0, floatPhase: Math.random() * Math.PI * 2
+  });
+}
+
+let nodeMap = {};
+nodes.forEach(nd => nodeMap[nd.n] = nd);
+
+// Build Hasse edges: n -> m where m = n*p for prime p, m <= MAX_N, and no intermediate
+let edges = [];
+for (let nd of nodes) {
+  let n = nd.n;
+  for (let p of PRIMES) {
+    let m = n * p;
+    if (m > MAX_N) continue;
+    // Check Hasse: no k with n|k, k|m, k!=n, k!=m
+    // For n*p, this is automatic: if m = n*p and p is prime, this IS a cover relation
+    // because bigOmega(m) = bigOmega(n) + 1
+    if (bigOmega(m) === bigOmega(n) + 1 && m % n === 0) {
+      edges.push({ from: n, to: m, prime: p });
+    }
+  }
+}
+
+// Layout: spread nodes on each level
+function layoutNodes() {
+  let W = canvas.width, H = canvas.height - 60;
+  let levelHeight = H / (maxLevel + 2);
+
+  for (let lv = 0; lv <= maxLevel; lv++) {
+    let arr = levels[lv];
+    if (!arr) continue;
+    arr.sort((a, b) => a - b);
+    let count = arr.length;
+    let spacing = W / (count + 1);
+    // Clamp spacing so nodes don't overlap
+    spacing = Math.min(spacing, 80);
+    let totalW = spacing * (count - 1);
+    let startX = (W - totalW) / 2;
+
+    for (let i = 0; i < count; i++) {
+      let nd = nodeMap[arr[i]];
+      nd.targetX = startX + i * spacing;
+      nd.targetY = H - lv * levelHeight - 40;
+    }
+  }
+}
+
+// Camera
+let cam = { x: 0, y: 0, zoom: 1 };
+let dragging = false, dragStart = { x: 0, y: 0 }, camStart = { x: 0, y: 0 };
+
+// Animation
+let buildTime = 0;
+let buildDelay = 400; // ms per level
+let startTime = 0;
+let hoverNode = null;
+let selectedNode = null;
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  layoutNodes();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Highly composite numbers up to 120
+let hcn = [1,2,4,6,12,24,36,48,60,120];
+
+// Stats panel
+function updateStats() {
+  let lines = ['<div class="title">SHIELD-LATTICE</div>'];
+  lines.push('<span style="color:#556">Divisibility Poset 1-' + MAX_N + '</span>');
+  lines.push('');
+  lines.push('<span style="color:#0af">Levels (\u03A9):</span>');
+  for (let lv = 0; lv <= maxLevel; lv++) {
+    let arr = levels[lv] || [];
+    lines.push('<span class="level-line">\u03A9=' + lv + ': ' + arr.length + ' nodes</span>');
+  }
+  lines.push('');
+  lines.push('<span style="color:#0af">Max level: ' + maxLevel + '</span>');
+  lines.push('<span style="color:#0af">Nodes: ' + nodes.length + '</span>');
+  lines.push('<span style="color:#0af">Edges: ' + edges.length + '</span>');
+  lines.push('');
+  lines.push('<span class="hc">Highly composite:</span>');
+  hcn.forEach(h => {
+    lines.push('<span class="hc">  ' + h + ' (' + divisorCount(h) + ' divisors)</span>');
+  });
+  statsEl.innerHTML = lines.join('<br>');
+}
+updateStats();
+
+// Interaction
+let mouseX = 0, mouseY = 0;
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - canvas.width/2) / cam.zoom + cam.x,
+    y: (sy - canvas.height/2) / cam.zoom + cam.y
+  };
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - cam.x) * cam.zoom + canvas.width/2,
+    y: (wy - cam.y) * cam.zoom + canvas.height/2
+  };
+}
+
+function getNodeAt(sx, sy) {
+  let wp = screenToWorld(sx, sy);
+  let best = null, bestDist = Infinity;
+  for (let nd of nodes) {
+    if (!nd.visible) continue;
+    let dx = nd.x - wp.x, dy = nd.y - wp.y;
+    let d = Math.sqrt(dx*dx + dy*dy);
+    let hitR = (nd.radius + 4) / cam.zoom;
+    if (d < hitR && d < bestDist) { bestDist = d; best = nd; }
+  }
+  return best;
+}
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  if (dragging) {
+    let dx = (e.clientX - dragStart.x) / cam.zoom;
+    let dy = (e.clientY - dragStart.y) / cam.zoom;
+    cam.x = camStart.x - dx;
+    cam.y = camStart.y - dy;
+    return;
+  }
+  hoverNode = getNodeAt(e.clientX, e.clientY);
+  if (hoverNode) {
+    tooltipEl.style.display = 'block';
+    tooltipEl.style.left = (e.clientX + 16) + 'px';
+    tooltipEl.style.top = (e.clientY - 10) + 'px';
+    // Clamp tooltip to viewport
+    let r = tooltipEl.getBoundingClientRect();
+    if (r.right > window.innerWidth - 10) {
+      tooltipEl.style.left = (e.clientX - r.width - 16) + 'px';
+    }
+    if (r.bottom > window.innerHeight - 40) {
+      tooltipEl.style.top = (e.clientY - r.height - 10) + 'px';
+    }
+    tooltipEl.innerHTML =
+      '<div class="num">' + hoverNode.n + '</div>' +
+      '<div class="fact">' + hoverNode.factStr + '</div>' +
+      '<div class="info">Divisors: ' + hoverNode.divCount + '</div>' +
+      '<div class="info">\u03A9 (level): ' + hoverNode.level + '</div>' +
+      '<div class="info">\u03C9 (distinct primes): ' + hoverNode.omega + '</div>';
+  } else {
+    tooltipEl.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  camStart = { x: cam.x, y: cam.y };
+  dragging = true;
+});
+
+canvas.addEventListener('mouseup', e => {
+  let dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+  dragging = false;
+  if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
+    selectedNode = getNodeAt(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  let factor = e.deltaY > 0 ? 0.9 : 1.1;
+  // Zoom towards mouse
+  let wp = screenToWorld(e.clientX, e.clientY);
+  cam.zoom *= factor;
+  cam.zoom = Math.max(0.15, Math.min(5, cam.zoom));
+  // Adjust cam so point under mouse stays put
+  let wpAfter = screenToWorld(e.clientX, e.clientY);
+  cam.x -= (wpAfter.x - wp.x);
+  cam.y -= (wpAfter.y - wp.y);
+}, { passive: false });
+
+// Divisors and multiples
+function getDivisors(n) {
+  let d = [];
+  for (let i = 1; i <= n; i++) { if (n % i === 0) d.push(i); }
+  return d;
+}
+function getMultiples(n) {
+  let m = [];
+  for (let i = n; i <= MAX_N; i += n) m.push(i);
+  return m;
+}
+
+// Draw
+function draw(now) {
+  if (!startTime) startTime = now;
+  let elapsed = now - startTime;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Subtle grid
+  ctx.save();
+  ctx.translate(canvas.width/2, canvas.height/2);
+  ctx.scale(cam.zoom, cam.zoom);
+  ctx.translate(-cam.x, -cam.y);
+
+  // Update visibility based on build animation
+  for (let nd of nodes) {
+    let levelDelay = nd.level * buildDelay;
+    if (elapsed > levelDelay) {
+      nd.visible = true;
+      nd.appear = Math.min(1, (elapsed - levelDelay) / 600);
+    }
+  }
+
+  // Float animation
+  let t = now * 0.001;
+
+  for (let nd of nodes) {
+    let floatY = Math.sin(t * 0.7 + nd.floatPhase) * 2;
+    let floatX = Math.cos(t * 0.5 + nd.floatPhase * 1.3) * 1.5;
+    nd.x = nd.targetX + floatX;
+    nd.y = nd.targetY + floatY;
+  }
+
+  // Selected node divisors/multiples
+  let selDivisors = new Set();
+  let selMultiples = new Set();
+  let selEdges = new Set();
+  if (selectedNode) {
+    getDivisors(selectedNode.n).forEach(d => { if (d <= MAX_N) selDivisors.add(d); });
+    getMultiples(selectedNode.n).forEach(m => { if (m <= MAX_N) selMultiples.add(m); });
+    // Highlight edges in the chain
+    for (let i = 0; i < edges.length; i++) {
+      let e = edges[i];
+      if ((selDivisors.has(e.from) && selDivisors.has(e.to)) ||
+          (selMultiples.has(e.from) && selMultiples.has(e.to))) {
+        selEdges.add(i);
+      }
+    }
+  }
+
+  // Draw edges
+  for (let i = 0; i < edges.length; i++) {
+    let e = edges[i];
+    let fromNd = nodeMap[e.from];
+    let toNd = nodeMap[e.to];
+    if (!fromNd.visible || !toNd.visible) continue;
+    let alpha = Math.min(fromNd.appear, toNd.appear);
+
+    let highlighted = selEdges.has(i);
+    let dimmed = selectedNode && !highlighted;
+
+    ctx.beginPath();
+    ctx.moveTo(fromNd.x, fromNd.y);
+    ctx.lineTo(toNd.x, toNd.y);
+    let pc = PRIME_COLORS[e.prime] || '#555';
+
+    if (dimmed) {
+      ctx.strokeStyle = 'rgba(40,40,60,' + (alpha * 0.12) + ')';
+      ctx.lineWidth = 0.5;
+    } else if (highlighted) {
+      ctx.strokeStyle = pc;
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.lineWidth = 2;
+    } else {
+      ctx.strokeStyle = pc;
+      ctx.globalAlpha = alpha * 0.25;
+      ctx.lineWidth = 0.7;
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw nodes
+  for (let nd of nodes) {
+    if (!nd.visible) continue;
+    let a = nd.appear;
+    let isSelected = selectedNode && selectedNode.n === nd.n;
+    let isDivisor = selDivisors.has(nd.n);
+    let isMultiple = selMultiples.has(nd.n);
+    let dimmed = selectedNode && !isDivisor && !isMultiple;
+    let isHC = hcn.includes(nd.n);
+
+    let r = nd.radius * a;
+
+    // Glow for selected/highlighted
+    if (isSelected) {
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r + 8, 0, Math.PI * 2);
+      let glow = ctx.createRadialGradient(nd.x, nd.y, r, nd.x, nd.y, r + 8);
+      glow.addColorStop(0, 'rgba(0,170,255,0.4)');
+      glow.addColorStop(1, 'rgba(0,170,255,0)');
+      ctx.fillStyle = glow;
+      ctx.fill();
+    } else if (isDivisor) {
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r + 5, 0, Math.PI * 2);
+      let glow = ctx.createRadialGradient(nd.x, nd.y, r, nd.x, nd.y, r + 5);
+      glow.addColorStop(0, 'rgba(0,255,170,0.3)');
+      glow.addColorStop(1, 'rgba(0,255,170,0)');
+      ctx.fillStyle = glow;
+      ctx.fill();
+    } else if (isMultiple) {
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r + 5, 0, Math.PI * 2);
+      let glow = ctx.createRadialGradient(nd.x, nd.y, r, nd.x, nd.y, r + 5);
+      glow.addColorStop(0, 'rgba(255,170,0,0.3)');
+      glow.addColorStop(1, 'rgba(255,170,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
+
+    // HC ring
+    if (isHC) {
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,170,0,' + (a * 0.6) + ')';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
+    let fillAlpha = dimmed ? a * 0.15 : a;
+    ctx.fillStyle = nd.color;
+    ctx.globalAlpha = fillAlpha;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Hover ring
+    if (hoverNode && hoverNode.n === nd.n) {
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#0ef';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Label
+    let fontSize = nd.n < 10 ? 9 : (nd.n < 100 ? 8 : 7);
+    if (cam.zoom > 0.5 || nd.level < 3 || isSelected || isDivisor || isMultiple) {
+      ctx.font = fontSize + 'px Courier New';
+      ctx.fillStyle = dimmed ? 'rgba(100,110,130,' + (a * 0.3) + ')' : 'rgba(200,210,230,' + a + ')';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(nd.n, nd.x, nd.y);
+    }
+  }
+
+  ctx.restore();
+
+  // Title
+  ctx.font = '14px Courier New';
+  ctx.fillStyle = 'rgba(0,170,255,0.5)';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-LATTICE', 16, 28);
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = 'rgba(80,100,130,0.7)';
+  ctx.fillText('Divisibility Poset  1-' + MAX_N + '  |  Hasse Diagram', 16, 46);
+  ctx.fillText('Scroll to zoom  |  Drag to pan  |  Click node to highlight', 16, 62);
+
+  // Prime legend
+  let legendX = 16, legendY = 84;
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = 'rgba(80,100,130,0.6)';
+  ctx.fillText('Edge colors (prime factor):', legendX, legendY);
+  legendY += 14;
+  let primeLabels = [[2,'2'],[3,'3'],[5,'5'],[7,'7'],[11,'11'],[13,'13'],[17,'17']];
+  for (let [p, label] of primeLabels) {
+    ctx.fillStyle = PRIME_COLORS[p];
+    ctx.fillRect(legendX, legendY - 6, 8, 8);
+    ctx.fillStyle = 'rgba(150,160,180,0.7)';
+    ctx.fillText(label, legendX + 12, legendY);
+    legendY += 14;
+  }
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
