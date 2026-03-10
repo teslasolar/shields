@@ -3,33 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SHIELD-NUMBER — 7-PILLAR FACTORIZATION</title>
+<title>SHIELD-NUMBER — GEOMETRIC FACTORIZATION</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh}
-canvas{display:block;margin:0 auto}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow:hidden;height:100vh;width:100vw}
+canvas#main{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
 #shield-nav{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(6,6,16,.92);border-bottom:1px solid rgba(0,170,255,.15);font-family:'Courier New',monospace;font-size:9px;letter-spacing:2px;backdrop-filter:blur(8px)}
 #shield-nav a{text-decoration:none}
-#main-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
-#overlay{position:fixed;top:34px;left:0;right:0;bottom:0;z-index:1;pointer-events:none}
-#overlay *{pointer-events:auto}
-#number-display{text-align:center;padding:18px 10px 6px;font-size:11px;color:#0ad;letter-spacing:1px;text-shadow:0 0 12px rgba(0,170,221,.5)}
-#number-display .big{font-size:clamp(10px,2vw,18px);color:#fc0;letter-spacing:2px;word-break:break-all;text-shadow:0 0 20px rgba(255,204,0,.4),0 0 40px rgba(255,204,0,.15);line-height:1.5}
-#number-display .label{font-size:10px;color:#068;margin-bottom:4px}
-#factorization{text-align:center;font-size:clamp(10px,1.5vw,14px);color:#0ad;padding:4px 10px;letter-spacing:1px}
+#hud{position:fixed;top:34px;left:0;right:0;z-index:10;pointer-events:none;text-align:center;padding:8px 10px 0}
+#hud *{pointer-events:auto}
+#number-display{font-size:clamp(9px,1.6vw,15px);color:#fc0;letter-spacing:2px;word-break:break-all;text-shadow:0 0 20px rgba(255,204,0,.4),0 0 40px rgba(255,204,0,.15);line-height:1.5;padding:2px 20px}
+#factorization{font-size:clamp(9px,1.2vw,13px);color:#0ad;padding:2px 10px;letter-spacing:1px}
 #factorization sup{color:#fc0;font-size:0.7em}
-#cascade-display{text-align:center;font-size:11px;color:#0a8;padding:4px 10px;min-height:22px;opacity:0.9}
-#binary-strip{text-align:center;padding:6px 10px;overflow:hidden}
-#binary-strip canvas{display:block;margin:0 auto;image-rendering:pixelated}
-#pillar-area{position:relative;width:100%;display:flex;justify-content:center;padding:8px 0}
-#pillar-canvas{display:block;margin:0 auto;cursor:pointer}
-#pillar-info{position:fixed;background:rgba(6,6,16,.95);border:1px solid #0ad;border-radius:6px;padding:10px 14px;font-size:11px;color:#0ad;z-index:100;pointer-events:none;display:none;text-shadow:0 0 6px rgba(0,170,221,.3);max-width:280px}
-#metrics-bar{position:fixed;bottom:26px;left:0;right:0;height:30px;background:rgba(6,6,16,.92);border-top:1px solid rgba(0,170,255,.15);z-index:10;display:flex;align-items:center;justify-content:center;gap:clamp(8px,3vw,32px);font-size:10px}
+#mode-bar{display:flex;justify-content:center;gap:4px;padding:6px 0 2px;flex-wrap:wrap}
+.mode-btn{background:rgba(0,170,221,.08);border:1px solid rgba(0,170,221,.2);color:#068;padding:3px 10px;font-family:'Courier New',monospace;font-size:9px;letter-spacing:2px;cursor:pointer;transition:all .3s;border-radius:2px}
+.mode-btn:hover{border-color:#0ad;color:#0ad;background:rgba(0,170,221,.15)}
+.mode-btn.active{border-color:#fc0;color:#fc0;background:rgba(255,204,0,.1);text-shadow:0 0 8px rgba(255,204,0,.3)}
+#view-label{font-size:10px;color:#068;letter-spacing:3px;padding:2px 0;text-align:center}
+#metrics-bar{position:fixed;bottom:26px;left:0;right:0;height:28px;background:rgba(6,6,16,.92);border-top:1px solid rgba(0,170,255,.15);z-index:10;display:flex;align-items:center;justify-content:center;gap:clamp(6px,2.5vw,28px);font-size:10px}
 .metric .lbl{color:#068;font-size:8px;display:block;text-align:center}
 .metric .val{color:#0ad;font-weight:bold;text-align:center;display:block}
 .metric .val.gold{color:#fc0}
 #footer{position:fixed;bottom:0;left:0;right:0;height:26px;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08);z-index:10;display:flex;align-items:center;justify-content:center;font-size:9px;color:#445;letter-spacing:2px}
 #footer span{color:#0ad}
+#pillar-info{position:fixed;background:rgba(6,6,16,.95);border:1px solid #0ad;border-radius:6px;padding:10px 14px;font-size:11px;color:#0ad;z-index:100;pointer-events:none;display:none;text-shadow:0 0 6px rgba(0,170,221,.3);max-width:280px}
 </style>
 </head>
 <body>
@@ -51,478 +48,817 @@ canvas{display:block;margin:0 auto}
 <a href="../perfect/" style="color:#4f4">PERFECT</a>
 </nav>
 
-<canvas id="main-canvas"></canvas>
+<canvas id="main"></canvas>
 
-<div id="overlay">
-  <div id="number-display">
-    <div class="label">SHIELD-NUMBER &middot; 7-PILLAR FACTORIZATION</div>
-    <div class="big" id="the-number"></div>
-  </div>
+<div id="hud">
+  <div id="number-display"></div>
   <div id="factorization">
     2<sup>2</sup> &times; 3<sup>8</sup> &times; 5<sup>3</sup> &times; 7<sup>7</sup> &times; 11<sup>15</sup> &times; 13<sup>6</sup> &times; 17<sup>12</sup>
   </div>
-  <div id="cascade-display" id="cascade-text"></div>
-  <div id="binary-strip"><canvas id="binary-canvas" height="18"></canvas></div>
-  <div id="pillar-area"><canvas id="pillar-canvas"></canvas></div>
+  <div id="mode-bar">
+    <button class="mode-btn active" data-mode="0">PILLARS</button>
+    <button class="mode-btn" data-mode="1">RADIAL</button>
+    <button class="mode-btn" data-mode="2">HEXGRID</button>
+    <button class="mode-btn" data-mode="3">CONSTELLATION</button>
+    <button class="mode-btn" data-mode="4">MATRIX</button>
+    <button class="mode-btn" data-mode="5">WAVEFORM</button>
+  </div>
+  <div id="view-label">7-PILLAR FACTORIZATION</div>
 </div>
 
 <div id="pillar-info"></div>
 
 <div id="metrics-bar">
   <div class="metric"><span class="lbl">PRIMES</span><span class="val">7</span></div>
-  <div class="metric"><span class="lbl">EXPONENTS SUM</span><span class="val gold">53</span></div>
-  <div class="metric"><span class="lbl">PRODUCT</span><span class="val gold">9! = 362,880</span></div>
+  <div class="metric"><span class="lbl">EXP SUM</span><span class="val gold">53</span></div>
+  <div class="metric"><span class="lbl">DIGITS</span><span class="val">50</span></div>
   <div class="metric"><span class="lbl">DIVISORS</span><span class="val">1,257,984</span></div>
   <div class="metric"><span class="lbl">BITS</span><span class="val">165</span></div>
 </div>
 
 <div id="footer">
-  <span>510,510</span>&nbsp;= 2&times;3&times;5&times;7&times;11&times;13&times;17 &middot; LIGHT TO LIGHT
+  <span>510,510</span>&nbsp;= 2&times;3&times;5&times;7&times;11&times;13&times;17 &middot; EVERY DIGIT SINGS
 </div>
 
 <script>
-// === DATA ===
+// ======== DATA ========
 const NUM_STR = "31736846399216804645406807161448227806067941438500";
-const NUM_DIGITS = NUM_STR.split('').map(Number);
+const DIGITS = NUM_STR.split('').map(Number);
 const PRIMES = [2, 3, 5, 7, 11, 13, 17];
 const EXPONENTS = [2, 8, 3, 7, 15, 6, 12];
 const COLORS = ['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'];
-const COLOR_RGB = [
-  [102,0,68],[0,170,221],[255,170,0],[255,68,68],[68,170,68],[170,68,255],[255,255,255]
-];
+const CRGB = [[102,0,68],[0,170,221],[255,170,0],[255,68,68],[68,170,68],[170,68,255],[255,255,255]];
 const MAX_EXP = 15;
-const BINARY_165 = (() => {
-  // Compute binary from the number string via BigInt
-  let n = BigInt("31736846399216804645406807161448227806067941438500");
-  let bits = n.toString(2);
-  while(bits.length < 165) bits = '0' + bits;
-  return bits;
+const BINARY = (() => {
+  let n = BigInt(NUM_STR);
+  let b = n.toString(2);
+  while(b.length < 165) b = '0'+b;
+  return b;
 })();
+const PRIME_POWERS = ["4","6561","125","823543","4177248169415651","4826809","582622237229761"];
+const MODE_NAMES = ['7-PILLAR FACTORIZATION','RADIAL PRIME ORBITS','HEXAGONAL DIGIT GRID','PRIME CONSTELLATION','DIGIT MATRIX','BINARY WAVEFORM'];
 
-// Prime power values as strings (precomputed)
-const PRIME_POWERS = [
-  "4",           // 2^2
-  "6561",        // 3^8
-  "125",         // 5^3
-  "823543",      // 7^7
-  "4177248169415651", // 11^15
-  "4826809",     // 13^6
-  "582622237229761"   // 17^12
-];
-
-// === MAIN CANVAS (background particles) ===
-const bgCanvas = document.getElementById('main-canvas');
-const bgCtx = bgCanvas.getContext('2d');
-
-function resizeBg(){
-  bgCanvas.width = window.innerWidth;
-  bgCanvas.height = window.innerHeight;
+// ======== CANVAS SETUP ========
+const C = document.getElementById('main');
+const ctx = C.getContext('2d');
+let W, H, cx, cy;
+function resize(){
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+  cx = W/2; cy = H/2;
 }
-resizeBg();
-window.addEventListener('resize', resizeBg);
+resize();
+window.addEventListener('resize', resize);
 
-// Background ambient particles
-const bgParticles = [];
-for(let i=0;i<80;i++){
-  bgParticles.push({
-    x: Math.random()*2000, y: Math.random()*2000,
-    vx: (Math.random()-0.5)*0.15, vy: -Math.random()*0.3-0.05,
-    r: Math.random()*1.5+0.5,
-    c: COLORS[Math.floor(Math.random()*7)],
-    a: Math.random()*0.3+0.05
+// ======== STATE ========
+let currentMode = 0;
+let targetMode = 0;
+let transitionT = 1; // 0..1, 1 = fully arrived
+let transitionDir = 1;
+const TRANS_SPEED = 0.025;
+let autoTimer = 0;
+const AUTO_INTERVAL = 720; // ~12s at 60fps
+let selectedPillar = -1;
+let mouseX = 0, mouseY = 0;
+
+// ======== POINTS: each view mode defines 50 point positions ========
+// Points represent the 50 digits
+let points = [];
+for(let i=0;i<50;i++){
+  points.push({
+    x:cx, y:cy, tx:cx, ty:cy, // current + target
+    sx:cx, sy:cy, // source (for transition)
+    r:4, tr:4, sr:4,
+    color: COLORS[i%7],
+    digit: DIGITS[i],
+    alpha: 1
   });
 }
 
-function drawBg(t){
-  const W=bgCanvas.width, H=bgCanvas.height;
-  bgCtx.fillStyle='#060610';
-  bgCtx.fillRect(0,0,W,H);
+// Extra geometry points for decorations per mode
+let geoLines = []; // {x1,y1,x2,y2,color,alpha}
+let geoCircles = []; // {x,y,r,color,alpha}
+let geoTargetLines = [];
+let geoTargetCircles = [];
+let geoSourceLines = [];
+let geoSourceCircles = [];
 
-  // Subtle radial glow
-  const grd = bgCtx.createRadialGradient(W/2,H*0.45,0,W/2,H*0.45,H*0.6);
-  grd.addColorStop(0,'rgba(0,40,80,0.06)');
-  grd.addColorStop(1,'rgba(6,6,16,0)');
-  bgCtx.fillStyle=grd;
-  bgCtx.fillRect(0,0,W,H);
-
-  for(const p of bgParticles){
-    p.x += p.vx;
-    p.y += p.vy;
-    if(p.y < -10) { p.y = H+10; p.x = Math.random()*W; }
-    if(p.x < -10) p.x = W+10;
-    if(p.x > W+10) p.x = -10;
-    bgCtx.globalAlpha = p.a * (0.5 + 0.5*Math.sin(t*0.001 + p.x));
-    bgCtx.fillStyle = p.c;
-    bgCtx.beginPath();
-    bgCtx.arc(p.x%W, p.y, p.r, 0, Math.PI*2);
-    bgCtx.fill();
-  }
-  bgCtx.globalAlpha=1;
+// ======== LAYOUT FUNCTIONS ========
+function getViewArea(){
+  const top = 155;
+  const bottom = H - 60;
+  const left = 30;
+  const right = W - 30;
+  return {top, bottom, left, right, w: right-left, h: bottom-top, cx: (left+right)/2, cy: (top+bottom)/2};
 }
 
-// === NUMBER DISPLAY ANIMATION ===
-const numEl = document.getElementById('the-number');
-let numGlowPhases = NUM_DIGITS.map((_,i) => Math.random()*Math.PI*2);
-function animateNumber(t){
-  let html = '';
-  for(let i=0;i<NUM_STR.length;i++){
-    const glow = 0.5 + 0.5*Math.sin(t*0.003 + numGlowPhases[i]);
-    const alpha = 0.6 + 0.4*glow;
-    const shadow = Math.floor(glow*20);
-    // Every 3 digits, add thin space for readability
-    if(i > 0 && (NUM_STR.length - i) % 3 === 0){
-      html += '<span style="display:inline-block;width:3px"></span>';
+// MODE 0: PILLARS
+function layoutPillars(){
+  const v = getViewArea();
+  const gap = 14;
+  const pw = Math.min(60, Math.floor((v.w - gap*8) / 7));
+  const maxH = v.h * 0.75;
+  const baseY = v.cy + v.h*0.35;
+  const lines = [], circles = [];
+
+  // Assign digits to pillars based on index
+  let di = 0;
+  for(let pi=0;pi<7;pi++){
+    const px = v.cx - (3.5*pw + 3*gap) + pi*(pw+gap) + pw/2;
+    const pillarH = (EXPONENTS[pi]/MAX_EXP) * maxH;
+    const topY = baseY - pillarH;
+
+    // Pillar outline
+    lines.push({x1:px-pw/2,y1:baseY,x2:px-pw/2,y2:topY,color:COLORS[pi],alpha:0.6});
+    lines.push({x1:px+pw/2,y1:baseY,x2:px+pw/2,y2:topY,color:COLORS[pi],alpha:0.6});
+    lines.push({x1:px-pw/2,y1:topY,x2:px+pw/2,y2:topY,color:COLORS[pi],alpha:0.6});
+
+    // Horizontal exp lines
+    for(let e=0;e<EXPONENTS[pi];e++){
+      const ly = topY + (pillarH/(EXPONENTS[pi]+1))*(e+1);
+      lines.push({x1:px-pw/2+3,y1:ly,x2:px+pw/2-3,y2:ly,color:COLORS[pi],alpha:0.15});
     }
-    html += `<span style="opacity:${alpha.toFixed(2)};text-shadow:0 0 ${shadow}px rgba(255,204,0,${(glow*0.6).toFixed(2)})">${NUM_STR[i]}</span>`;
-  }
-  numEl.innerHTML = html;
-}
 
-// === BINARY STRIP ===
-const binCanvas = document.getElementById('binary-canvas');
-const binCtx = binCanvas.getContext('2d');
-function drawBinary(t){
-  const cellW = Math.max(3, Math.min(6, Math.floor((window.innerWidth - 40) / 165)));
-  binCanvas.width = 165 * cellW;
-  binCanvas.height = 18;
-  binCtx.clearRect(0,0,binCanvas.width,18);
-  for(let i=0;i<165;i++){
-    const bit = BINARY_165[i] === '1';
-    const pulse = 0.5 + 0.5*Math.sin(t*0.002 + i*0.12);
-    if(bit){
-      const r = 0 + 170*pulse*0.3;
-      const g = 140 + 80*pulse;
-      const b = 200 + 55*pulse;
-      binCtx.fillStyle = `rgb(${Math.floor(r)},${Math.floor(g)},${Math.floor(b)})`;
-      binCtx.shadowColor = `rgba(0,200,255,${(pulse*0.6).toFixed(2)})`;
-      binCtx.shadowBlur = 4;
-    } else {
-      binCtx.fillStyle = `rgba(30,30,50,${(0.3+0.15*pulse).toFixed(2)})`;
-      binCtx.shadowColor = 'transparent';
-      binCtx.shadowBlur = 0;
+    // Place digits vertically in pillar
+    const digitsForPillar = Math.ceil(50/7);
+    for(let d=0;d<digitsForPillar && di<50;d++,di++){
+      const row = d;
+      const py = topY + 15 + row * Math.min(22, (pillarH-20)/digitsForPillar);
+      points[di].tx = px;
+      points[di].ty = py;
+      points[di].tr = Math.max(3, pw/5);
+      points[di].color = COLORS[pi];
     }
-    binCtx.fillRect(i*cellW, 2, cellW-1, 14);
   }
-  binCtx.shadowBlur = 0;
+  // base line
+  lines.push({x1:v.left,y1:baseY,x2:v.right,y2:baseY,color:'#0ad',alpha:0.15});
+  return {lines, circles};
 }
 
-// === PILLAR VISUALIZATION ===
-const pillarCanvas = document.getElementById('pillar-canvas');
-const pCtx = pillarCanvas.getContext('2d');
-const pillarInfo = document.getElementById('pillar-info');
+// MODE 1: RADIAL
+function layoutRadial(){
+  const v = getViewArea();
+  const maxR = Math.min(v.w, v.h) * 0.42;
+  const lines = [], circles = [];
 
-// Pillar particles
-const pillarParticles = [];
-for(let pi=0;pi<7;pi++){
-  const count = EXPONENTS[pi] * 2;
-  for(let j=0;j<count;j++){
-    pillarParticles.push({
-      pi, x:0, y:0,
-      offX: (Math.random()-0.5)*20,
-      speed: Math.random()*0.6+0.2,
-      phase: Math.random()*Math.PI*2,
-      size: Math.random()*2+0.8,
-      life: Math.random()
+  for(let pi=0;pi<7;pi++){
+    const ringR = maxR * (0.15 + 0.85*(pi/6));
+    circles.push({x:v.cx, y:v.cy, r:ringR, color:COLORS[pi], alpha:0.2});
+  }
+
+  // Place digits on rings
+  let di = 0;
+  for(let pi=0;pi<7;pi++){
+    const ringR = maxR * (0.15 + 0.85*(pi/6));
+    const count = Math.ceil(50/7);
+    for(let d=0;d<count && di<50;d++,di++){
+      const angle = (d/count) * Math.PI*2 - Math.PI/2;
+      points[di].tx = v.cx + Math.cos(angle)*ringR;
+      points[di].ty = v.cy + Math.sin(angle)*ringR;
+      points[di].tr = 4 + (EXPONENTS[pi]/MAX_EXP)*4;
+      points[di].color = COLORS[pi];
+    }
+  }
+
+  // Radial spokes
+  for(let i=0;i<7;i++){
+    const angle = (i/7)*Math.PI*2 - Math.PI/2;
+    lines.push({
+      x1:v.cx, y1:v.cy,
+      x2:v.cx+Math.cos(angle)*maxR, y2:v.cy+Math.sin(angle)*maxR,
+      color:COLORS[i], alpha:0.08
+    });
+  }
+  // Center marker
+  circles.push({x:v.cx, y:v.cy, r:4, color:'#fc0', alpha:0.8});
+  return {lines, circles};
+}
+
+// MODE 2: HEXGRID
+function layoutHexGrid(){
+  const v = getViewArea();
+  const cols = 10, rows = 5;
+  const hexR = Math.min(v.w/(cols*1.9), v.h/(rows*1.8));
+  const lines = [], circles = [];
+  const startX = v.cx - (cols-1)*hexR*0.87;
+  const startY = v.cy - (rows-1)*hexR*0.85;
+
+  let di = 0;
+  for(let row=0;row<rows;row++){
+    for(let col=0;col<cols && di<50;col++,di++){
+      const offset = (row%2)*hexR*0.87;
+      const px = startX + col*hexR*1.74 + offset;
+      const py = startY + row*hexR*1.7;
+
+      points[di].tx = px;
+      points[di].ty = py;
+      points[di].tr = hexR*0.55;
+
+      // Color by digit value mapping to prime
+      const d = DIGITS[di];
+      points[di].color = COLORS[d % 7];
+
+      // Hex outline
+      for(let h=0;h<6;h++){
+        const a1 = (h/6)*Math.PI*2 - Math.PI/6;
+        const a2 = ((h+1)/6)*Math.PI*2 - Math.PI/6;
+        lines.push({
+          x1: px+Math.cos(a1)*hexR*0.75, y1: py+Math.sin(a1)*hexR*0.75,
+          x2: px+Math.cos(a2)*hexR*0.75, y2: py+Math.sin(a2)*hexR*0.75,
+          color: COLORS[d%7], alpha: 0.15
+        });
+      }
+    }
+  }
+  return {lines, circles};
+}
+
+// MODE 3: CONSTELLATION
+function layoutConstellation(){
+  const v = getViewArea();
+  const lines = [], circles = [];
+
+  // Place digits in a scattered but structured pattern using golden angle
+  const golden = Math.PI*(3-Math.sqrt(5));
+  const maxR = Math.min(v.w, v.h)*0.4;
+
+  for(let i=0;i<50;i++){
+    const r = maxR * Math.sqrt((i+1)/51);
+    const angle = i * golden;
+    points[i].tx = v.cx + Math.cos(angle)*r;
+    points[i].ty = v.cy + Math.sin(angle)*r;
+    points[i].tr = 3 + DIGITS[i]*0.5;
+    points[i].color = COLORS[i%7];
+  }
+
+  // Connect digits that share prime factors
+  for(let i=0;i<50;i++){
+    for(let j=i+1;j<50;j++){
+      // Connect if digit values share a factor or are adjacent
+      if(Math.abs(i-j) === 1 || (DIGITS[i]+DIGITS[j])%7 === 0){
+        lines.push({
+          x1:points[i].tx, y1:points[i].ty,
+          x2:points[j].tx, y2:points[j].ty,
+          color: COLORS[(i+j)%7], alpha:0.06
+        });
+      }
+    }
+  }
+  // Brighter connections for 7-multiples
+  for(let i=0;i<50;i+=7){
+    for(let j=i+7;j<50;j+=7){
+      lines.push({
+        x1:points[i].tx, y1:points[i].ty,
+        x2:points[j].tx, y2:points[j].ty,
+        color: '#fc0', alpha:0.15
+      });
+    }
+  }
+  return {lines, circles};
+}
+
+// MODE 4: MATRIX
+function layoutMatrix(){
+  const v = getViewArea();
+  const cols = 10, rows = 5;
+  const cellW = Math.min(v.w*0.08, 50);
+  const cellH = Math.min(v.h*0.14, 50);
+  const lines = [], circles = [];
+
+  const gridW = cols*cellW;
+  const gridH = rows*cellH;
+  const ox = v.cx - gridW/2 + cellW/2;
+  const oy = v.cy - gridH/2 + cellH/2;
+
+  let di=0;
+  for(let row=0;row<rows;row++){
+    for(let col=0;col<cols && di<50;col++,di++){
+      points[di].tx = ox + col*cellW;
+      points[di].ty = oy + row*cellH;
+      points[di].tr = Math.min(cellW, cellH)*0.35;
+      // Color by binary: every 3rd digit gets special
+      points[di].color = BINARY[di*3 % 165]==='1' ? '#0ad' : COLORS[di%7];
+    }
+  }
+
+  // Grid lines
+  for(let row=0;row<=rows;row++){
+    const y = v.cy - gridH/2 + row*cellH;
+    lines.push({x1:v.cx-gridW/2, y1:y, x2:v.cx+gridW/2, y2:y, color:'#0ad', alpha:0.06});
+  }
+  for(let col=0;col<=cols;col++){
+    const x = v.cx - gridW/2 + col*cellW;
+    lines.push({x1:x, y1:v.cy-gridH/2, x2:x, y2:v.cy+gridH/2, color:'#0ad', alpha:0.06});
+  }
+
+  // Diagonal highlight for 7-row
+  for(let i=0;i<Math.min(rows,cols);i++){
+    const idx = i*cols+i;
+    if(idx<50){
+      circles.push({x:ox+i*cellW, y:oy+i*cellH, r:Math.min(cellW,cellH)*0.5, color:'#fc0', alpha:0.08});
+    }
+  }
+  return {lines, circles};
+}
+
+// MODE 5: WAVEFORM
+function layoutWaveform(){
+  const v = getViewArea();
+  const lines = [], circles = [];
+  const margin = 40;
+
+  // Place digits along a multi-frequency waveform
+  for(let i=0;i<50;i++){
+    const t = i/49;
+    const x = v.left + margin + t*(v.w - margin*2);
+
+    // Composite waveform from all 7 primes
+    let y = 0;
+    for(let pi=0;pi<7;pi++){
+      const freq = PRIMES[pi];
+      const amp = EXPONENTS[pi]/MAX_EXP;
+      y += Math.sin(t*freq*1.2 + pi*0.5) * amp;
+    }
+    y = v.cy + y * v.h * 0.12;
+
+    points[i].tx = x;
+    points[i].ty = y;
+    points[i].tr = 3 + DIGITS[i]*0.4;
+    points[i].color = COLORS[i%7];
+  }
+
+  // Wave guide lines per prime
+  for(let pi=0;pi<7;pi++){
+    const steps = 100;
+    for(let s=0;s<steps;s++){
+      const t1 = s/steps;
+      const t2 = (s+1)/steps;
+      const x1 = v.left + margin + t1*(v.w-margin*2);
+      const x2 = v.left + margin + t2*(v.w-margin*2);
+      let y1=0, y2=0;
+      const freq = PRIMES[pi];
+      const amp = EXPONENTS[pi]/MAX_EXP;
+      y1 = v.cy + Math.sin(t1*freq*1.2 + pi*0.5)*amp*v.h*0.12;
+      y2 = v.cy + Math.sin(t2*freq*1.2 + pi*0.5)*amp*v.h*0.12;
+      lines.push({x1,y1,x2,y2,color:COLORS[pi],alpha:0.08});
+    }
+  }
+
+  // Horizontal center line
+  lines.push({x1:v.left,y1:v.cy,x2:v.right,y2:v.cy,color:'#0ad',alpha:0.06});
+  return {lines, circles};
+}
+
+const LAYOUTS = [layoutPillars, layoutRadial, layoutHexGrid, layoutConstellation, layoutMatrix, layoutWaveform];
+
+// ======== TRANSITION ENGINE ========
+function startTransition(newMode){
+  if(newMode === currentMode && transitionT >= 1) return;
+  targetMode = newMode;
+  // Snapshot current positions as source
+  for(const p of points){
+    p.sx = p.x; p.sy = p.y; p.sr = p.r;
+  }
+  // Compute target layout
+  const layout = LAYOUTS[targetMode]();
+  geoTargetLines = layout.lines;
+  geoTargetCircles = layout.circles;
+  geoSourceLines = [...geoLines];
+  geoSourceCircles = [...geoCircles];
+  transitionT = 0;
+  selectedPillar = -1;
+
+  // Update label
+  document.getElementById('view-label').textContent = MODE_NAMES[targetMode];
+  // Update buttons
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.mode) === targetMode);
+  });
+}
+
+function updateTransition(){
+  if(transitionT < 1){
+    transitionT = Math.min(1, transitionT + TRANS_SPEED);
+    const ease = transitionT < 0.5
+      ? 4*transitionT*transitionT*transitionT
+      : 1 - Math.pow(-2*transitionT+2,3)/2; // cubic ease in-out
+
+    for(const p of points){
+      p.x = p.sx + (p.tx - p.sx)*ease;
+      p.y = p.sy + (p.ty - p.sy)*ease;
+      p.r = p.sr + (p.tr - p.sr)*ease;
+    }
+
+    // Interpolate geo lines
+    geoLines = [];
+    // Fade out source
+    for(const l of geoSourceLines){
+      geoLines.push({...l, alpha: l.alpha*(1-ease)});
+    }
+    // Fade in target
+    for(const l of geoTargetLines){
+      geoLines.push({...l, alpha: l.alpha*ease});
+    }
+    geoCircles = [];
+    for(const c of geoSourceCircles){
+      geoCircles.push({...c, alpha: c.alpha*(1-ease)});
+    }
+    for(const c of geoTargetCircles){
+      geoCircles.push({...c, alpha: c.alpha*ease});
+    }
+
+    if(transitionT >= 1){
+      currentMode = targetMode;
+      geoLines = geoTargetLines;
+      geoCircles = geoTargetCircles;
+    }
+  }
+}
+
+// ======== PARTICLE SYSTEM ========
+const particles = [];
+const MAX_PARTICLES = 200;
+
+function emitTransitionParticles(){
+  for(let i=0;i<30;i++){
+    const pi = Math.floor(Math.random()*50);
+    particles.push({
+      x: points[pi].x, y: points[pi].y,
+      vx: (Math.random()-0.5)*3,
+      vy: (Math.random()-0.5)*3,
+      life: 1,
+      decay: 0.01 + Math.random()*0.02,
+      r: 1+Math.random()*2,
+      color: points[pi].color
     });
   }
 }
 
-let selectedPillar = -1;
-let pillarRects = [];
-
-function getPillarDimensions(){
-  const W = Math.min(window.innerWidth - 20, 700);
-  const gap = 12;
-  const pillarW = Math.floor((W - gap*8) / 7);
-  const maxH = Math.min(260, window.innerHeight * 0.28);
-  return {W, gap, pillarW, maxH};
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    p.life -= p.decay;
+    if(p.life <= 0) particles.splice(i,1);
+  }
+  while(particles.length > MAX_PARTICLES) particles.shift();
 }
 
-function drawPillars(t){
-  const {W, gap, pillarW, maxH} = getPillarDimensions();
-  const H = maxH + 60;
-  pillarCanvas.width = W;
-  pillarCanvas.height = H;
-  pCtx.clearRect(0,0,W,H);
-  pillarRects = [];
-
-  const baseY = H - 30;
-
-  for(let i=0;i<7;i++){
-    const x = gap + i*(pillarW + gap);
-    const pillarH = (EXPONENTS[i]/MAX_EXP) * maxH;
-    const y = baseY - pillarH;
-    const isSelected = selectedPillar === i;
-    const pulse = 0.5 + 0.5*Math.sin(t*0.003 + i*0.8);
-
-    pillarRects.push({x, y, w:pillarW, h:pillarH, baseY});
-
-    // Glow behind pillar
-    const glowAlpha = isSelected ? 0.25 : 0.08 + 0.04*pulse;
-    const grd = pCtx.createRadialGradient(x+pillarW/2, baseY, 0, x+pillarW/2, baseY, pillarH*0.8);
-    grd.addColorStop(0, COLORS[i] + Math.floor(glowAlpha*255).toString(16).padStart(2,'0'));
-    grd.addColorStop(1, 'transparent');
-    pCtx.fillStyle = grd;
-    pCtx.fillRect(x-pillarW*0.5, y-20, pillarW*2, pillarH+40);
-
-    // Pillar body
-    const bodyGrd = pCtx.createLinearGradient(x,y,x,baseY);
-    const [cr,cg,cb] = COLOR_RGB[i];
-    bodyGrd.addColorStop(0, `rgba(${cr},${cg},${cb},${isSelected?1:0.85})`);
-    bodyGrd.addColorStop(1, `rgba(${cr},${cg},${cb},${isSelected?0.7:0.4})`);
-    pCtx.fillStyle = bodyGrd;
-
-    // Rounded top
-    const radius = Math.min(6, pillarW/3);
-    pCtx.beginPath();
-    pCtx.moveTo(x, baseY);
-    pCtx.lineTo(x, y+radius);
-    pCtx.arcTo(x, y, x+radius, y, radius);
-    pCtx.lineTo(x+pillarW-radius, y);
-    pCtx.arcTo(x+pillarW, y, x+pillarW, y+radius, radius);
-    pCtx.lineTo(x+pillarW, baseY);
-    pCtx.closePath();
-    pCtx.fill();
-
-    // Inner glow lines
-    pCtx.strokeStyle = `rgba(${cr},${cg},${cb},${0.15+0.15*pulse})`;
-    pCtx.lineWidth = 1;
-    const lines = Math.min(EXPONENTS[i], 15);
-    for(let l=0;l<lines;l++){
-      const ly = y + (pillarH/(lines+1))*(l+1);
-      pCtx.beginPath();
-      pCtx.moveTo(x+2, ly);
-      pCtx.lineTo(x+pillarW-2, ly);
-      pCtx.stroke();
-    }
-
-    // Border
-    if(isSelected){
-      pCtx.strokeStyle = COLORS[i];
-      pCtx.lineWidth = 2;
-      pCtx.shadowColor = COLORS[i];
-      pCtx.shadowBlur = 12;
-      pCtx.beginPath();
-      pCtx.moveTo(x, baseY);
-      pCtx.lineTo(x, y+radius);
-      pCtx.arcTo(x, y, x+radius, y, radius);
-      pCtx.lineTo(x+pillarW-radius, y);
-      pCtx.arcTo(x+pillarW, y, x+pillarW, y+radius, radius);
-      pCtx.lineTo(x+pillarW, baseY);
-      pCtx.stroke();
-      pCtx.shadowBlur = 0;
-    }
-
-    // Prime label at bottom
-    pCtx.fillStyle = COLORS[i];
-    pCtx.font = 'bold 11px Courier New';
-    pCtx.textAlign = 'center';
-    pCtx.fillText(PRIMES[i].toString(), x+pillarW/2, baseY+14);
-
-    // Exponent at top
-    pCtx.fillStyle = '#fff';
-    pCtx.font = '10px Courier New';
-    pCtx.fillText('^'+EXPONENTS[i], x+pillarW/2, y-6);
-  }
-
-  // Particles
-  for(const p of pillarParticles){
-    const rect = pillarRects[p.pi];
-    if(!rect) continue;
-    const cx = rect.x + rect.w/2 + p.offX;
-    p.life -= 0.003 * p.speed;
-    if(p.life <= 0) p.life = 1;
-    const py = rect.baseY - p.life * (rect.h + 40);
-    const alpha = p.life > 0.8 ? (1-p.life)*5 : p.life > 0.2 ? 1 : p.life*5;
-    const [cr,cg,cb] = COLOR_RGB[p.pi];
-    pCtx.globalAlpha = alpha * 0.5 * (selectedPillar===p.pi ? 1.5 : 0.7);
-    pCtx.fillStyle = COLORS[p.pi];
-    pCtx.beginPath();
-    pCtx.arc(cx + Math.sin(t*0.002+p.phase)*5, py, p.size, 0, Math.PI*2);
-    pCtx.fill();
-  }
-  pCtx.globalAlpha = 1;
-
-  // Base line
-  pCtx.strokeStyle = 'rgba(0,170,221,0.2)';
-  pCtx.lineWidth = 1;
-  pCtx.beginPath();
-  pCtx.moveTo(0, pillarRects[0].baseY + 0.5);
-  pCtx.lineTo(W, pillarRects[0].baseY + 0.5);
-  pCtx.stroke();
+// ======== AMBIENT PARTICLES ========
+const ambient = [];
+for(let i=0;i<60;i++){
+  ambient.push({
+    x:Math.random()*2000, y:Math.random()*2000,
+    vx:(Math.random()-0.5)*0.12, vy:-Math.random()*0.25-0.03,
+    r:Math.random()*1.2+0.4,
+    color:COLORS[Math.floor(Math.random()*7)],
+    a:Math.random()*0.2+0.03
+  });
 }
 
-// Click on pillar
-pillarCanvas.addEventListener('click', (e) => {
-  const rect = pillarCanvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) * (pillarCanvas.width / rect.width);
-  const my = (e.clientY - rect.top) * (pillarCanvas.height / rect.height);
-  let clicked = -1;
-  for(let i=0;i<7;i++){
-    const r = pillarRects[i];
-    if(r && mx >= r.x && mx <= r.x+r.w && my >= r.y && my <= r.baseY){
-      clicked = i;
-      break;
-    }
-  }
-  if(clicked === selectedPillar) selectedPillar = -1;
-  else selectedPillar = clicked;
-  updatePillarInfo(e);
-});
+// ======== RENDERING ========
+function drawBackground(t){
+  ctx.fillStyle='#060610';
+  ctx.fillRect(0,0,W,H);
 
-pillarCanvas.addEventListener('mousemove', (e) => {
-  const rect = pillarCanvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) * (pillarCanvas.width / rect.width);
-  const my = (e.clientY - rect.top) * (pillarCanvas.height / rect.height);
-  let hovered = false;
-  for(let i=0;i<7;i++){
-    const r = pillarRects[i];
-    if(r && mx >= r.x && mx <= r.x+r.w && my >= r.y && my <= r.baseY){
-      hovered = true;
-      break;
-    }
-  }
-  pillarCanvas.style.cursor = hovered ? 'pointer' : 'default';
-});
+  // Subtle center glow
+  const grd = ctx.createRadialGradient(cx,cy,0,cx,cy,H*0.5);
+  grd.addColorStop(0,'rgba(0,30,60,0.05)');
+  grd.addColorStop(1,'rgba(6,6,16,0)');
+  ctx.fillStyle=grd;
+  ctx.fillRect(0,0,W,H);
 
-function updatePillarInfo(e){
-  if(selectedPillar < 0){
-    pillarInfo.style.display = 'none';
-    return;
+  // Ambient particles
+  for(const p of ambient){
+    p.x += p.vx; p.y += p.vy;
+    if(p.y < -10){p.y=H+10;p.x=Math.random()*W;}
+    if(p.x<-10)p.x=W+10; if(p.x>W+10)p.x=-10;
+    ctx.globalAlpha=p.a*(0.5+0.5*Math.sin(t*0.001+p.x));
+    ctx.fillStyle=p.color;
+    ctx.beginPath();
+    ctx.arc(p.x%W,p.y,p.r,0,Math.PI*2);
+    ctx.fill();
   }
-  const i = selectedPillar;
-  pillarInfo.innerHTML = `
-    <div style="color:${COLORS[i]};font-weight:bold;font-size:13px;margin-bottom:4px">
-      Ring ${i} &mdash; p = ${PRIMES[i]}
-    </div>
-    <div style="color:#aaa;font-size:10px">
-      ${PRIMES[i]}<sup style="color:${COLORS[i]}">${EXPONENTS[i]}</sup> = ${Number(BigInt(PRIME_POWERS[i])).toLocaleString ? PRIME_POWERS[i] : PRIME_POWERS[i]}
-    </div>
-    <div style="color:#068;font-size:9px;margin-top:4px">
-      Exponent: ${EXPONENTS[i]} &middot; Contributes to ${EXPONENTS[i]+1} divisor choices
-    </div>
-  `;
-  pillarInfo.style.display = 'block';
-  // Position near the pillar
-  const cr = pillarCanvas.getBoundingClientRect();
-  const r = pillarRects[i];
-  const scale = cr.width / pillarCanvas.width;
-  let px = cr.left + (r.x + r.w/2) * scale;
-  let py = cr.top + r.y * scale - 10;
-  // Keep on screen
-  const pw = 260;
-  if(px + pw/2 > window.innerWidth - 10) px = window.innerWidth - pw - 10;
-  if(px - pw/2 < 10) px = 10;
-  else px -= pw/2;
-  if(py < 40) py = cr.top + r.baseY * scale + 10;
-  pillarInfo.style.left = px + 'px';
-  pillarInfo.style.top = (py - 70) + 'px';
+  ctx.globalAlpha=1;
 }
 
-// === FACTORIZATION CASCADE ===
-const cascadeEl = document.getElementById('cascade-display');
-let cascadeState = {
-  phase: 'idle',  // idle, running, done
-  primeIdx: 0,
-  expIdx: 0,
-  current: BigInt(NUM_STR),
-  timer: 0,
-  waitTimer: 0,
-  doneTimer: 0
-};
+function drawGeoLines(){
+  for(const l of geoLines){
+    if(l.alpha < 0.005) continue;
+    ctx.globalAlpha = l.alpha;
+    ctx.strokeStyle = l.color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(l.x1, l.y1);
+    ctx.lineTo(l.x2, l.y2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawGeoCircles(){
+  for(const c of geoCircles){
+    if(c.alpha < 0.005) continue;
+    ctx.globalAlpha = c.alpha;
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPoints(t){
+  for(let i=0;i<50;i++){
+    const p = points[i];
+    const pulse = 0.7 + 0.3*Math.sin(t*0.003 + i*0.4);
+
+    // Glow
+    ctx.globalAlpha = 0.15 * pulse;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r*2.5, 0, Math.PI*2);
+    ctx.fill();
+
+    // Body
+    ctx.globalAlpha = 0.85 * pulse;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
+
+    // Digit label
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.max(8,Math.floor(p.r*1.2))}px Courier New`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(DIGITS[i].toString(), p.x, p.y+1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawTransitionParticles(){
+  for(const p of particles){
+    ctx.globalAlpha = p.life * 0.7;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Binary strip at bottom of view area
+function drawBinaryStrip(t){
+  const v = getViewArea();
+  const y = v.bottom - 8;
+  const totalW = Math.min(W-40, 165*4);
+  const cellW = totalW/165;
+  const ox = (W-totalW)/2;
+  for(let i=0;i<165;i++){
+    const bit = BINARY[i]==='1';
+    const pulse = 0.5+0.5*Math.sin(t*0.002+i*0.12);
+    if(bit){
+      ctx.fillStyle = `rgba(0,${Math.floor(140+80*pulse)},${Math.floor(200+55*pulse)},${0.5+0.3*pulse})`;
+    } else {
+      ctx.fillStyle = `rgba(30,30,50,${0.15+0.1*pulse})`;
+    }
+    ctx.fillRect(ox+i*cellW, y, Math.max(1,cellW-0.5), 5);
+  }
+}
+
+// Mode-specific overlays that animate
+function drawModeOverlay(t){
+  const v = getViewArea();
+
+  if(currentMode===1 && transitionT>=1){
+    // RADIAL: rotating tick marks on rings
+    const maxR = Math.min(v.w,v.h)*0.42;
+    for(let pi=0;pi<7;pi++){
+      const ringR = maxR*(0.15+0.85*(pi/6));
+      const speed = 0.0003*(pi+1);
+      const angle = t*speed;
+      // Small orbiting marker
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = COLORS[pi];
+      ctx.beginPath();
+      ctx.arc(v.cx+Math.cos(angle)*ringR, v.cy+Math.sin(angle)*ringR, 2, 0, Math.PI*2);
+      ctx.fill();
+      // Prime label on ring
+      ctx.globalAlpha = 0.3;
+      ctx.font = '9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(PRIMES[pi].toString(), v.cx+Math.cos(angle+0.3)*ringR, v.cy+Math.sin(angle+0.3)*ringR);
+    }
+    ctx.globalAlpha=1;
+  }
+
+  if(currentMode===3 && transitionT>=1){
+    // CONSTELLATION: twinkling effect
+    for(let i=0;i<50;i++){
+      const twinkle = Math.sin(t*0.005+i*1.7);
+      if(twinkle>0.7){
+        ctx.globalAlpha = (twinkle-0.7)*2;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(points[i].x, points[i].y, points[i].r*0.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  if(currentMode===5 && transitionT>=1){
+    // WAVEFORM: scanning line
+    const scanX = v.left + 40 + ((t*0.08)%(v.w-80));
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#0ad';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(scanX, v.top);
+    ctx.lineTo(scanX, v.bottom);
+    ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  if(currentMode===2 && transitionT>=1){
+    // HEXGRID: highlight pulse propagation
+    const wave = (t*0.003)%50;
+    for(let i=0;i<50;i++){
+      const dist = Math.abs(i-wave);
+      if(dist<3){
+        ctx.globalAlpha = 0.2*(1-dist/3);
+        ctx.fillStyle = COLORS[i%7];
+        ctx.beginPath();
+        ctx.arc(points[i].x, points[i].y, points[i].r*1.8, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  if(currentMode===4 && transitionT>=1){
+    // MATRIX: "rain" effect - occasional digit dropping
+    const v2 = getViewArea();
+    const cols=10;
+    const cellW = Math.min(v2.w*0.08,50);
+    const ox = v2.cx - (cols*cellW)/2 + cellW/2;
+    for(let c=0;c<cols;c++){
+      const drop = ((t*0.05+c*37)%200);
+      if(drop<v2.h){
+        ctx.globalAlpha = 0.08*(1-drop/v2.h);
+        ctx.fillStyle = '#0ad';
+        ctx.font = '10px Courier New';
+        ctx.textAlign='center';
+        const d = DIGITS[(Math.floor(t*0.01+c*3))%50];
+        ctx.fillText(d.toString(), ox+c*cellW, v2.top+drop);
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+}
+
+// Cascade text
+const cascadeEl = document.createElement('div');
+cascadeEl.id = 'cascade-display';
+cascadeEl.style.cssText = 'position:fixed;bottom:58px;left:0;right:0;text-align:center;font-size:10px;color:#0a8;z-index:10;pointer-events:none';
+document.body.appendChild(cascadeEl);
+
+let cascadeState = {phase:'idle',primeIdx:0,expIdx:0,current:BigInt(NUM_STR),timer:0,waitTimer:0,doneTimer:0};
 
 function formatBigNum(n){
-  let s = n.toString();
-  // Add commas
-  let result = '';
-  for(let i=0;i<s.length;i++){
-    if(i>0 && (s.length-i)%3===0) result += ',';
-    result += s[i];
-  }
-  return result;
+  let s=n.toString(),r='';
+  for(let i=0;i<s.length;i++){if(i>0&&(s.length-i)%3===0)r+=',';r+=s[i];}
+  return r;
 }
 
 function updateCascade(t){
-  const cs = cascadeState;
-  cs.timer++;
-
-  if(cs.phase === 'idle'){
+  const cs=cascadeState; cs.timer++;
+  if(cs.phase==='idle'){
     cs.waitTimer++;
-    if(cs.waitTimer > 180){ // ~3 seconds
-      cs.phase = 'running';
-      cs.primeIdx = 0;
-      cs.expIdx = 0;
-      cs.current = BigInt(NUM_STR);
-      cs.timer = 0;
-    }
-    if(cs.waitTimer < 180){
-      const dots = '.'.repeat(Math.floor(t/500)%4);
-      cascadeEl.innerHTML = `<span style="color:#445">FACTORIZATION CASCADE${dots}</span>`;
+    if(cs.waitTimer>300){cs.phase='running';cs.primeIdx=0;cs.expIdx=0;cs.current=BigInt(NUM_STR);cs.timer=0;}
+    if(cs.waitTimer<300){const dots='.'.repeat(Math.floor(t/500)%4);cascadeEl.innerHTML=`<span style="color:#334">FACTORIZATION CASCADE${dots}</span>`;}
+    return;
+  }
+  if(cs.phase==='running'){
+    if(cs.timer%5===0){
+      const p=BigInt(PRIMES[cs.primeIdx]);cs.current=cs.current/p;cs.expIdx++;
+      const color=COLORS[cs.primeIdx];
+      const numStr=formatBigNum(cs.current);
+      const shortened=numStr.length>36?numStr.substring(0,15)+'...'+numStr.substring(numStr.length-15):numStr;
+      cascadeEl.innerHTML=`<span style="color:${color}">&div; ${PRIMES[cs.primeIdx]}</span> <span style="color:#068">[${cs.expIdx}/${EXPONENTS[cs.primeIdx]}]</span> <span style="color:#0a8">= ${shortened}</span>`;
+      if(cs.expIdx>=EXPONENTS[cs.primeIdx]){cs.primeIdx++;cs.expIdx=0;if(cs.primeIdx>=7){cs.phase='done';cs.doneTimer=0;cascadeEl.innerHTML=`<span style="color:#fc0">CASCADE COMPLETE &rarr; 1</span>`;}}
     }
     return;
   }
-
-  if(cs.phase === 'running'){
-    if(cs.timer % 4 === 0){ // speed: every 4 frames
-      const p = BigInt(PRIMES[cs.primeIdx]);
-      cs.current = cs.current / p;
-      cs.expIdx++;
-
-      const color = COLORS[cs.primeIdx];
-      const numStr = formatBigNum(cs.current);
-      const shortened = numStr.length > 40 ? numStr.substring(0,18) + '...' + numStr.substring(numStr.length-18) : numStr;
-      cascadeEl.innerHTML = `<span style="color:${color}">&div; ${PRIMES[cs.primeIdx]}</span> <span style="color:#068">[${cs.expIdx}/${EXPONENTS[cs.primeIdx]}]</span> <span style="color:#0a8">= ${shortened}</span>`;
-
-      if(cs.expIdx >= EXPONENTS[cs.primeIdx]){
-        cs.primeIdx++;
-        cs.expIdx = 0;
-        if(cs.primeIdx >= 7){
-          cs.phase = 'done';
-          cs.doneTimer = 0;
-          cascadeEl.innerHTML = `<span style="color:#fc0">CASCADE COMPLETE &rarr; 1</span>`;
-        }
-      }
-    }
-    return;
-  }
-
-  if(cs.phase === 'done'){
-    cs.doneTimer++;
-    if(cs.doneTimer > 300){ // wait ~5s then restart
-      cs.phase = 'idle';
-      cs.waitTimer = 0;
-    }
-  }
+  if(cs.phase==='done'){cs.doneTimer++;if(cs.doneTimer>300){cs.phase='idle';cs.waitTimer=0;}}
 }
 
-// === MAIN LOOP ===
-let startTime = performance.now();
+// ======== NUMBER DISPLAY ========
+const numEl=document.getElementById('number-display');
+const numPhases=DIGITS.map(()=>Math.random()*Math.PI*2);
+function animateNumber(t){
+  let html='';
+  for(let i=0;i<NUM_STR.length;i++){
+    const glow=0.5+0.5*Math.sin(t*0.003+numPhases[i]);
+    const alpha=(0.6+0.4*glow).toFixed(2);
+    const shadow=Math.floor(glow*20);
+    if(i>0&&(NUM_STR.length-i)%3===0) html+='<span style="display:inline-block;width:3px"></span>';
+    html+=`<span style="opacity:${alpha};text-shadow:0 0 ${shadow}px rgba(255,204,0,${(glow*0.6).toFixed(2)})">${NUM_STR[i]}</span>`;
+  }
+  numEl.innerHTML=html;
+}
+
+// ======== INTERACTION ========
+document.querySelectorAll('.mode-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const mode=parseInt(btn.dataset.mode);
+    emitTransitionParticles();
+    startTransition(mode);
+    autoTimer=0;
+  });
+});
+
+C.addEventListener('mousemove',(e)=>{mouseX=e.clientX;mouseY=e.clientY;});
+
+C.addEventListener('click',(e)=>{
+  // Check if clicking near a point
+  for(let i=0;i<50;i++){
+    const dx=e.clientX-points[i].x, dy=e.clientY-points[i].y;
+    if(Math.sqrt(dx*dx+dy*dy)<points[i].r*2){
+      // Emit particles from that point
+      for(let j=0;j<8;j++){
+        particles.push({
+          x:points[i].x, y:points[i].y,
+          vx:(Math.random()-0.5)*4, vy:(Math.random()-0.5)*4,
+          life:1, decay:0.02+Math.random()*0.02,
+          r:1.5+Math.random()*2, color:points[i].color
+        });
+      }
+      return;
+    }
+  }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown',(e)=>{
+  const key=parseInt(e.key);
+  if(key>=1 && key<=6){
+    emitTransitionParticles();
+    startTransition(key-1);
+    autoTimer=0;
+  }
+  if(e.key===' '){
+    e.preventDefault();
+    emitTransitionParticles();
+    startTransition((currentMode+1)%6);
+    autoTimer=0;
+  }
+});
+
+// ======== INIT & MAIN LOOP ========
+// Initial layout
+const initLayout = LAYOUTS[0]();
+geoLines = initLayout.lines;
+geoCircles = initLayout.circles;
+for(const p of points){p.x=p.tx;p.y=p.ty;p.r=p.tr;}
+
+let lastFrame=0;
 function frame(now){
-  const t = now - startTime;
-  drawBg(t);
+  const t = now;
+  const dt = now-lastFrame;
+  lastFrame=now;
+
+  // Auto-cycle
+  autoTimer++;
+  if(autoTimer > AUTO_INTERVAL){
+    autoTimer=0;
+    emitTransitionParticles();
+    startTransition((currentMode+1)%6);
+  }
+
+  resize(); // keep canvas sized
+  updateTransition();
+  updateParticles();
+
+  drawBackground(t);
+  drawGeoLines();
+  drawGeoCircles();
+  drawModeOverlay(t);
+  drawPoints(t);
+  drawTransitionParticles();
+  drawBinaryStrip(t);
   animateNumber(t);
-  drawBinary(t);
-  drawPillars(t);
   updateCascade(t);
+
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-
-// Handle window resize for pillar info repositioning
-window.addEventListener('resize', () => {
-  if(selectedPillar >= 0){
-    pillarInfo.style.display = 'none';
-    selectedPillar = -1;
-  }
-});
-
-// Close pillar info on click outside
-document.addEventListener('click', (e) => {
-  if(!pillarCanvas.contains(e.target) && !pillarInfo.contains(e.target)){
-    selectedPillar = -1;
-    pillarInfo.style.display = 'none';
-  }
-});
 </script>
 </body>
 </html>
