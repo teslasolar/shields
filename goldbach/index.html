@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-GOLDBACH</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh;display:flex;flex-direction:column}
+#shield-nav{display:flex;flex-wrap:wrap;gap:6px 10px;padding:10px 16px;background:rgba(6,6,16,.95);border-bottom:1px solid #1a1a2e;font-size:12px;z-index:100;position:sticky;top:0}
+#shield-nav a{text-decoration:none;transition:text-shadow .3s}
+#shield-nav a:hover{text-shadow:0 0 8px currentColor}
+h1{text-align:center;font-size:28px;color:#4ff;margin:18px 0 4px;text-shadow:0 0 20px rgba(68,255,255,.4),0 0 60px rgba(68,255,255,.15);letter-spacing:6px}
+.subtitle{text-align:center;color:#556;font-size:12px;margin-bottom:10px;letter-spacing:2px}
+.stats-bar{display:flex;justify-content:center;gap:30px;padding:8px;font-size:11px;color:#667}
+.stats-bar span{color:#4ff}
+#main-wrap{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 20px}
+#comet-canvas{display:block;cursor:crosshair;max-width:100%}
+#arc-canvas{display:block;cursor:pointer;max-width:100%}
+#tooltip{position:fixed;background:rgba(6,6,20,.92);border:1px solid #4ff;color:#4ff;padding:6px 12px;font-size:12px;font-family:'Courier New',monospace;pointer-events:none;display:none;z-index:200;border-radius:3px;box-shadow:0 0 12px rgba(68,255,255,.3)}
+#info-panel{text-align:center;margin:8px 0;font-size:13px;color:#889;min-height:22px}
+#info-panel .hl{color:#4ff;font-weight:bold}
+#decomp-panel{text-align:center;margin:4px 0 10px;font-size:12px;color:#99a;min-height:20px;max-width:900px}
+#decomp-panel .pair{display:inline-block;margin:2px 6px;padding:2px 8px;border:1px solid #223;border-radius:3px;transition:all .3s}
+#decomp-panel .pair:hover{border-color:#4ff;color:#4ff;box-shadow:0 0 8px rgba(68,255,255,.3)}
+footer{text-align:center;padding:16px;font-size:11px;color:#334;border-top:1px solid #111;letter-spacing:1px;margin-top:auto}
+footer .primorial{color:#4ff;font-size:13px}
+footer .conjecture{color:#667;margin-top:4px}
+.glow{animation:glow-pulse 2s ease-in-out infinite}
+@keyframes glow-pulse{0%,100%{text-shadow:0 0 10px rgba(68,255,255,.3)}50%{text-shadow:0 0 25px rgba(68,255,255,.6),0 0 50px rgba(68,255,255,.2)}}
+</style>
+</head>
+<body>
+<nav id="shield-nav">
+<a href="../" style="color:#0af;margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/" style="color:#604">ORB</a>
+<a href="../cascade/" style="color:#fa0">CASCADE</a>
+<a href="../breath/" style="color:#a4f">BREATH</a>
+<a href="../flat/" style="color:#0f8">FLAT</a>
+<a href="../tree/" style="color:#4a4">TREE</a>
+<a href="../drug/" style="color:#f44">DRUG</a>
+<a href="../network/" style="color:#fc0">NETWORK</a>
+<a href="../number/" style="color:#fff">NUMBER</a>
+<a href="../spiral/" style="color:#0ad">SPIRAL</a>
+<a href="../sieve/" style="color:#f80">SIEVE</a>
+<a href="../twin/" style="color:#88f">TWIN</a>
+<a href="../perfect/" style="color:#4f4">PERFECT</a>
+<a href="../fibonacci/" style="color:#fc0">FIBONACCI</a>
+<a href="../fractal/" style="color:#f0a">FRACTAL</a>
+<a href="../goldbach/" style="color:#4ff;text-shadow:0 0 6px rgba(68,255,255,.5)">GOLDBACH</a>
+<a href="../hexagon/" style="color:#ff4">HEXAGON</a>
+<a href="../flow/" style="color:#0f8">FLOW</a>
+<a href="../harmony/" style="color:#f4a">HARMONY</a>
+</nav>
+
+<h1 class="glow">SHIELD-GOLDBACH</h1>
+<div class="subtitle">EVERY EVEN NUMBER IS THE SUM OF TWO PRIMES</div>
+
+<div class="stats-bar">
+<div>VERIFIED: <span>n &le; 4&times;10&sup1;&sup8;</span></div>
+<div>RANGE: <span>4 &ndash; 200</span></div>
+<div id="stat-current">CURRENT: <span>--</span></div>
+<div id="stat-pairs">PAIRS: <span>--</span></div>
+</div>
+
+<div id="main-wrap">
+<canvas id="comet-canvas"></canvas>
+<div id="info-panel"></div>
+<canvas id="arc-canvas"></canvas>
+<div id="decomp-panel"></div>
+</div>
+
+<div id="tooltip"></div>
+
+<footer>
+<div class="primorial">510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17</div>
+<div class="conjecture">EVERY EVEN NUMBER IS THE SUM OF TWO PRIMES</div>
+</footer>
+
+<script>
+// --- Primes & Goldbach ---
+function sieve(max){const s=new Uint8Array(max+1);s[0]=s[1]=1;for(let i=2;i*i<=max;i++)if(!s[i])for(let j=i*i;j<=max;j+=i)s[j]=1;const p=[];for(let i=2;i<=max;i++)if(!s[i])p.push(i);return p}
+const MAX_N=200;
+const primes=sieve(MAX_N);
+const primeSet=new Set(primes);
+function goldbachPairs(n){const pairs=[];for(let i=0;i<primes.length;i++){const p=primes[i];if(p>n/2)break;const q=n-p;if(primeSet.has(q))pairs.push([p,q])}return pairs}
+const evenNums=[];
+const pairsMap={};
+let maxPairs=0;
+for(let n=4;n<=MAX_N;n+=2){evenNums.push(n);const gp=goldbachPairs(n);pairsMap[n]=gp;if(gp.length>maxPairs)maxPairs=gp.length}
+
+const PALETTE=['#660044','#00aadd','#ffaa00','#ff4444','#44aa44','#aa44ff','#ffffff'];
+function colorForSmallestPrime(p){
+  if(p===2)return PALETTE[0];if(p===3)return PALETTE[1];if(p===5)return PALETTE[2];
+  if(p===7)return PALETTE[3];if(p<=13)return PALETTE[4];if(p<=31)return PALETTE[5];
+  return PALETTE[6];
+}
+
+// 510510 factorization primes
+const specialPrimes=new Set([2,3,5,7,11,13,17]);
+// Even numbers that are sums of two special primes
+const specialEvens=new Set();
+for(let a of specialPrimes)for(let b of specialPrimes)if(a+b>=4&&a+b<=MAX_N&&(a+b)%2===0)specialEvens.add(a+b);
+
+// --- Canvases ---
+const cometCanvas=document.getElementById('comet-canvas');
+const cometCtx=cometCanvas.getContext('2d');
+const arcCanvas=document.getElementById('arc-canvas');
+const arcCtx=arcCanvas.getContext('2d');
+const tooltip=document.getElementById('tooltip');
+const infoPanel=document.getElementById('info-panel');
+const decompPanel=document.getElementById('decomp-panel');
+
+let W,cometH,arcH;
+function resize(){
+  W=Math.min(window.innerWidth-40,1100);
+  cometH=280;arcH=220;
+  cometCanvas.width=W;cometCanvas.height=cometH;
+  arcCanvas.width=W;arcCanvas.height=arcH;
+  cometCanvas.style.width=W+'px';cometCanvas.style.height=cometH+'px';
+  arcCanvas.style.width=W+'px';arcCanvas.style.height=arcH+'px';
+}
+resize();
+window.addEventListener('resize',()=>{resize();drawComet();drawArcs()});
+
+// --- Comet Chart ---
+const MARGIN_L=45,MARGIN_R=20,MARGIN_T=30,MARGIN_B=40;
+function xForN(n){return MARGIN_L+(n-4)/(MAX_N-4)*(W-MARGIN_L-MARGIN_R)}
+function yForCount(c){return MARGIN_T+(1-c/maxPairs)*(cometH-MARGIN_T-MARGIN_B)}
+
+let animIndex=0;
+let revealed=new Set();
+let particles=[];
+let selectedN=null;
+let autoMode=true;
+let autoTimer=0;
+const AUTO_INTERVAL=120;
+
+function drawComet(){
+  const ctx=cometCtx;
+  ctx.clearRect(0,0,W,cometH);
+
+  // Grid
+  ctx.strokeStyle='#111';ctx.lineWidth=0.5;
+  for(let c=0;c<=maxPairs;c+=5){
+    const y=yForCount(c);
+    ctx.beginPath();ctx.moveTo(MARGIN_L,y);ctx.lineTo(W-MARGIN_R,y);ctx.stroke();
+    if(c%5===0){ctx.fillStyle='#334';ctx.font='9px monospace';ctx.textAlign='right';ctx.fillText(c,MARGIN_L-6,y+3)}
+  }
+
+  // X axis labels
+  ctx.fillStyle='#334';ctx.font='9px monospace';ctx.textAlign='center';
+  for(let n=4;n<=MAX_N;n+=10){
+    const x=xForN(n);
+    ctx.fillText(n,x,cometH-MARGIN_B+14);
+    ctx.beginPath();ctx.moveTo(x,MARGIN_T);ctx.lineTo(x,cometH-MARGIN_B);ctx.strokeStyle='#0a0a15';ctx.stroke();
+  }
+
+  // Axis labels
+  ctx.fillStyle='#556';ctx.font='10px monospace';ctx.textAlign='center';
+  ctx.fillText('Even Number n',W/2,cometH-4);
+  ctx.save();ctx.translate(12,cometH/2);ctx.rotate(-Math.PI/2);ctx.fillText('Goldbach Pairs',0,0);ctx.restore();
+
+  // Comet trail + dots
+  ctx.lineWidth=1;
+  let prevX=null,prevY=null;
+  for(const n of evenNums){
+    if(!revealed.has(n))continue;
+    const pairs=pairsMap[n];
+    const count=pairs.length;
+    const x=xForN(n);
+    const y=yForCount(count);
+    const smallestP=pairs[0][0];
+    const col=colorForSmallestPrime(smallestP);
+
+    // Trail line
+    if(prevX!==null){
+      const grad=ctx.createLinearGradient(prevX,prevY,x,y);
+      grad.addColorStop(0,'rgba(68,255,255,.05)');grad.addColorStop(1,'rgba(68,255,255,.15)');
+      ctx.strokeStyle=grad;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(prevX,prevY);ctx.lineTo(x,y);ctx.stroke();
+    }
+    prevX=x;prevY=y;
+
+    // Glow
+    const isSpecial=specialEvens.has(n);
+    const isSelected=n===selectedN;
+    const glowR=isSelected?18:isSpecial?10:6;
+    const grad2=ctx.createRadialGradient(x,y,0,x,y,glowR);
+    grad2.addColorStop(0,col);grad2.addColorStop(1,'transparent');
+    ctx.fillStyle=grad2;
+    ctx.beginPath();ctx.arc(x,y,glowR,0,Math.PI*2);ctx.fill();
+
+    // Dot
+    const r=isSelected?5:isSpecial?4:3;
+    ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+
+    if(isSpecial){
+      ctx.strokeStyle='rgba(68,255,255,.6)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.stroke();
+    }
+    if(isSelected){
+      ctx.strokeStyle='#4ff';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.stroke();
+    }
+  }
+
+  // Particles
+  drawParticles(ctx);
+}
+
+// --- Particles ---
+function spawnParticles(x,y,col,count){
+  for(let i=0;i<count;i++){
+    const angle=Math.random()*Math.PI*2;
+    const speed=1+Math.random()*3;
+    particles.push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:1,col,decay:0.01+Math.random()*0.02});
+  }
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;p.vy+=0.02;p.life-=p.decay;
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+function drawParticles(ctx){
+  for(const p of particles){
+    ctx.globalAlpha=p.life*0.8;
+    ctx.fillStyle=p.col;
+    ctx.beginPath();ctx.arc(p.x,p.y,1.5*p.life,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+// --- Arc Visualization ---
+let arcAnim=0;
+let arcPairs=[];
+let arcN=null;
+let arcParticles=[];
+
+function drawArcs(){
+  const ctx=arcCtx;
+  ctx.clearRect(0,0,W,arcH);
+
+  if(!arcN)return;
+
+  const pairs=arcPairs;
+  const lineY=arcH-45;
+  const maxP=arcN;
+
+  // Number line
+  ctx.strokeStyle='#1a1a2e';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(MARGIN_L,lineY);ctx.lineTo(W-MARGIN_R,lineY);ctx.stroke();
+
+  // Ticks for primes up to arcN
+  const pInRange=primes.filter(p=>p<=arcN);
+  ctx.fillStyle='#334';ctx.font='9px monospace';ctx.textAlign='center';
+
+  for(const p of pInRange){
+    const x=MARGIN_L+(p/maxP)*(W-MARGIN_L-MARGIN_R);
+    ctx.strokeStyle='#222';ctx.beginPath();ctx.moveTo(x,lineY-4);ctx.lineTo(x,lineY+4);ctx.stroke();
+    ctx.fillStyle='#445';ctx.fillText(p,x,lineY+16);
+  }
+
+  // Title
+  ctx.fillStyle='#4ff';ctx.font='12px monospace';ctx.textAlign='center';
+  ctx.fillText(arcN+' = sum of two primes',W/2,18);
+
+  // Draw arcs for each pair
+  const progress=Math.min(arcAnim/60,1);
+  const eased=1-Math.pow(1-progress,3);
+
+  for(let i=0;i<pairs.length;i++){
+    const [p,q]=pairs[i];
+    const frac=Math.min(eased*pairs.length-i,1);
+    if(frac<=0)continue;
+
+    const x1=MARGIN_L+(p/maxP)*(W-MARGIN_L-MARGIN_R);
+    const x2=MARGIN_L+(q/maxP)*(W-MARGIN_L-MARGIN_R);
+    const midX=(x1+x2)/2;
+    const arcHeight=30+((x2-x1)/W)*100;
+
+    const col=colorForSmallestPrime(p);
+
+    // Arc
+    ctx.globalAlpha=frac*0.7;
+    ctx.strokeStyle=col;ctx.lineWidth=2;
+    ctx.shadowColor=col;ctx.shadowBlur=8;
+    ctx.beginPath();
+    ctx.moveTo(x1,lineY);
+    ctx.quadraticCurveTo(midX,lineY-arcHeight*frac,x2,lineY);
+    ctx.stroke();
+    ctx.shadowBlur=0;
+
+    // Endpoints
+    ctx.globalAlpha=frac;
+    const isSpec1=specialPrimes.has(p);
+    const isSpec2=specialPrimes.has(q);
+
+    // P dot
+    ctx.fillStyle=isSpec1?'#4ff':col;
+    ctx.beginPath();ctx.arc(x1,lineY,isSpec1?5:4,0,Math.PI*2);ctx.fill();
+    if(isSpec1){ctx.strokeStyle='rgba(68,255,255,.5)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(x1,lineY,8,0,Math.PI*2);ctx.stroke()}
+
+    // Q dot
+    ctx.fillStyle=isSpec2?'#4ff':col;
+    ctx.beginPath();ctx.arc(x2,lineY,isSpec2?5:4,0,Math.PI*2);ctx.fill();
+    if(isSpec2){ctx.strokeStyle='rgba(68,255,255,.5)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(x2,lineY,8,0,Math.PI*2);ctx.stroke()}
+
+    // Labels at arc peak
+    if(frac>0.5){
+      ctx.globalAlpha=(frac-0.5)*2;
+      ctx.fillStyle=col;ctx.font='bold 10px monospace';ctx.textAlign='center';
+      ctx.fillText(p+'+'+q,midX,lineY-arcHeight*frac-6);
+    }
+
+    ctx.globalAlpha=1;
+  }
+
+  // Arc particles
+  for(const ap of arcParticles){
+    ctx.globalAlpha=ap.life*0.6;
+    ctx.fillStyle=ap.col;
+    const r=2*ap.life;
+    ctx.beginPath();ctx.arc(ap.x,ap.y,r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function selectN(n){
+  selectedN=n;arcN=n;
+  arcPairs=pairsMap[n]||[];
+  arcAnim=0;
+  arcParticles=[];
+
+  // Spawn particles on comet
+  const x=xForN(n);const y=yForCount(arcPairs.length);
+  const col=arcPairs.length?colorForSmallestPrime(arcPairs[0][0]):'#4ff';
+  spawnParticles(x,y,col,12);
+
+  // Info
+  infoPanel.innerHTML='<span class="hl">'+n+'</span> has <span class="hl">'+arcPairs.length+'</span> Goldbach pair'+(arcPairs.length!==1?'s':'');
+
+  // Decompositions
+  let html='';
+  for(const [p,q] of arcPairs){
+    const sCol=colorForSmallestPrime(p);
+    html+='<span class="pair" style="color:'+sCol+'">'+p+' + '+q+'</span>';
+  }
+  decompPanel.innerHTML=html;
+
+  document.getElementById('stat-current').innerHTML='CURRENT: <span>'+n+'</span>';
+  document.getElementById('stat-pairs').innerHTML='PAIRS: <span>'+arcPairs.length+'</span>';
+}
+
+// --- Mouse interaction ---
+function nFromMouseX(mx){
+  const rect=cometCanvas.getBoundingClientRect();
+  const x=mx-rect.left;
+  // find closest even number
+  let bestN=null,bestDist=Infinity;
+  for(const n of evenNums){
+    const nx=xForN(n);
+    const d=Math.abs(nx-x);
+    if(d<bestDist){bestDist=d;bestN=n}
+  }
+  return bestDist<15?bestN:null;
+}
+
+cometCanvas.addEventListener('mousemove',e=>{
+  const n=nFromMouseX(e.clientX);
+  if(n){
+    const pairs=pairsMap[n];
+    tooltip.style.display='block';
+    tooltip.style.left=(e.clientX+14)+'px';
+    tooltip.style.top=(e.clientY-30)+'px';
+    tooltip.textContent=n+' = '+pairs.length+' pair'+(pairs.length!==1?'s':'');
+  }else{
+    tooltip.style.display='none';
+  }
+});
+cometCanvas.addEventListener('mouseleave',()=>{tooltip.style.display='none'});
+cometCanvas.addEventListener('click',e=>{
+  const n=nFromMouseX(e.clientX);
+  if(n){autoMode=false;selectN(n)}
+});
+
+arcCanvas.addEventListener('click',()=>{
+  // Cycle to next
+  if(arcN){
+    const idx=evenNums.indexOf(arcN);
+    const next=evenNums[(idx+1)%evenNums.length];
+    selectN(next);
+  }
+});
+
+// --- Animation Loop ---
+let frame=0;
+function animate(){
+  frame++;
+
+  // Build-up animation
+  if(animIndex<evenNums.length){
+    if(frame%3===0){
+      const n=evenNums[animIndex];
+      revealed.add(n);
+      const pairs=pairsMap[n];
+      const x=xForN(n);const y=yForCount(pairs.length);
+      const col=pairs.length?colorForSmallestPrime(pairs[0][0]):'#4ff';
+      spawnParticles(x,y,col,4);
+      animIndex++;
+    }
+  }
+
+  // Auto cycle
+  if(autoMode&&animIndex>=evenNums.length){
+    autoTimer++;
+    if(autoTimer%AUTO_INTERVAL===0){
+      const idx=(Math.floor(autoTimer/AUTO_INTERVAL)-1)%evenNums.length;
+      selectN(evenNums[idx]);
+    }
+  }
+
+  // Arc animation
+  if(arcN)arcAnim++;
+
+  // Update arc particles
+  for(let i=arcParticles.length-1;i>=0;i--){
+    const p=arcParticles[i];
+    p.x+=p.vx;p.y+=p.vy;p.life-=0.015;
+    if(p.life<=0)arcParticles.splice(i,1);
+  }
+
+  // Spawn arc particles along arcs
+  if(arcN&&arcAnim>30&&arcAnim%4===0){
+    const progress=Math.min(arcAnim/60,1);
+    const baseY=arcH-45;
+    for(let i=0;i<arcPairs.length;i++){
+      if(Math.random()>0.4)continue;
+      const [p,q]=arcPairs[i];
+      const maxP=arcN;
+      const x1=MARGIN_L+(p/maxP)*(W-MARGIN_L-MARGIN_R);
+      const x2=MARGIN_L+(q/maxP)*(W-MARGIN_L-MARGIN_R);
+      const t=Math.random();
+      const arcHeight=30+((x2-x1)/W)*100;
+      const px=x1+(x2-x1)*t;
+      const u=t;const py=baseY-(4*arcHeight*u*(1-u))*progress;
+      const col=colorForSmallestPrime(p);
+      arcParticles.push({x:px,y:py,vx:(Math.random()-0.5)*0.5,vy:-Math.random()*1,life:1,col});
+    }
+  }
+
+  updateParticles();
+  drawComet();
+  drawArcs();
+  requestAnimationFrame(animate);
+}
+
+// Kick off
+selectN(4);
+autoMode=true;
+animate();
+
+// Double-click to restart auto
+cometCanvas.addEventListener('dblclick',()=>{autoMode=true;autoTimer=0});
+</script>
+</body>
+</html>

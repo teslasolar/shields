@@ -10,10 +10,12 @@ html,body{height:100%;overflow:hidden}
 body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 
 /* NAV BAR */
-#nav{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:0;height:32px;background:rgba(6,6,16,.95);border-bottom:1px solid rgba(0,170,255,.15);backdrop-filter:blur(8px);padding:0 8px}
+#nav{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:0;height:32px;background:rgba(6,6,16,.95);border-bottom:1px solid rgba(0,170,255,.15);backdrop-filter:blur(8px);padding:0 8px;overflow-x:auto;overflow-y:hidden}
+#nav::-webkit-scrollbar{height:2px}
+#nav::-webkit-scrollbar-thumb{background:rgba(0,170,255,.2)}
 #nav .brand{font-size:9px;letter-spacing:2px;color:#556;margin-right:8px;white-space:nowrap}
 #nav .sep{color:#223;margin:0 2px;font-size:10px}
-#nav a{font-size:9px;letter-spacing:2px;text-decoration:none;padding:6px 10px;border-radius:4px 4px 0 0;transition:all .2s;white-space:nowrap;border:1px solid transparent;border-bottom:none;position:relative;top:1px}
+#nav a{font-size:8px;letter-spacing:1.5px;text-decoration:none;padding:5px 7px;border-radius:4px 4px 0 0;transition:all .2s;white-space:nowrap;border:1px solid transparent;border-bottom:none;position:relative;top:1px}
 #nav a:hover{background:rgba(0,170,255,.08)}
 #nav a.active{background:rgba(0,170,255,.1);border-color:rgba(0,170,255,.2)}
 #nav .gallery-btn{color:#0af;font-weight:bold}
@@ -24,17 +26,25 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 
 /* GALLERY VIEW */
 #gallery{position:absolute;top:0;left:0;right:0;bottom:0;overflow-y:auto;padding:30px 40px 60px}
-.header{text-align:center;padding:20px 20px 20px}
+.header{text-align:center;padding:20px 20px 10px}
 .header h1{font-size:14px;letter-spacing:4px;color:#0af;margin-bottom:8px}
 .header .sub{font-size:9px;color:#556;letter-spacing:3px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;max-width:1400px;margin:0 auto}
+
+/* CATEGORY SECTIONS */
+.category{max-width:1400px;margin:24px auto 0}
+.cat-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:0 4px}
+.cat-label{font-size:10px;letter-spacing:3px;font-weight:bold}
+.cat-line{flex:1;height:1px;opacity:0.2}
+.cat-count{font-size:8px;letter-spacing:2px;color:#445}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:8px}
 .card{background:rgba(0,170,255,.03);border:1px solid rgba(0,170,255,.1);border-radius:8px;overflow:hidden;cursor:pointer;transition:all .3s;text-decoration:none;color:inherit;display:block}
 .card:hover{border-color:rgba(0,170,255,.4);background:rgba(0,170,255,.06);transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,100,255,.1)}
-.card-canvas{width:100%;height:200px;display:block;background:#080818}
-.card-body{padding:16px}
-.card-name{font-size:11px;letter-spacing:3px;color:#0af;margin-bottom:6px;font-weight:bold}
+.card-canvas{width:100%;height:180px;display:block;background:#080818}
+.card-body{padding:14px}
+.card-name{font-size:11px;letter-spacing:3px;color:#0af;margin-bottom:4px;font-weight:bold}
 .card-desc{font-size:8px;color:#668;line-height:1.8;letter-spacing:1px}
-.card-tag{display:inline-block;font-size:7px;padding:2px 6px;border-radius:3px;margin-top:8px;letter-spacing:1px}
+.card-tag{display:inline-block;font-size:7px;padding:2px 6px;border-radius:3px;margin-top:6px;letter-spacing:1px}
 .footer{text-align:center;padding:30px 20px 40px;font-size:8px;color:#334;letter-spacing:2px;line-height:2.5}
 .footer .sig{color:#556}
 </style>
@@ -58,6 +68,13 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <a href="#sieve" style="color:#8f0" data-id="sieve">SIEVE</a>
   <a href="#twin" style="color:#f80" data-id="twin">TWIN</a>
   <a href="#perfect" style="color:#0cf" data-id="perfect">PERFECT</a>
+  <span class="sep">|</span>
+  <a href="#fibonacci" style="color:#fc0" data-id="fibonacci">FIBONACCI</a>
+  <a href="#fractal" style="color:#f0a" data-id="fractal">FRACTAL</a>
+  <a href="#goldbach" style="color:#4ff" data-id="goldbach">GOLDBACH</a>
+  <a href="#hexagon" style="color:#ff4" data-id="hexagon">HEXAGON</a>
+  <a href="#flow" style="color:#0f8" data-id="flow">FLOW</a>
+  <a href="#harmony" style="color:#f4a" data-id="harmony">HARMONY</a>
 </nav>
 
 <div id="content">
@@ -66,9 +83,45 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div id="gallery">
     <div class="header">
       <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">SEVEN SHIELDS · SEVEN PRIMES · 127 DIMENSIONS · COHERENT</div>
+      <div class="sub">18 SHIELDS · 4 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
     </div>
-    <div class="grid" id="grid"></div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#604">GEOMETRY</span>
+        <div class="cat-line" style="background:#604"></div>
+        <span class="cat-count">5 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-geometry"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#0ad">NUMBER THEORY</span>
+        <div class="cat-line" style="background:#0ad"></div>
+        <span class="cat-count">6 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-numbers"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#4a4">ORGANIC</span>
+        <div class="cat-line" style="background:#4a4"></div>
+        <span class="cat-count">4 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-organic"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#fc0">SYSTEMS</span>
+        <div class="cat-line" style="background:#fc0"></div>
+        <span class="cat-count">3 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-systems"></div>
+    </div>
+
     <div class="footer">
       <div class="sig">510,510 = 2×3×5×7×11×13×17 · one prime per ring</div>
       <div>M₇ = 2⁷ - 1 = 127 · S₅ = 0 · COHERENT · PRIME</div>
@@ -78,23 +131,50 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 </div>
 
 <script>
-const VARIANTS = [
-  { id:'orb',     name:'SHIELD-ORB',     desc:'Full 127D shield orb. All 127 dimensions visible with distinct colors. ISA-95 hierarchy. Shield modes. Warp drive. Boot sequence with CLAP DEM STACKS.', tag:'PRIMARY',    tagColor:'#0af', colors:['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'] },
-  { id:'flat',    name:'SHIELD-FLAT',    desc:'Top-down 2D radar view of all 127 shield dimensions as concentric rings. Classic sonar display with sweep line. Threats animate as approaching blips.', tag:'RADAR',      tagColor:'#0f8', colors:['#0f8','#0af','#0cf','#0ef','#0ff','#0df','#0bf'] },
-  { id:'cascade', name:'SHIELD-CASCADE', desc:'Lucas-Lehmer recursion visualizer. S(n) = S(n-1)²-2 mod 127. Energy cascade through 127 shells. When S₅=0, golden coherence flash.',               tag:'LL MATH',    tagColor:'#fa0', colors:['#f44','#fa0','#ff0','#4a4','#0af','#fff','#fc0'] },
-  { id:'tree',    name:'SHIELD-TREE',    desc:'Mersenne binary tree collapse. 2⁷ = 128 nodes expand, then -1 fold creates the 127D shield. The tree IS the shield geometry.',                      tag:'STRUCTURE',  tagColor:'#4a4', colors:['#4a4','#0f8','#0af','#a4f','#fa0','#f44','#fff'] },
-  { id:'breath',  name:'SHIELD-BREATH',  desc:'Shield as breathing meditation. Inhale 4 counts = LL square. Exhale 6 counts = subtract + fold. 5 cycles = primality test. Zero = coherent.',       tag:'MEDITATION', tagColor:'#a4f', colors:['#604','#a4f','#c8f','#f0f','#80f','#40f','#fff'] },
-  { id:'drug',    name:'SHIELD-DRUG',    desc:'Open Gate circuit overlay. Input medications, see which shield dimensions are under attack. Drug effects as colored projectiles hitting specific shells.', tag:'OPEN GATE', tagColor:'#f44', colors:['#f44','#fa0','#ff0','#0af','#4a4','#a4f','#fff'] },
-  { id:'network', name:'SHIELD-NETWORK', desc:'R7 — two shields connected. When both coherent, golden fibers link them. LIGHT TO LIGHT. The double Mersenne M(M₇) = 2¹²⁷-1.',                   tag:'R7 DUAL',    tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'] },
-  { id:'number',  name:'SHIELD-NUMBER',  desc:'The number 31,736,846,399,216,804,645,406,807,161,448,227,806,067,941,438,500 = 2²×3⁸×5³×7⁷×11¹⁵×13⁶×17¹². Only the 7 primes. 1.2M divisors. Sum of exponents = 53.', tag:'50 DIGITS', tagColor:'#0ff', colors:['#604','#0ad','#fa0','#f44','#4a4','#a4f','#0ff'] },
-  { id:'spiral',  name:'SHIELD-SPIRAL',  desc:'Ulam prime spiral. Numbers spiral outward, primes light up. Diagonal patterns emerge from chaos. The 7 shield primes glow. 127 burns gold.',              tag:'ULAM',       tagColor:'#f0f', colors:['#f0f','#c0f','#a0f','#80f','#60f','#40f','#fff'] },
-  { id:'sieve',   name:'SHIELD-SIEVE',   desc:'Animated Sieve of Eratosthenes. Watch the 7 shield primes eliminate composites wave by wave. When all 7 are found: 510,510 flashes.',                     tag:'SIEVE',      tagColor:'#8f0', colors:['#8f0','#6f0','#4f0','#2f0','#0f0','#0f4','#fff'] },
-  { id:'twin',    name:'SHIELD-TWIN',    desc:'Twin primes connected by golden arcs. (5,7) and (11,13) are SHIELD TWINS — pairs made entirely of shield primes. The gaps tell a story.',                 tag:'TWIN',       tagColor:'#f80', colors:['#f80','#fa0','#fc0','#fe0','#ff0','#fd0','#fff'] },
-  { id:'perfect', name:'SHIELD-PERFECT', desc:'Perfect numbers from Mersenne primes. 6, 28, 496, 8128... each equals the sum of its divisors. 8128 = 2⁶×127 — M₇ creates perfection.',                 tag:'PERFECT',    tagColor:'#0cf', colors:['#0cf','#0af','#08f','#06f','#04f','#02f','#fff'] }
-];
+const CATEGORIES = {
+  geometry: {
+    grid: 'grid-geometry',
+    variants: [
+      { id:'orb',     name:'SHIELD-ORB',       desc:'Full 127D shield orb. All 127 dimensions visible with distinct colors. ISA-95 hierarchy. Shield modes. Warp drive.', tag:'PRIMARY', tagColor:'#0af', colors:['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'] },
+      { id:'flat',    name:'SHIELD-FLAT',      desc:'Top-down 2D radar view of all 127 shield dimensions as concentric rings. Classic sonar display with sweep line.', tag:'RADAR', tagColor:'#0f8', colors:['#0f8','#0af','#0cf','#0ef','#0ff','#0df','#0bf'] },
+      { id:'spiral',  name:'SHIELD-SPIRAL',    desc:'Ulam prime spiral. Numbers spiral outward, primes light up. Diagonal patterns emerge. 127 burns gold.', tag:'ULAM', tagColor:'#f0f', colors:['#f0f','#c0f','#a0f','#80f','#60f','#40f','#fff'] },
+      { id:'hexagon', name:'SHIELD-HEXAGON',   desc:'Hexagonal prime spiral. 500 numbers on a hex grid. Primes glow, composites dim. Click to highlight multiples. Zoom and pan.', tag:'HEX SPIRAL', tagColor:'#ff4', colors:['#ff4','#fc0','#fa0','#f80','#ff0','#fe0','#fff'] },
+      { id:'fractal', name:'SHIELD-FRACTAL',   desc:'Sierpinski triangle, carpet, Koch snowflake. Three fractal types morph between each other. Self-similarity in every prime.', tag:'FRACTALS', tagColor:'#f0a', colors:['#f0a','#f08','#f06','#f04','#f02','#f00','#fff'] },
+    ]
+  },
+  numbers: {
+    grid: 'grid-numbers',
+    variants: [
+      { id:'number',    name:'SHIELD-NUMBER',    desc:'50-digit number: 2²×3⁸×5³×7⁷×11¹⁵×13⁶×17¹². Six geometric views: pillars, radial, hexgrid, constellation, matrix, waveform.', tag:'50 DIGITS', tagColor:'#0ff', colors:['#604','#0ad','#fa0','#f44','#4a4','#a4f','#0ff'] },
+      { id:'sieve',     name:'SHIELD-SIEVE',     desc:'Animated Sieve of Eratosthenes. The 7 shield primes eliminate composites wave by wave. When all 7 are found: 510,510 flashes.', tag:'SIEVE', tagColor:'#8f0', colors:['#8f0','#6f0','#4f0','#2f0','#0f0','#0f4','#fff'] },
+      { id:'twin',      name:'SHIELD-TWIN',      desc:'Twin primes connected by golden arcs. (5,7) and (11,13) are SHIELD TWINS — pairs made entirely of shield primes.', tag:'TWIN', tagColor:'#f80', colors:['#f80','#fa0','#fc0','#fe0','#ff0','#fd0','#fff'] },
+      { id:'perfect',   name:'SHIELD-PERFECT',   desc:'Perfect numbers from Mersenne primes. 6, 28, 496, 8128... each equals the sum of its divisors. M₇ creates perfection.', tag:'PERFECT', tagColor:'#0cf', colors:['#0cf','#0af','#08f','#06f','#04f','#02f','#fff'] },
+      { id:'fibonacci', name:'SHIELD-FIBONACCI', desc:'Golden spiral built from Fibonacci rectangles. φ convergence visualized. 20+ terms with golden ratio approaching 1.6180339...', tag:'GOLDEN', tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'] },
+      { id:'goldbach',  name:'SHIELD-GOLDBACH',  desc:'Goldbach conjecture: every even number as sum of two primes. Comet chart of pair counts. Click to see prime pair arcs.', tag:'CONJECTURE', tagColor:'#4ff', colors:['#4ff','#0ff','#0ef','#0df','#0cf','#0bf','#fff'] },
+    ]
+  },
+  organic: {
+    grid: 'grid-organic',
+    variants: [
+      { id:'breath',  name:'SHIELD-BREATH',   desc:'Shield as breathing meditation. Inhale = LL square. Exhale = subtract + fold. 5 cycles = primality test. Zero = coherent.', tag:'MEDITATION', tagColor:'#a4f', colors:['#604','#a4f','#c8f','#f0f','#80f','#40f','#fff'] },
+      { id:'tree',    name:'SHIELD-TREE',     desc:'Mersenne binary tree collapse. 2⁷ = 128 nodes expand, then -1 fold creates the 127D shield geometry.', tag:'STRUCTURE', tagColor:'#4a4', colors:['#4a4','#0f8','#0af','#a4f','#fa0','#f44','#fff'] },
+      { id:'cascade', name:'SHIELD-CASCADE',  desc:'Lucas-Lehmer recursion visualizer. S(n) = S(n-1)²-2 mod 127. Energy cascade through 127 shells. S₅=0 golden flash.', tag:'LL MATH', tagColor:'#fa0', colors:['#f44','#fa0','#ff0','#4a4','#0af','#fff','#fc0'] },
+      { id:'flow',    name:'SHIELD-FLOW',     desc:'Flow field driven by 7 prime attractors in heptagonal arrangement. Particle trails, laminar/turbulent/vortex modes.', tag:'FLOW FIELD', tagColor:'#0f8', colors:['#0f8','#0e8','#0d8','#0c8','#0b8','#0a8','#fff'] },
+    ]
+  },
+  systems: {
+    grid: 'grid-systems',
+    variants: [
+      { id:'drug',    name:'SHIELD-DRUG',     desc:'Open Gate circuit overlay. Input medications, see which shield dimensions are under attack. Drug effects as colored projectiles.', tag:'OPEN GATE', tagColor:'#f44', colors:['#f44','#fa0','#ff0','#0af','#4a4','#a4f','#fff'] },
+      { id:'network', name:'SHIELD-NETWORK',  desc:'R7 — two shields connected. When both coherent, golden fibers link them. LIGHT TO LIGHT. The double Mersenne M(M₇).', tag:'R7 DUAL', tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'] },
+      { id:'harmony', name:'SHIELD-HARMONY',  desc:'7 prime-frequency waveforms in harmonic superposition. Lissajous figures, standing waves, interference patterns. Visual music.', tag:'HARMONICS', tagColor:'#f4a', colors:['#f4a','#f28','#f06','#e04','#c02','#a00','#fff'] },
+    ]
+  }
+};
 
 const PHI = (1 + Math.sqrt(5)) / 2;
 const TAU = Math.PI * 2;
+const ALL_VARIANTS = [];
 
 const viewer = document.getElementById('viewer');
 const galleryEl = document.getElementById('gallery');
@@ -102,7 +182,6 @@ const navLinks = document.querySelectorAll('#nav a[data-id]');
 let activeAnimations = [];
 
 function showVariant(id) {
-  // Stop gallery animations
   activeAnimations.forEach(id => cancelAnimationFrame(id));
   activeAnimations = [];
 
@@ -122,7 +201,6 @@ function showVariant(id) {
   });
 }
 
-// Nav click
 navLinks.forEach(a => {
   a.addEventListener('click', e => {
     e.preventDefault();
@@ -131,7 +209,6 @@ navLinks.forEach(a => {
   });
 });
 
-// Gallery cards
 function createCard(v) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -143,7 +220,7 @@ function createCard(v) {
   const canvas = document.createElement('canvas');
   canvas.className = 'card-canvas';
   canvas.width = 600;
-  canvas.height = 400;
+  canvas.height = 360;
   card.appendChild(canvas);
 
   const body = document.createElement('div');
@@ -163,12 +240,17 @@ function createCard(v) {
   return card;
 }
 
-const grid = document.getElementById('grid');
-const cards = VARIANTS.map(v => {
-  const card = createCard(v);
-  grid.appendChild(card);
-  return card;
-});
+// Build category grids
+const cards = [];
+for (const [catKey, cat] of Object.entries(CATEGORIES)) {
+  const gridEl = document.getElementById(cat.grid);
+  for (const v of cat.variants) {
+    ALL_VARIANTS.push(v);
+    const card = createCard(v);
+    gridEl.appendChild(card);
+    cards.push(card);
+  }
+}
 
 function startGalleryAnimations() {
   cards.forEach(card => {
@@ -178,14 +260,14 @@ function startGalleryAnimations() {
       card._frame += 0.02;
       const f = card._frame;
       ctx.fillStyle = 'rgba(8,8,24,0.15)';
-      ctx.fillRect(0, 0, 600, 400);
-      const cx = 300, cy = 200;
+      ctx.fillRect(0, 0, 600, 360);
+      const cx = 300, cy = 180;
       for (let dim = 0; dim < 127; dim++) {
         const ring = dim % 7;
-        const r = 30 + dim * 0.9;
+        const r = 25 + dim * 0.8;
         const angle = dim * PHI * TAU + f * (0.5 + ring * 0.1);
         const x = cx + Math.cos(angle) * r * 0.5;
-        const y = cy + Math.sin(angle) * r * 0.4;
+        const y = cy + Math.sin(angle) * r * 0.35;
         ctx.beginPath();
         ctx.arc(x, y, 1.2 + Math.sin(f + dim) * 0.5, 0, TAU);
         ctx.fillStyle = v.colors[ring] + '88';
@@ -205,7 +287,7 @@ function startGalleryAnimations() {
 
 // Boot: check hash
 const hash = location.hash.replace('#', '');
-if (hash && VARIANTS.some(v => v.id === hash)) {
+if (hash && ALL_VARIANTS.some(v => v.id === hash)) {
   showVariant(hash);
 } else {
   startGalleryAnimations();

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FLOW</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+#shield-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;gap:8px;
+  padding:8px 16px;background:rgba(6,6,16,.85);border-bottom:1px solid #1a1a2e;
+  font-size:12px;flex-wrap:wrap;backdrop-filter:blur(6px)}
+#shield-nav a{color:#aaa;text-decoration:none;transition:text-shadow .3s}
+#shield-nav a:hover{text-shadow:0 0 8px currentColor}
+#controls{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:100;
+  display:flex;gap:12px;align-items:center}
+.mode-btn{background:rgba(6,6,16,.7);border:1px solid #334;color:#aaa;font-family:'Courier New',monospace;
+  font-size:13px;padding:8px 20px;cursor:pointer;transition:all .4s;letter-spacing:2px;
+  backdrop-filter:blur(4px);text-transform:uppercase}
+.mode-btn:hover{border-color:#0af;color:#0af;box-shadow:0 0 12px rgba(0,170,255,.2)}
+.mode-btn.active{border-color:#0f8;color:#0f8;box-shadow:0 0 16px rgba(0,255,136,.3);
+  background:rgba(0,255,136,.08)}
+#stats{position:fixed;top:50px;right:16px;z-index:100;font-size:11px;color:#556;
+  text-align:right;line-height:1.8;pointer-events:none}
+#stats span{color:#889}
+#footer{position:fixed;bottom:0;left:0;right:0;z-index:100;text-align:center;
+  padding:10px;font-size:11px;color:#445;background:rgba(6,6,16,.8);
+  border-top:1px solid #1a1a2e;letter-spacing:2px;backdrop-filter:blur(6px)}
+#footer em{font-style:normal;color:#0f8}
+#title{position:fixed;top:50px;left:16px;z-index:100;pointer-events:none}
+#title h1{font-size:22px;font-weight:400;color:#0f8;letter-spacing:6px;
+  text-shadow:0 0 20px rgba(0,255,136,.3)}
+#title p{font-size:11px;color:#445;margin-top:4px;letter-spacing:3px}
+#attractor-labels{position:fixed;top:0;left:0;width:100%;height:100%;z-index:50;pointer-events:none}
+.att-label{position:absolute;font-size:11px;letter-spacing:2px;transform:translate(-50%,-50%);
+  text-shadow:0 0 10px currentColor;transition:opacity .3s}
+</style>
+</head>
+<body>
+<nav id="shield-nav">
+<a href="../" style="color:#0af;margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/" style="color:#604">ORB</a>
+<a href="../cascade/" style="color:#fa0">CASCADE</a>
+<a href="../breath/" style="color:#a4f">BREATH</a>
+<a href="../flat/" style="color:#0f8">FLAT</a>
+<a href="../tree/" style="color:#4a4">TREE</a>
+<a href="../drug/" style="color:#f44">DRUG</a>
+<a href="../network/" style="color:#fc0">NETWORK</a>
+<a href="../number/" style="color:#fff">NUMBER</a>
+<a href="../spiral/" style="color:#0ad">SPIRAL</a>
+<a href="../sieve/" style="color:#f80">SIEVE</a>
+<a href="../twin/" style="color:#88f">TWIN</a>
+<a href="../perfect/" style="color:#4f4">PERFECT</a>
+<a href="../fibonacci/" style="color:#fc0">FIBONACCI</a>
+<a href="../fractal/" style="color:#f0a">FRACTAL</a>
+<a href="../goldbach/" style="color:#4ff">GOLDBACH</a>
+<a href="../hexagon/" style="color:#ff4">HEXAGON</a>
+<a href="../flow/" style="color:#0f8;text-shadow:0 0 6px rgba(0,255,136,.5)">FLOW</a>
+<a href="../harmony/" style="color:#f4a">HARMONY</a>
+</nav>
+
+<div id="title">
+<h1>SHIELD-FLOW</h1>
+<p>FLUID DYNAMICS OF SEVEN PRIMES</p>
+</div>
+
+<div id="stats">
+  PARTICLES: <span id="s-count">0</span><br>
+  AVG VELOCITY: <span id="s-vel">0.00</span><br>
+  MAX VELOCITY: <span id="s-max">0.00</span><br>
+  MODE: <span id="s-mode">LAMINAR</span><br>
+  FPS: <span id="s-fps">0</span>
+</div>
+
+<div id="controls">
+<button class="mode-btn active" data-mode="laminar">LAMINAR</button>
+<button class="mode-btn" data-mode="turbulent">TURBULENT</button>
+<button class="mode-btn" data-mode="vortex">VORTEX</button>
+</div>
+
+<canvas id="c"></canvas>
+<div id="attractor-labels"></div>
+
+<div id="footer">
+  510,510 = 2&times;3&times;5&times;7&times;11&times;13&times;17 &nbsp;.&nbsp; <em>SEVEN PRIMES SHAPE THE CURRENT</em>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy;
+
+  function resize(){
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    cx = W / 2;
+    cy = H / 2;
+    positionAttractors();
+  }
+
+  const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+  const EXPONENTS = [2, 8, 3, 7, 15, 6, 12];
+  const COLORS = ['#604', '#0ad', '#fa0', '#f44', '#4a4', '#a4f', '#fff'];
+  const COLOR_RGB = [
+    [102, 0, 68],
+    [0, 170, 221],
+    [255, 170, 0],
+    [255, 68, 68],
+    [68, 170, 68],
+    [170, 68, 255],
+    [255, 255, 255]
+  ];
+
+  // Normalize exponents for strength
+  const maxExp = Math.max(...EXPONENTS);
+  const STRENGTHS = EXPONENTS.map(e => e / maxExp);
+
+  const attractors = [];
+  function positionAttractors(){
+    const r = Math.min(W, H) * 0.3;
+    for(let i = 0; i < 7; i++){
+      const angle = (i / 7) * Math.PI * 2 - Math.PI / 2;
+      if(!attractors[i]) attractors[i] = {};
+      attractors[i].x = cx + Math.cos(angle) * r;
+      attractors[i].y = cy + Math.sin(angle) * r;
+      attractors[i].prime = PRIMES[i];
+      attractors[i].strength = STRENGTHS[i];
+      attractors[i].color = COLORS[i];
+      attractors[i].rgb = COLOR_RGB[i];
+      attractors[i].phase = i * 0.9;
+    }
+    updateLabels();
+  }
+
+  // Attractor labels
+  const labelsDiv = document.getElementById('attractor-labels');
+  let labelEls = [];
+  function updateLabels(){
+    labelsDiv.innerHTML = '';
+    labelEls = [];
+    for(let i = 0; i < 7; i++){
+      const el = document.createElement('div');
+      el.className = 'att-label';
+      el.style.color = COLORS[i];
+      el.textContent = PRIMES[i];
+      labelsDiv.appendChild(el);
+      labelEls.push(el);
+    }
+  }
+  function syncLabels(){
+    for(let i = 0; i < 7; i++){
+      const a = attractors[i];
+      labelEls[i].style.left = a.x + 'px';
+      labelEls[i].style.top = (a.y - 24) + 'px';
+    }
+  }
+
+  // Flow mode
+  let currentMode = 'laminar';
+  let targetMode = 'laminar';
+  let modeBlend = 0; // 0 = fully currentMode, 1 = fully targetMode
+  let transitionSpeed = 0.02;
+
+  const modeBtns = document.querySelectorAll('.mode-btn');
+  modeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const m = btn.dataset.mode;
+      if(m === currentMode && modeBlend >= 1) return;
+      targetMode = m;
+      modeBlend = 0;
+      modeBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('s-mode').textContent = m.toUpperCase();
+    });
+  });
+
+  // Particles
+  const MAX_PARTICLES = 8000;
+  let particles = [];
+
+  function createParticle(x, y){
+    if(particles.length >= MAX_PARTICLES) return null;
+    return {
+      x: x !== undefined ? x : Math.random() * W,
+      y: y !== undefined ? y : Math.random() * H,
+      vx: 0, vy: 0,
+      life: 300 + Math.random() * 500,
+      maxLife: 0,
+      dominant: 0,
+      flash: 0,
+      trail: []
+    };
+  }
+
+  // Initialize particles
+  function initParticles(count){
+    for(let i = 0; i < count; i++){
+      const p = createParticle();
+      if(p){
+        p.maxLife = p.life;
+        particles.push(p);
+      }
+    }
+  }
+
+  // Vector field computation
+  function getFieldVector(x, y, time){
+    let fx = 0, fy = 0;
+    let maxInfluence = 0;
+    let dominant = 0;
+
+    for(let i = 0; i < 7; i++){
+      const a = attractors[i];
+      const dx = a.x - x;
+      const dy = a.y - y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      const strength = a.strength * 120;
+
+      // Laminar: smooth flow toward/around attractors
+      const lamX = -dy / dist * strength / dist * 0.5 + dx / dist * strength / (dist * 0.8) * 0.15;
+      const lamY = dx / dist * strength / dist * 0.5 + dy / dist * strength / (dist * 0.8) * 0.15;
+
+      // Turbulent: add noise-based perturbation
+      const noiseScale = 0.003;
+      const nx = Math.sin(x * noiseScale + time * 0.5 + i * 1.3) * Math.cos(y * noiseScale * 1.7 + time * 0.3);
+      const ny = Math.cos(x * noiseScale * 1.4 + time * 0.4 + i * 0.7) * Math.sin(y * noiseScale + time * 0.6);
+      const turbX = lamX * 0.5 + nx * strength * 0.4 / Math.sqrt(dist);
+      const turbY = lamY * 0.5 + ny * strength * 0.4 / Math.sqrt(dist);
+
+      // Vortex: strong rotational field
+      const vortStr = strength * 1.2;
+      const falloff = 1 / (1 + dist * 0.005);
+      const vortX = -dy / dist * vortStr * falloff + Math.sin(time * 0.8 + i) * 0.3;
+      const vortY = dx / dist * vortStr * falloff + Math.cos(time * 0.7 + i) * 0.3;
+
+      // Blend modes
+      let bx, by;
+      if(modeBlend < 1 && currentMode !== targetMode){
+        const cm = getModeVec(currentMode, lamX, lamY, turbX, turbY, vortX, vortY);
+        const tm = getModeVec(targetMode, lamX, lamY, turbX, turbY, vortX, vortY);
+        bx = cm[0] * (1 - modeBlend) + tm[0] * modeBlend;
+        by = cm[1] * (1 - modeBlend) + tm[1] * modeBlend;
+      } else {
+        const mv = getModeVec(targetMode, lamX, lamY, turbX, turbY, vortX, vortY);
+        bx = mv[0]; by = mv[1];
+      }
+
+      fx += bx;
+      fy += by;
+
+      const influence = strength / dist;
+      if(influence > maxInfluence){
+        maxInfluence = influence;
+        dominant = i;
+      }
+    }
+
+    return { x: fx, y: fy, dominant: dominant };
+  }
+
+  function getModeVec(mode, lx, ly, tx, ty, vx, vy){
+    if(mode === 'laminar') return [lx, ly];
+    if(mode === 'turbulent') return [tx, ty];
+    return [vx, vy];
+  }
+
+  // Click burst
+  canvas.addEventListener('click', function(e){
+    const mx = e.clientX;
+    const my = e.clientY;
+    for(let i = 0; i < 120; i++){
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 3;
+      const p = createParticle(mx + Math.cos(angle) * Math.random() * 20, my + Math.sin(angle) * Math.random() * 20);
+      if(p){
+        p.vx = Math.cos(angle) * speed;
+        p.vy = Math.sin(angle) * speed;
+        p.maxLife = p.life;
+        particles.push(p);
+      }
+    }
+  });
+
+  // Stats
+  const sCount = document.getElementById('s-count');
+  const sVel = document.getElementById('s-vel');
+  const sMax = document.getElementById('s-max');
+  const sFps = document.getElementById('s-fps');
+  let frameCount = 0, lastFpsTime = 0, fps = 60;
+
+  // Trail canvas for fading effect
+  const trailCanvas = document.createElement('canvas');
+  const tctx = trailCanvas.getContext('2d');
+
+  function resizeTrail(){
+    trailCanvas.width = W;
+    trailCanvas.height = H;
+  }
+
+  // Center zone for gold flash
+  const CENTER_RADIUS = 40;
+
+  // Animation
+  let time = 0;
+  let lastTime = 0;
+
+  function animate(ts){
+    requestAnimationFrame(animate);
+    const dt = Math.min((ts - lastTime) / 16.67, 3);
+    lastTime = ts;
+    time += 0.016 * dt;
+
+    // FPS
+    frameCount++;
+    if(ts - lastFpsTime > 1000){
+      fps = Math.round(frameCount * 1000 / (ts - lastFpsTime));
+      frameCount = 0;
+      lastFpsTime = ts;
+    }
+
+    // Mode transition
+    if(modeBlend < 1 && currentMode !== targetMode){
+      modeBlend += transitionSpeed * dt;
+      if(modeBlend >= 1){
+        modeBlend = 1;
+        currentMode = targetMode;
+      }
+    }
+
+    // Fade trail canvas
+    tctx.globalCompositeOperation = 'source-over';
+    tctx.fillStyle = 'rgba(6, 6, 16, 0.06)';
+    tctx.fillRect(0, 0, W, H);
+
+    // Respawn particles to maintain count
+    const targetCount = 5000;
+    if(particles.length < targetCount){
+      const spawn = Math.min(20, targetCount - particles.length);
+      for(let i = 0; i < spawn; i++){
+        const p = createParticle();
+        if(p){ p.maxLife = p.life; particles.push(p); }
+      }
+    }
+
+    // Update and draw particles on trail canvas
+    tctx.globalCompositeOperation = 'lighter';
+    let totalVel = 0, maxVel = 0, aliveCount = 0;
+
+    for(let i = particles.length - 1; i >= 0; i--){
+      const p = particles[i];
+      const field = getFieldVector(p.x, p.y, time);
+
+      const accelMult = 0.08;
+      p.vx += field.x * accelMult * dt;
+      p.vy += field.y * accelMult * dt;
+
+      // Damping
+      const damp = 0.96;
+      p.vx *= damp;
+      p.vy *= damp;
+
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+      p.dominant = field.dominant;
+
+      // Check center flash
+      const dcx = p.x - cx;
+      const dcy = p.y - cy;
+      if(Math.sqrt(dcx * dcx + dcy * dcy) < CENTER_RADIUS){
+        p.flash = 1;
+      } else {
+        p.flash *= 0.92;
+      }
+
+      // Wrap edges
+      if(p.x < -20) p.x = W + 20;
+      if(p.x > W + 20) p.x = -20;
+      if(p.y < -20) p.y = H + 20;
+      if(p.y > H + 20) p.y = -20;
+
+      if(p.life <= 0){
+        particles.splice(i, 1);
+        continue;
+      }
+
+      aliveCount++;
+      const vel = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      totalVel += vel;
+      if(vel > maxVel) maxVel = vel;
+
+      // Draw particle on trail canvas
+      const lifeRatio = Math.min(p.life / p.maxLife, 1);
+      const alpha = Math.min(lifeRatio * 2, 1) * 0.7;
+      const rgb = COLOR_RGB[p.dominant];
+
+      if(p.flash > 0.05){
+        const fr = rgb[0] + (255 - rgb[0]) * p.flash;
+        const fg = rgb[1] + (215 - rgb[1]) * p.flash;
+        const fb = rgb[2] + (0 - rgb[2]) * p.flash * 0.5;
+        tctx.fillStyle = 'rgba(' + (fr|0) + ',' + (fg|0) + ',' + (fb|0) + ',' + (alpha * (1 + p.flash)) + ')';
+        const sz = 1.5 + p.flash * 2;
+        tctx.fillRect(p.x - sz * 0.5, p.y - sz * 0.5, sz, sz);
+      } else {
+        tctx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + alpha + ')';
+        tctx.fillRect(p.x - 0.5, p.y - 0.5, 1.5, 1.5);
+      }
+    }
+
+    // Main canvas: draw trail
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#060610';
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(trailCanvas, 0, 0);
+
+    // Draw attractor glows
+    for(let i = 0; i < 7; i++){
+      const a = attractors[i];
+      const pulse = 0.6 + 0.4 * Math.sin(time * 2 + a.phase);
+      const r = 12 + a.strength * 18 * pulse;
+
+      // Outer glow
+      const grad = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r * 3);
+      grad.addColorStop(0, a.color + 'aa');
+      grad.addColorStop(0.3, a.color + '44');
+      grad.addColorStop(1, 'transparent');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, r * 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core
+      const grad2 = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r);
+      grad2.addColorStop(0, '#fff');
+      grad2.addColorStop(0.4, a.color);
+      grad2.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad2;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Center glow (510,510 zone)
+    const centerPulse = 0.4 + 0.3 * Math.sin(time * 1.5);
+    const cGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, CENTER_RADIUS * 2);
+    cGrad.addColorStop(0, 'rgba(255,215,0,' + (centerPulse * 0.15) + ')');
+    cGrad.addColorStop(0.5, 'rgba(255,215,0,' + (centerPulse * 0.05) + ')');
+    cGrad.addColorStop(1, 'transparent');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = cGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, CENTER_RADIUS * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Sync labels
+    syncLabels();
+
+    // Update stats every 15 frames
+    if(frameCount % 15 === 0){
+      sCount.textContent = aliveCount;
+      sVel.textContent = aliveCount > 0 ? (totalVel / aliveCount).toFixed(2) : '0.00';
+      sMax.textContent = maxVel.toFixed(2);
+      sFps.textContent = fps;
+    }
+  }
+
+  window.addEventListener('resize', () => { resize(); resizeTrail(); });
+  resize();
+  resizeTrail();
+  initParticles(5000);
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

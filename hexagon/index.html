@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-HEXAGON</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#aab}
+nav#shield-nav{position:fixed;top:0;left:0;width:100%;z-index:100;background:linear-gradient(180deg,#0a0a18 0%,rgba(10,10,24,.95) 80%,transparent);
+padding:10px 16px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;letter-spacing:.5px;border-bottom:1px solid #161630}
+nav#shield-nav a{text-decoration:none;transition:text-shadow .3s}
+nav#shield-nav a:hover{text-shadow:0 0 8px currentColor}
+#container{position:absolute;top:40px;left:0;right:0;bottom:40px}
+canvas#hexCanvas{position:absolute;top:0;left:0;width:100%;height:100%;cursor:grab}
+canvas#hexCanvas.dragging{cursor:grabbing}
+#tooltip{position:fixed;display:none;background:rgba(6,6,16,.94);border:1px solid #335;border-radius:6px;padding:10px 14px;
+font-size:13px;color:#ccd;pointer-events:none;z-index:80;max-width:280px;backdrop-filter:blur(6px);box-shadow:0 4px 20px rgba(0,0,0,.6)}
+#tooltip .num{font-size:18px;font-weight:bold;color:#fff}
+#tooltip .prime-yes{color:#0f8}
+#tooltip .prime-no{color:#664}
+#tooltip .factors{color:#88a;margin-top:4px;font-size:12px}
+#stats{position:fixed;right:0;top:40px;width:220px;background:rgba(6,6,16,.88);border-left:1px solid #1a1a3a;
+padding:16px 14px;font-size:12px;z-index:60;height:calc(100% - 80px);overflow-y:auto;backdrop-filter:blur(4px)}
+#stats h3{color:#0af;font-size:13px;margin-bottom:10px;letter-spacing:1px}
+#stats .stat-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #111128}
+#stats .stat-label{color:#667}
+#stats .stat-value{color:#aac}
+#stats .bar-container{margin:8px 0;height:6px;background:#111128;border-radius:3px;overflow:hidden}
+#stats .bar-fill{height:100%;border-radius:3px;transition:width 1s ease}
+#stats .legend{margin-top:14px}
+#stats .legend-item{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px}
+#stats .legend-swatch{width:10px;height:10px;border-radius:2px}
+#zoom-controls{position:fixed;bottom:54px;right:230px;z-index:70;display:flex;gap:6px}
+#zoom-controls button{width:32px;height:32px;background:rgba(6,6,16,.85);border:1px solid #334;color:#88a;
+font-size:18px;cursor:pointer;border-radius:4px;transition:all .2s}
+#zoom-controls button:hover{background:#1a1a3a;color:#0af;border-color:#0af}
+#footer{position:fixed;bottom:0;left:0;width:100%;background:linear-gradient(0deg,#0a0a18,rgba(10,10,24,.95) 80%,transparent);
+padding:10px 16px;text-align:center;font-size:11px;color:#445;letter-spacing:1.5px;border-top:1px solid #161630;z-index:100}
+#footer span.hl{color:#0af}
+#mult-label{position:fixed;bottom:54px;left:16px;z-index:70;font-size:12px;color:#556;display:none}
+</style>
+</head>
+<body>
+
+<nav id="shield-nav">
+<a href="../" style="color:#0af;margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/" style="color:#604">ORB</a>
+<a href="../cascade/" style="color:#fa0">CASCADE</a>
+<a href="../breath/" style="color:#a4f">BREATH</a>
+<a href="../flat/" style="color:#0f8">FLAT</a>
+<a href="../tree/" style="color:#4a4">TREE</a>
+<a href="../drug/" style="color:#f44">DRUG</a>
+<a href="../network/" style="color:#fc0">NETWORK</a>
+<a href="../number/" style="color:#fff">NUMBER</a>
+<a href="../spiral/" style="color:#0ad">SPIRAL</a>
+<a href="../sieve/" style="color:#f80">SIEVE</a>
+<a href="../twin/" style="color:#88f">TWIN</a>
+<a href="../perfect/" style="color:#4f4">PERFECT</a>
+<a href="../fibonacci/" style="color:#fc0">FIBONACCI</a>
+<a href="../fractal/" style="color:#f0a">FRACTAL</a>
+<a href="../goldbach/" style="color:#4ff">GOLDBACH</a>
+<a href="../hexagon/" style="color:#ff4;text-shadow:0 0 6px rgba(255,255,68,.5)">HEXAGON</a>
+<a href="../flow/" style="color:#0f8">FLOW</a>
+<a href="../harmony/" style="color:#f4a">HARMONY</a>
+</nav>
+
+<div id="container">
+<canvas id="hexCanvas"></canvas>
+</div>
+
+<div id="tooltip">
+<div class="num"></div>
+<div class="status"></div>
+<div class="factors"></div>
+</div>
+
+<div id="stats">
+<h3>PRIME DENSITY</h3>
+<div id="stats-content"></div>
+</div>
+
+<div id="zoom-controls">
+<button id="zoomIn" title="Zoom in">+</button>
+<button id="zoomOut" title="Zoom out">&minus;</button>
+<button id="zoomReset" title="Reset view">&#8634;</button>
+</div>
+
+<div id="mult-label">Click hex to highlight multiples. Click again to clear.</div>
+
+<div id="footer">
+<span class="hl">510,510</span> = 2&times;3&times;5&times;7&times;11&times;13&times;17 . PRIMES SPIRAL IN HEXAGONAL HARMONY
+</div>
+
+<script>
+(function(){
+const MAX_N = 500;
+const PRIMORIAL_PRIMES = [2,3,5,7,11,13,17];
+const PRIMORIAL_COLORS = ['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'];
+const PRIMORIAL_510510 = [2,3,5,7,11,13,17];
+
+// --- Math utilities ---
+function isPrime(n){
+  if(n<2) return false;
+  if(n<4) return true;
+  if(n%2===0||n%3===0) return false;
+  for(let i=5;i*i<=n;i+=6) if(n%i===0||n%(i+2)===0) return false;
+  return true;
+}
+
+function factorize(n){
+  if(n<=1) return n===1?['1']:[];
+  let factors=[], d=2, orig=n;
+  while(d*d<=n){
+    while(n%d===0){factors.push(d);n/=d;}
+    d++;
+  }
+  if(n>1) factors.push(n);
+  return factors;
+}
+
+function factorString(n){
+  if(n===1) return '1';
+  let f=factorize(n);
+  let counts={};
+  f.forEach(p=>{counts[p]=(counts[p]||0)+1;});
+  return Object.entries(counts).map(([p,e])=>e>1?p+'^'+e:p).join(' x ');
+}
+
+const primeSet = new Set();
+const twinPrimeSet = new Set();
+for(let i=2;i<=MAX_N;i++) if(isPrime(i)) primeSet.add(i);
+for(let p of primeSet){
+  if(primeSet.has(p+2)){twinPrimeSet.add(p);twinPrimeSet.add(p+2);}
+}
+
+// --- Hex spiral coordinate generation ---
+// Axial coordinates for hex spiral: center=0, then ring 1 (6 hexes), ring 2 (12), etc.
+// Directions for pointy-top hexagons
+const HEX_DIRS = [
+  [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]
+];
+
+function generateHexSpiral(count){
+  let coords = [{q:0, r:0}]; // #1 at center
+  if(count <= 1) return coords;
+  let q=0, r=0;
+  let ring = 1;
+  // Move to first hex of ring 1: direction 4 (0,-1) from center = (1,-1)...
+  // Standard hex spiral: start by moving in direction 4 (q+1, r-1)
+  // Actually, let's use the standard algorithm:
+  // Start at center. Move to (1,0). Then walk the ring.
+  q = 1; r = 0;
+  while(coords.length < count){
+    for(let side=0; side<6 && coords.length<count; side++){
+      let steps = ring;
+      // On first ring, first side: we already placed the starting hex
+      for(let step=0; step<steps && coords.length<count; step++){
+        // Skip first step of first side of first ring (we already placed (1,0))
+        if(side===0 && step===0){
+          coords.push({q, r});
+        } else {
+          q += HEX_DIRS[(side+2)%6][0];
+          r += HEX_DIRS[(side+2)%6][1];
+          coords.push({q, r});
+        }
+      }
+    }
+    // Move to next ring
+    ring++;
+    q += 1;
+    r += -1;
+    // Correction: after completing a ring, the next ring starts one step in direction (1,-1) but adjusted
+    // Let me redo: we ended at the last hex. To start the next ring, move in direction 0 (1,0).
+    // Actually let me use a cleaner algorithm.
+  }
+  return coords;
+}
+
+// Cleaner hex spiral
+function hexSpiral(count){
+  let coords = [{q:0, r:0}];
+  if(count<=1) return coords;
+  let q=0, r=0;
+  // Directions for traversing each side of a ring (pointy-top)
+  // Ring traversal: start at (ring, 0), go in 6 directions
+  const dirs = [
+    [0, 1],   // side 0: +r
+    [-1, 1],  // side 1: -q+r
+    [-1, 0],  // side 2: -q
+    [0, -1],  // side 3: -r
+    [1, -1],  // side 4: +q-r
+    [1, 0],   // side 5: +q
+  ];
+
+  let ring = 1;
+  while(coords.length < count){
+    // Starting position of this ring
+    q = ring;
+    r = 0;
+    for(let side=0; side<6; side++){
+      for(let step=0; step<ring; step++){
+        if(coords.length >= count) break;
+        coords.push({q, r});
+        q += dirs[side][0];
+        r += dirs[side][1];
+      }
+      if(coords.length >= count) break;
+    }
+    ring++;
+  }
+  return coords;
+}
+
+const hexCoords = hexSpiral(MAX_N);
+
+// Convert axial to pixel (pointy-top hexagons)
+function axialToPixel(q, r, size){
+  let x = size * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r);
+  let y = size * (3/2 * r);
+  return {x, y};
+}
+
+// --- Canvas setup ---
+const canvas = document.getElementById('hexCanvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W, H;
+let scale = 1;
+let panX = 0, panY = 0;
+let baseHexSize = 22;
+let buildProgress = 0;
+let buildSpeed = 3; // hexes per frame
+let time = 0;
+let selectedMultiple = 0;
+let hoveredIdx = -1;
+
+function resize(){
+  W = canvas.width = canvas.offsetWidth * devicePixelRatio;
+  H = canvas.height = canvas.offsetHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Interaction ---
+let isDragging = false;
+let dragStart = {x:0, y:0};
+let panStart = {x:0, y:0};
+
+canvas.addEventListener('mousedown', e=>{
+  isDragging = true;
+  dragStart = {x: e.clientX, y: e.clientY};
+  panStart = {x: panX, y: panY};
+  canvas.classList.add('dragging');
+});
+
+window.addEventListener('mousemove', e=>{
+  if(isDragging){
+    panX = panStart.x + (e.clientX - dragStart.x);
+    panY = panStart.y + (e.clientY - dragStart.y);
+  }
+  updateHover(e);
+});
+
+window.addEventListener('mouseup', e=>{
+  if(isDragging){
+    let dx = e.clientX - dragStart.x;
+    let dy = e.clientY - dragStart.y;
+    if(Math.abs(dx)<3 && Math.abs(dy)<3){
+      handleClick(e);
+    }
+  }
+  isDragging = false;
+  canvas.classList.remove('dragging');
+});
+
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  let rect = canvas.getBoundingClientRect();
+  let mx = e.clientX - rect.left;
+  let my = e.clientY - rect.top;
+  let cx = W/(2*devicePixelRatio) + panX;
+  let cy = H/(2*devicePixelRatio) + panY;
+
+  let oldScale = scale;
+  let factor = e.deltaY < 0 ? 1.1 : 1/1.1;
+  scale = Math.max(0.2, Math.min(5, scale * factor));
+
+  // Zoom toward mouse position
+  let ratio = scale / oldScale;
+  panX = mx - ratio * (mx - panX - W/(2*devicePixelRatio)) - W/(2*devicePixelRatio);
+  panY = my - ratio * (my - panY - H/(2*devicePixelRatio)) - H/(2*devicePixelRatio);
+}, {passive:false});
+
+document.getElementById('zoomIn').onclick = ()=>{ scale = Math.min(5, scale*1.3); };
+document.getElementById('zoomOut').onclick = ()=>{ scale = Math.max(0.2, scale/1.3); };
+document.getElementById('zoomReset').onclick = ()=>{ scale=1; panX=0; panY=0; };
+
+function screenToWorld(sx, sy){
+  let rect = canvas.getBoundingClientRect();
+  let mx = sx - rect.left;
+  let my = sy - rect.top;
+  let cx = W/(2*devicePixelRatio) + panX;
+  let cy = H/(2*devicePixelRatio) + panY;
+  let wx = (mx - cx) / scale;
+  let wy = (my - cy) / scale;
+  return {x: wx, y: wy};
+}
+
+function getHexAt(sx, sy){
+  let w = screenToWorld(sx, sy);
+  let size = baseHexSize;
+  // Find closest hex
+  let best = -1, bestDist = Infinity;
+  let limit = Math.min(buildProgress, MAX_N);
+  for(let i=0; i<limit; i++){
+    let p = axialToPixel(hexCoords[i].q, hexCoords[i].r, size);
+    let dx = w.x - p.x, dy = w.y - p.y;
+    let d = dx*dx + dy*dy;
+    if(d < size*size && d < bestDist){
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function updateHover(e){
+  let idx = getHexAt(e.clientX, e.clientY);
+  hoveredIdx = idx;
+  if(idx >= 0){
+    let n = idx + 1;
+    let ip = primeSet.has(n);
+    tooltip.style.display = 'block';
+    tooltip.querySelector('.num').textContent = '#' + n;
+    tooltip.querySelector('.num').style.color = ip ? '#0f8' : '#667';
+    tooltip.querySelector('.status').className = ip ? 'status prime-yes' : 'status prime-no';
+    tooltip.querySelector('.status').textContent = ip ? 'PRIME' + (twinPrimeSet.has(n) ? ' (twin)' : '') : 'COMPOSITE';
+    tooltip.querySelector('.factors').textContent = ip ? '' : 'Factors: ' + factorString(n);
+
+    let tx = e.clientX + 16;
+    let ty = e.clientY - 10;
+    if(tx + 260 > window.innerWidth) tx = e.clientX - 270;
+    if(ty + 80 > window.innerHeight) ty = e.clientY - 80;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+function handleClick(e){
+  let idx = getHexAt(e.clientX, e.clientY);
+  let ml = document.getElementById('mult-label');
+  if(idx >= 0){
+    let n = idx + 1;
+    if(selectedMultiple === n){
+      selectedMultiple = 0;
+      ml.style.display = 'none';
+    } else {
+      selectedMultiple = n;
+      ml.style.display = 'block';
+      ml.textContent = 'Showing multiples of ' + n + '. Click again to clear.';
+    }
+  } else {
+    selectedMultiple = 0;
+    ml.style.display = 'none';
+  }
+}
+
+// --- Drawing ---
+function drawHexPath(cx, cy, size, ctx){
+  ctx.beginPath();
+  for(let i=0; i<6; i++){
+    let angle = Math.PI/180 * (60*i - 30);
+    let hx = cx + size * Math.cos(angle);
+    let hy = cy + size * Math.sin(angle);
+    if(i===0) ctx.moveTo(hx, hy);
+    else ctx.lineTo(hx, hy);
+  }
+  ctx.closePath();
+}
+
+function getHexColor(n){
+  let pidx = PRIMORIAL_PRIMES.indexOf(n);
+  if(pidx >= 0) return PRIMORIAL_COLORS[pidx];
+  if(primeSet.has(n)){
+    // Color primes by a hue cycle
+    let hue = (n * 137.508) % 360;
+    return 'hsl(' + hue + ',70%,55%)';
+  }
+  return '#181828';
+}
+
+function getBorderColor(n){
+  // Numbers divisible by primorial components get colored borders
+  for(let i = PRIMORIAL_510510.length-1; i>=0; i--){
+    if(n > PRIMORIAL_510510[i] && n % PRIMORIAL_510510[i] === 0){
+      return PRIMORIAL_COLORS[i];
+    }
+  }
+  return null;
+}
+
+function draw(){
+  time += 0.016;
+  if(buildProgress < MAX_N){
+    buildProgress = Math.min(MAX_N, buildProgress + buildSpeed);
+  }
+
+  let cw = canvas.offsetWidth;
+  let ch = canvas.offsetHeight;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Subtle grid glow at center
+  let gcx = cw/2 + panX;
+  let gcy = ch/2 + panY;
+  let grad = ctx.createRadialGradient(gcx, gcy, 0, gcx, gcy, 400*scale);
+  grad.addColorStop(0, 'rgba(10,20,60,0.15)');
+  grad.addColorStop(1, 'rgba(6,6,16,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, cw, ch);
+
+  let size = baseHexSize * scale;
+  let centerX = cw/2 + panX;
+  let centerY = ch/2 + panY;
+
+  let limit = Math.min(Math.floor(buildProgress), MAX_N);
+
+  // Collect prime line positions
+  let primePositions = [];
+
+  // Draw hexagons
+  for(let i=0; i<limit; i++){
+    let n = i + 1;
+    let coord = hexCoords[i];
+    let p = axialToPixel(coord.q, coord.r, size);
+    let px = centerX + p.x;
+    let py = centerY + p.y;
+
+    // Skip if off screen
+    if(px < -size*2 || px > cw+size*2 || py < -size*2 || py > ch+size*2) {
+      if(primeSet.has(n)) primePositions.push({x:px, y:py, n});
+      continue;
+    }
+
+    let ip = primeSet.has(n);
+    let pidx = PRIMORIAL_PRIMES.indexOf(n);
+    let isMultiple = selectedMultiple > 0 && n % selectedMultiple === 0;
+    let isHovered = i === hoveredIdx;
+
+    // Pulse for primes
+    let pulse = 0;
+    if(ip){
+      let pfreq = twinPrimeSet.has(n) ? 2.0 : 1.2;
+      let pphase = twinPrimeSet.has(n) ? 0 : n * 0.3;
+      pulse = Math.sin(time * pfreq + pphase) * 0.15 + 0.15;
+    }
+
+    // Entrance animation
+    let appear = Math.min(1, (buildProgress - i) / 8);
+    if(appear <= 0) continue;
+    let hexSize = size * 0.88 * appear;
+
+    // Primorial primes get larger hexagons
+    if(pidx >= 0){
+      hexSize = size * 1.15 * appear;
+    }
+
+    ctx.globalAlpha = appear;
+
+    // Glow for primorial primes
+    if(pidx >= 0){
+      let glowSize = hexSize * (1.6 + pulse * 0.5);
+      let glow = ctx.createRadialGradient(px, py, hexSize*0.3, px, py, glowSize);
+      let gc = PRIMORIAL_COLORS[pidx];
+      glow.addColorStop(0, gc + '55');
+      glow.addColorStop(0.5, gc + '22');
+      glow.addColorStop(1, gc + '00');
+      ctx.fillStyle = glow;
+      ctx.fillRect(px-glowSize, py-glowSize, glowSize*2, glowSize*2);
+    }
+
+    // Draw hex fill
+    drawHexPath(px, py, hexSize * (1 + pulse * 0.08), ctx);
+    let col = getHexColor(n);
+    if(isMultiple){
+      ctx.fillStyle = selectedMultiple === n ? '#fff' : (ip ? col : '#2a2a5a');
+      ctx.globalAlpha = appear * (isMultiple ? (ip ? 0.9 : 0.7) : 1);
+    } else if(selectedMultiple > 0 && !isMultiple){
+      ctx.fillStyle = col;
+      ctx.globalAlpha = appear * 0.15;
+    } else {
+      ctx.fillStyle = col;
+      ctx.globalAlpha = appear * (ip ? (0.75 + pulse * 0.25) : 0.35);
+    }
+    ctx.fill();
+
+    // Border
+    ctx.globalAlpha = appear;
+    let borderCol = getBorderColor(n);
+    if(pidx >= 0){
+      ctx.strokeStyle = PRIMORIAL_COLORS[pidx];
+      ctx.lineWidth = 2.5 * scale;
+      ctx.stroke();
+    } else if(borderCol){
+      ctx.strokeStyle = borderCol + '66';
+      ctx.lineWidth = 1.2 * scale;
+      ctx.stroke();
+    } else if(isHovered){
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5 * scale;
+      ctx.stroke();
+    } else if(ip){
+      ctx.strokeStyle = col + '88';
+      ctx.lineWidth = 0.6 * scale;
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#1a1a3a';
+      ctx.lineWidth = 0.4 * scale;
+      ctx.stroke();
+    }
+
+    // Number text
+    if(size > 10){
+      ctx.globalAlpha = appear * (ip ? 0.9 : 0.3);
+      ctx.fillStyle = ip ? '#fff' : '#445';
+      let fontSize = Math.max(7, Math.min(11, size * 0.45));
+      if(pidx >= 0) fontSize = Math.max(9, size * 0.5);
+      ctx.font = 'bold ' + fontSize + 'px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n, px, py);
+    }
+
+    ctx.globalAlpha = 1;
+
+    if(primeSet.has(n)) primePositions.push({x: px, y: py, n});
+  }
+
+  // Draw lines connecting consecutive primes
+  if(primePositions.length > 1){
+    ctx.globalAlpha = 0.12 + Math.sin(time*0.5)*0.03;
+    ctx.strokeStyle = '#0af';
+    ctx.lineWidth = 0.8 * scale;
+    ctx.beginPath();
+    ctx.moveTo(primePositions[0].x, primePositions[0].y);
+    for(let i=1; i<primePositions.length; i++){
+      ctx.lineTo(primePositions[i].x, primePositions[i].y);
+    }
+    ctx.stroke();
+
+    // Dots at primes on the line
+    ctx.globalAlpha = 0.25;
+    for(let pp of primePositions){
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, 1.5*scale, 0, Math.PI*2);
+      ctx.fillStyle = '#0af';
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// --- Stats panel ---
+function buildStats(){
+  let el = document.getElementById('stats-content');
+  let primeCount = 0;
+  let twinCount = 0;
+  let ranges = [[1,50],[51,100],[101,200],[201,300],[301,400],[401,500]];
+  let rangeCounts = ranges.map(()=>({total:0, primes:0}));
+
+  for(let n=1; n<=MAX_N; n++){
+    if(primeSet.has(n)) primeCount++;
+    if(twinPrimeSet.has(n)) twinCount++;
+    for(let ri=0; ri<ranges.length; ri++){
+      if(n>=ranges[ri][0] && n<=ranges[ri][1]){
+        rangeCounts[ri].total++;
+        if(primeSet.has(n)) rangeCounts[ri].primes++;
+      }
+    }
+  }
+
+  let html = '';
+  html += '<div class="stat-row"><span class="stat-label">Numbers</span><span class="stat-value">1 - '+MAX_N+'</span></div>';
+  html += '<div class="stat-row"><span class="stat-label">Primes</span><span class="stat-value" style="color:#0f8">'+primeCount+'</span></div>';
+  html += '<div class="stat-row"><span class="stat-label">Composites</span><span class="stat-value">'+(MAX_N-primeCount)+'</span></div>';
+  html += '<div class="stat-row"><span class="stat-label">Density</span><span class="stat-value">'+(primeCount/MAX_N*100).toFixed(1)+'%</span></div>';
+  html += '<div class="stat-row"><span class="stat-label">Twin primes</span><span class="stat-value" style="color:#88f">'+twinCount+'</span></div>';
+
+  html += '<h3 style="margin-top:16px">DENSITY BY RANGE</h3>';
+  for(let ri=0; ri<ranges.length; ri++){
+    let pct = (rangeCounts[ri].primes / rangeCounts[ri].total * 100);
+    html += '<div style="margin:6px 0">';
+    html += '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#667">'+ranges[ri][0]+'-'+ranges[ri][1]+'</span><span style="color:#88a">'+rangeCounts[ri].primes+' ('+pct.toFixed(1)+'%)</span></div>';
+    html += '<div class="bar-container"><div class="bar-fill" style="width:'+pct+'%;background:linear-gradient(90deg,#0af,#0f8)"></div></div>';
+    html += '</div>';
+  }
+
+  html += '<div class="legend"><h3 style="margin-bottom:8px">PRIMORIAL PRIMES</h3>';
+  for(let i=0; i<PRIMORIAL_PRIMES.length; i++){
+    html += '<div class="legend-item"><div class="legend-swatch" style="background:'+PRIMORIAL_COLORS[i]+';box-shadow:0 0 6px '+PRIMORIAL_COLORS[i]+'"></div><span>'+PRIMORIAL_PRIMES[i]+'</span></div>';
+  }
+  html += '</div>';
+
+  html += '<div style="margin-top:16px;padding-top:10px;border-top:1px solid #1a1a3a">';
+  html += '<h3 style="margin-bottom:8px">CONTROLS</h3>';
+  html += '<div style="font-size:10px;color:#556;line-height:1.7">';
+  html += 'Scroll: zoom<br>Drag: pan<br>Hover: inspect<br>Click: multiples<br>+/-: zoom buttons';
+  html += '</div></div>';
+
+  el.innerHTML = html;
+}
+
+buildStats();
+requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FIBONACCI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+#shield-nav{position:fixed;top:0;left:0;width:100%;z-index:100;background:rgba(6,6,16,.92);
+  padding:8px 12px;font-size:12px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;
+  border-bottom:1px solid #1a1a2e;backdrop-filter:blur(6px)}
+#shield-nav a{text-decoration:none;font-family:'Courier New',monospace;font-size:11px;letter-spacing:1px;transition:text-shadow .3s}
+#shield-nav a:hover{text-shadow:0 0 8px currentColor}
+canvas#bg{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+canvas#main{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1}
+#ratio-display{position:fixed;top:50px;right:20px;z-index:10;text-align:right;font-size:14px;color:#fc0;
+  text-shadow:0 0 8px rgba(255,204,0,.4);pointer-events:none}
+#ratio-display .phi-label{font-size:11px;color:#888;margin-bottom:2px}
+#ratio-display .phi-value{font-size:28px;font-weight:bold;letter-spacing:2px}
+#ratio-display .phi-target{font-size:12px;color:#664;margin-top:4px}
+#info-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:20;
+  background:rgba(6,6,16,.95);border:1px solid #fc0;padding:20px 28px;border-radius:4px;
+  display:none;text-align:center;min-width:220px;pointer-events:auto}
+#info-panel .close{position:absolute;top:6px;right:10px;cursor:pointer;color:#888;font-size:16px}
+#info-panel .close:hover{color:#fff}
+#info-panel h3{color:#fc0;font-size:16px;margin-bottom:10px}
+#info-panel .detail{margin:6px 0;font-size:13px}
+#info-panel .ratio-line{color:#0ad;font-size:15px;margin-top:8px}
+#ticker{position:fixed;bottom:40px;left:0;width:100%;z-index:10;overflow:hidden;height:28px;
+  pointer-events:none}
+#ticker-inner{display:flex;gap:20px;white-space:nowrap;font-size:13px;color:#fc0;
+  animation:tickerScroll 40s linear infinite;height:28px;align-items:center}
+@keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+#ticker-inner span{opacity:.7}
+#ticker-inner span.div510{color:#0f8;opacity:1;text-shadow:0 0 6px rgba(0,255,128,.4)}
+#divisor-info{position:fixed;bottom:68px;right:20px;z-index:10;font-size:11px;color:#0f8;
+  text-align:right;pointer-events:none;text-shadow:0 0 4px rgba(0,255,128,.3)}
+#footer{position:fixed;bottom:0;left:0;width:100%;z-index:10;text-align:center;
+  padding:8px;font-size:11px;color:#556;background:rgba(6,6,16,.9);
+  border-top:1px solid #1a1a2e;letter-spacing:1px}
+#footer em{color:#fc0;font-style:normal}
+</style>
+</head>
+<body>
+<nav id="shield-nav">
+<a href="../" style="color:#0af;margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/" style="color:#604">ORB</a>
+<a href="../cascade/" style="color:#fa0">CASCADE</a>
+<a href="../breath/" style="color:#a4f">BREATH</a>
+<a href="../flat/" style="color:#0f8">FLAT</a>
+<a href="../tree/" style="color:#4a4">TREE</a>
+<a href="../drug/" style="color:#f44">DRUG</a>
+<a href="../network/" style="color:#fc0">NETWORK</a>
+<a href="../number/" style="color:#fff">NUMBER</a>
+<a href="../spiral/" style="color:#0ad">SPIRAL</a>
+<a href="../sieve/" style="color:#f80">SIEVE</a>
+<a href="../twin/" style="color:#88f">TWIN</a>
+<a href="../perfect/" style="color:#4f4">PERFECT</a>
+<a href="../fibonacci/" style="color:#fc0;text-shadow:0 0 6px rgba(255,204,0,.5)">FIBONACCI</a>
+<a href="../fractal/" style="color:#f0a">FRACTAL</a>
+<a href="../goldbach/" style="color:#4ff">GOLDBACH</a>
+<a href="../hexagon/" style="color:#ff4">HEXAGON</a>
+<a href="../flow/" style="color:#0f8">FLOW</a>
+<a href="../harmony/" style="color:#f4a">HARMONY</a>
+</nav>
+
+<canvas id="bg"></canvas>
+<canvas id="main"></canvas>
+
+<div id="ratio-display">
+  <div class="phi-label">F(n+1) / F(n)</div>
+  <div class="phi-value" id="phi-current">--</div>
+  <div class="phi-target">&phi; = 1.6180339887...</div>
+  <div class="phi-label" style="margin-top:8px" id="phi-n-label"></div>
+</div>
+
+<div id="info-panel">
+  <span class="close" id="info-close">&times;</span>
+  <h3 id="info-title"></h3>
+  <div class="detail" id="info-fn"></div>
+  <div class="detail" id="info-fn1"></div>
+  <div class="ratio-line" id="info-ratio"></div>
+  <div class="detail" id="info-div510" style="color:#0f8;margin-top:10px"></div>
+</div>
+
+<div id="ticker"><div id="ticker-inner"></div></div>
+
+<div id="divisor-info"></div>
+
+<div id="footer"><em>510,510</em> = 2&times;3&times;5&times;7&times;11&times;13&times;17 &middot; THE GOLDEN RATIO WEAVES THROUGH ALL</div>
+
+<script>
+(function(){
+// --- Fibonacci sequence ---
+var FIB_COUNT = 25;
+var fibs = [1,1];
+for(var i=2;i<FIB_COUNT;i++) fibs.push(fibs[i-1]+fibs[i-2]);
+
+var COLORS = ['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'];
+var PHI = (1+Math.sqrt(5))/2;
+var PHI_DIGITS = '1618033988749894848204586834365638117720309179805762862135448622705260462818902449707207204189391137484754088075386891752';
+
+// --- 510510 divisibility ---
+var N510 = 510510;
+var fibDiv510 = [];
+for(var i=0;i<FIB_COUNT;i++){
+  if(N510 % fibs[i] === 0) fibDiv510.push(i);
+}
+
+// --- Canvas setup ---
+var bgC = document.getElementById('bg');
+var bgCtx = bgC.getContext('2d');
+var mainC = document.getElementById('main');
+var ctx = mainC.getContext('2d');
+var W, H, dpr;
+
+function resize(){
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  bgC.width = W*dpr; bgC.height = H*dpr;
+  bgC.style.width = W+'px'; bgC.style.height = H+'px';
+  bgCtx.setTransform(dpr,0,0,dpr,0,0);
+  mainC.width = W*dpr; mainC.height = H*dpr;
+  mainC.style.width = W+'px'; mainC.style.height = H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Phi digit rain ---
+var RAIN_COLS = Math.floor(W / 16);
+var rainDrops = [];
+for(var i=0;i<RAIN_COLS;i++){
+  rainDrops.push({
+    x: i*16 + Math.random()*8,
+    y: Math.random()*H,
+    speed: 0.3 + Math.random()*1.2,
+    chars: [],
+    len: 8 + Math.floor(Math.random()*14),
+    offset: Math.floor(Math.random()*PHI_DIGITS.length)
+  });
+  for(var j=0;j<rainDrops[i].len;j++){
+    var idx = (rainDrops[i].offset + j) % PHI_DIGITS.length;
+    rainDrops[i].chars.push(PHI_DIGITS[idx]);
+  }
+}
+
+function drawRain(){
+  bgCtx.fillStyle = 'rgba(6,6,16,0.12)';
+  bgCtx.fillRect(0,0,W,H);
+  bgCtx.font = '13px Courier New';
+  for(var i=0;i<rainDrops.length;i++){
+    var d = rainDrops[i];
+    for(var j=0;j<d.chars.length;j++){
+      var yy = d.y - j*16;
+      if(yy < -20 || yy > H+20) continue;
+      var alpha = j===0 ? 0.9 : Math.max(0, 0.5 - j*0.04);
+      var green = j===0 ? 180 : 100;
+      var gold = j===0 ? 160 : 80;
+      bgCtx.fillStyle = 'rgba('+gold+','+green+',0,'+alpha+')';
+      bgCtx.fillText(d.chars[j], d.x, yy);
+    }
+    d.y += d.speed;
+    if(d.y - d.len*16 > H){
+      d.y = -20;
+      d.offset = Math.floor(Math.random()*PHI_DIGITS.length);
+      for(var j=0;j<d.len;j++){
+        var idx = (d.offset + j) % PHI_DIGITS.length;
+        d.chars[j] = PHI_DIGITS[idx];
+      }
+    }
+  }
+}
+
+// --- Fibonacci rectangles geometry ---
+// Build rectangles using the standard Fibonacci spiral tiling
+// Direction cycle: right, up, left, down
+var rects = [];
+function buildRects(){
+  rects = [];
+  // We'll use a unit scale where fib(0)=1, and scale to fit screen
+  // Position tracking
+  var x = 0, y = 0;
+  // directions: 0=right, 1=up, 2=left, 3=down
+  var dir = 0;
+  for(var i=0;i<FIB_COUNT;i++){
+    var s = fibs[i];
+    var rx, ry;
+    if(i === 0){
+      rx = 0; ry = 0;
+    } else {
+      var prev = rects[i-1];
+      switch(dir){
+        case 0: // place to the right
+          rx = prev.rx + prev.s;
+          ry = prev.ry + prev.s - s;
+          break;
+        case 1: // place above
+          rx = prev.rx + prev.s - s;
+          ry = prev.ry - s;
+          break;
+        case 2: // place to the left
+          rx = prev.rx - s;
+          ry = prev.ry;
+          break;
+        case 3: // place below
+          rx = prev.rx;
+          ry = prev.ry + prev.s;
+          break;
+      }
+    }
+    rects.push({rx:rx, ry:ry, s:s, idx:i, color:COLORS[i%COLORS.length]});
+    dir = (dir+1)%4;
+  }
+}
+buildRects();
+
+// Compute bounding box and scale
+function getTransform(){
+  var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  // Only consider visible rects
+  var visCount = Math.min(currentStep+1, rects.length);
+  for(var i=0;i<visCount;i++){
+    var r = rects[i];
+    minX = Math.min(minX, r.rx);
+    minY = Math.min(minY, r.ry);
+    maxX = Math.max(maxX, r.rx+r.s);
+    maxY = Math.max(maxY, r.ry+r.s);
+  }
+  var bw = maxX - minX || 1;
+  var bh = maxY - minY || 1;
+  var margin = 80;
+  var availW = W - margin*2;
+  var availH = H - margin*2 - 60; // top nav + bottom ticker
+  var scale = Math.min(availW/bw, availH/bh);
+  var ox = W/2 - (minX+bw/2)*scale;
+  var oy = H/2 - (minY+bh/2)*scale + 10;
+  return {scale:scale, ox:ox, oy:oy};
+}
+
+// --- Animation state ---
+var currentStep = -1;
+var stepTimer = 0;
+var STEP_INTERVAL = 600; // ms between steps
+var spiralProgress = 0; // 0..1 for current arc
+var highlightIdx = -1;
+var startTime = performance.now();
+
+// --- Spiral drawing ---
+function drawSpiral(t){
+  var tr = getTransform();
+  var sc = tr.scale, ox = tr.ox, oy = tr.oy;
+  ctx.save();
+  ctx.strokeStyle = '#fc0';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = 'rgba(255,204,0,0.6)';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+
+  var dir = 0;
+  var limit = Math.min(currentStep+1, rects.length);
+  for(var i=0;i<limit;i++){
+    var r = rects[i];
+    var cx, cy, startAngle;
+    var s = r.s * sc;
+    var px = r.rx*sc + ox;
+    var py = r.ry*sc + oy;
+
+    // Quarter circle center and start angle depend on direction
+    switch(dir){
+      case 0: cx=px; cy=py; startAngle=Math.PI; break;         // bottom-left corner
+      case 1: cx=px+s; cy=py; startAngle=Math.PI*0.5; break;   // bottom-right
+      case 2: cx=px+s; cy=py+s; startAngle=0; break;           // top-right
+      case 3: cx=px; cy=py+s; startAngle=-Math.PI*0.5; break;  // top-left
+    }
+
+    var arcEnd = Math.PI*0.5;
+    var progArc = (i === currentStep) ? spiralProgress : 1;
+
+    // Draw arc
+    if(i===0 && limit===1){
+      ctx.arc(cx, cy, s*progArc, startAngle, startAngle + arcEnd*progArc, false);
+    } else {
+      ctx.arc(cx, cy, s, startAngle, startAngle + arcEnd*progArc, false);
+    }
+
+    dir = (dir+1)%4;
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// --- Rectangle drawing ---
+function drawRects(){
+  var tr = getTransform();
+  var sc = tr.scale, ox = tr.ox, oy = tr.oy;
+  var limit = Math.min(currentStep+1, rects.length);
+
+  for(var i=0;i<limit;i++){
+    var r = rects[i];
+    var px = r.rx*sc + ox;
+    var py = r.ry*sc + oy;
+    var s = r.s*sc;
+
+    // Fade in for current step
+    var alpha = (i === currentStep) ? spiralProgress : 1;
+    // Highlight
+    var isHighlight = (i === highlightIdx);
+    var isDivisor = fibDiv510.indexOf(i) >= 0;
+
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.25;
+    ctx.fillStyle = r.color;
+    if(isHighlight) ctx.globalAlpha = alpha * 0.55;
+    ctx.fillRect(px, py, s, s);
+
+    // Border
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = isHighlight ? 3 : 1;
+    if(isDivisor){
+      ctx.strokeStyle = '#0f8';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = 'rgba(0,255,128,0.5)';
+      ctx.shadowBlur = 6;
+    }
+    if(isHighlight){
+      ctx.strokeStyle = '#fc0';
+      ctx.shadowColor = 'rgba(255,204,0,0.8)';
+      ctx.shadowBlur = 12;
+    }
+    ctx.strokeRect(px, py, s, s);
+
+    // Label inside if large enough
+    if(s > 22){
+      ctx.globalAlpha = alpha * 0.9;
+      var fontSize = Math.max(9, Math.min(s*0.3, 22));
+      ctx.font = fontSize+'px Courier New';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(fibs[i], px+s/2, py+s/2);
+      // Index
+      if(s > 40){
+        ctx.font = Math.max(8, fontSize*0.5)+'px Courier New';
+        ctx.fillStyle = '#888';
+        ctx.fillText('F('+i+')', px+s/2, py+s/2 + fontSize*0.7);
+      }
+    }
+    ctx.restore();
+  }
+
+  // Store screen rects for click detection
+  screenRects = [];
+  for(var i=0;i<limit;i++){
+    var r = rects[i];
+    screenRects.push({
+      x: r.rx*sc+ox, y: r.ry*sc+oy, w: r.s*sc, h: r.s*sc, idx: i
+    });
+  }
+}
+
+var screenRects = [];
+
+// --- Click handling ---
+mainC.addEventListener('click', function(e){
+  var mx = e.clientX, my = e.clientY;
+  var found = -1;
+  // Check smallest first (they're on top visually)
+  for(var i=screenRects.length-1;i>=0;i--){
+    var sr = screenRects[i];
+    if(mx>=sr.x && mx<=sr.x+sr.w && my>=sr.y && my<=sr.y+sr.h){
+      found = sr.idx;
+      break;
+    }
+  }
+  if(found >= 0){
+    highlightIdx = found;
+    showInfoPanel(found);
+  } else {
+    highlightIdx = -1;
+    document.getElementById('info-panel').style.display = 'none';
+  }
+});
+
+function showInfoPanel(idx){
+  var panel = document.getElementById('info-panel');
+  document.getElementById('info-title').textContent = 'F('+idx+') = '+fibs[idx];
+  if(idx > 0){
+    document.getElementById('info-fn').textContent = 'F('+idx+') = '+fibs[idx];
+    document.getElementById('info-fn1').textContent = 'F('+(idx-1)+') = '+fibs[idx-1];
+    var ratio = (fibs[idx]/fibs[idx-1]).toFixed(10);
+    document.getElementById('info-ratio').textContent = 'Ratio: '+ratio;
+  } else {
+    document.getElementById('info-fn').textContent = 'F(0) = 1';
+    document.getElementById('info-fn1').textContent = '--';
+    document.getElementById('info-ratio').textContent = '';
+  }
+  var divides = (N510 % fibs[idx] === 0);
+  document.getElementById('info-div510').textContent = divides ?
+    fibs[idx]+' divides 510,510 (510510/'+fibs[idx]+' = '+(N510/fibs[idx])+')' :
+    fibs[idx]+' does not divide 510,510';
+  panel.style.display = 'block';
+}
+
+document.getElementById('info-close').addEventListener('click', function(){
+  document.getElementById('info-panel').style.display = 'none';
+  highlightIdx = -1;
+});
+
+// --- Ratio display ---
+function updateRatio(){
+  var el = document.getElementById('phi-current');
+  var label = document.getElementById('phi-n-label');
+  if(currentStep >= 1){
+    var n = Math.min(currentStep, fibs.length-1);
+    var ratio = fibs[n] / fibs[n-1];
+    el.textContent = ratio.toFixed(10);
+    label.textContent = 'n = '+n+'  |  F('+n+')='+fibs[n];
+  } else {
+    el.textContent = '--';
+    label.textContent = '';
+  }
+}
+
+// --- Ticker ---
+function buildTicker(){
+  var inner = document.getElementById('ticker-inner');
+  var html = '';
+  for(var rep=0;rep<4;rep++){
+    for(var i=0;i<FIB_COUNT;i++){
+      var isDivisor = fibDiv510.indexOf(i)>=0;
+      var cls = isDivisor ? 'div510' : '';
+      html += '<span class="'+cls+'">F('+i+')='+fibs[i]+(isDivisor?' \u2713':'')+'</span>';
+    }
+  }
+  inner.innerHTML = html;
+}
+buildTicker();
+
+// --- Divisor info ---
+function buildDivisorInfo(){
+  var el = document.getElementById('divisor-info');
+  var lines = ['Fibonacci numbers dividing 510,510:'];
+  for(var i=0;i<fibDiv510.length;i++){
+    var idx = fibDiv510[i];
+    lines.push('F('+idx+') = '+fibs[idx]);
+  }
+  el.innerHTML = lines.join('<br>');
+}
+buildDivisorInfo();
+
+// --- Main loop ---
+var lastStepTime = 0;
+
+function animate(ts){
+  // Background rain
+  drawRain();
+
+  // Clear main canvas
+  ctx.clearRect(0,0,W,H);
+
+  // Step timing
+  var elapsed = ts - startTime;
+  if(currentStep < rects.length - 1){
+    if(elapsed - lastStepTime > STEP_INTERVAL){
+      currentStep++;
+      lastStepTime = elapsed;
+      spiralProgress = 0;
+    } else {
+      var dt = elapsed - lastStepTime;
+      spiralProgress = Math.min(1, dt / (STEP_INTERVAL * 0.85));
+      // Ease
+      spiralProgress = spiralProgress < 0.5 ?
+        2*spiralProgress*spiralProgress :
+        1 - Math.pow(-2*spiralProgress+2,2)/2;
+    }
+  } else {
+    spiralProgress = 1;
+  }
+
+  drawRects();
+  drawSpiral();
+  updateRatio();
+
+  requestAnimationFrame(animate);
+}
+
+// Init background to black
+bgCtx.fillStyle = '#060610';
+bgCtx.fillRect(0,0,W,H);
+
+requestAnimationFrame(animate);
+
+// Handle resize for rain columns
+window.addEventListener('resize', function(){
+  RAIN_COLS = Math.floor(W/16);
+  while(rainDrops.length < RAIN_COLS){
+    var i = rainDrops.length;
+    var d = {
+      x: i*16+Math.random()*8, y: Math.random()*H,
+      speed: 0.3+Math.random()*1.2, chars:[], len:8+Math.floor(Math.random()*14),
+      offset: Math.floor(Math.random()*PHI_DIGITS.length)
+    };
+    for(var j=0;j<d.len;j++){
+      d.chars.push(PHI_DIGITS[(d.offset+j)%PHI_DIGITS.length]);
+    }
+    rainDrops.push(d);
+  }
+});
+
+})();
+</script>
+</body>
+</html>

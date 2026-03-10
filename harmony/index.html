@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-HARMONY</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh;display:flex;flex-direction:column}
+#shield-nav{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#08081a;border-bottom:1px solid #1a1a3a;align-items:center;font-size:12px;z-index:10}
+#shield-nav a{text-decoration:none;transition:text-shadow .3s}
+#shield-nav a:hover{text-shadow:0 0 8px currentColor}
+#main-wrap{display:flex;flex:1;overflow:hidden}
+#canvas-col{flex:1;position:relative;min-width:0}
+#main-canvas{display:block;width:100%;height:100%}
+#right-panel{width:160px;background:#0a0a1a;border-left:1px solid #1a1a3a;display:flex;flex-direction:column;padding:8px;gap:8px}
+#right-panel h3{font-size:11px;color:#667;text-align:center;letter-spacing:2px}
+#spectrum{flex:0 0 200px}
+#lissajous-wrap{position:relative;flex:0 0 auto;display:flex;flex-direction:column;align-items:center}
+#lissajous-canvas{border-radius:50%;border:1px solid #1a1a3a}
+#lissajous-label{font-size:10px;color:#556;margin-top:4px;text-align:center}
+#phase-controls{display:flex;flex-direction:column;gap:3px;flex:0 0 auto}
+#phase-controls .row{display:flex;align-items:center;gap:4px;font-size:10px}
+#phase-controls button{background:#12122a;border:1px solid #2a2a4a;color:#aaa;font-family:inherit;font-size:10px;padding:1px 5px;cursor:pointer;border-radius:2px;transition:background .2s,border-color .2s}
+#phase-controls button:hover{background:#1a1a3a;border-color:#4a4a7a}
+.prime-label{font-size:10px;width:22px;text-align:right}
+#solo-hint{position:absolute;bottom:8px;left:12px;font-size:10px;color:#334;pointer-events:none}
+footer{text-align:center;padding:10px;font-size:11px;color:#445;border-top:1px solid #1a1a3a;background:#08081a;letter-spacing:1px}
+footer span{color:#f4a}
+</style>
+</head>
+<body>
+<nav id="shield-nav">
+<a href="../" style="color:#0af;margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/" style="color:#604">ORB</a>
+<a href="../cascade/" style="color:#fa0">CASCADE</a>
+<a href="../breath/" style="color:#a4f">BREATH</a>
+<a href="../flat/" style="color:#0f8">FLAT</a>
+<a href="../tree/" style="color:#4a4">TREE</a>
+<a href="../drug/" style="color:#f44">DRUG</a>
+<a href="../network/" style="color:#fc0">NETWORK</a>
+<a href="../number/" style="color:#fff">NUMBER</a>
+<a href="../spiral/" style="color:#0ad">SPIRAL</a>
+<a href="../sieve/" style="color:#f80">SIEVE</a>
+<a href="../twin/" style="color:#88f">TWIN</a>
+<a href="../perfect/" style="color:#4f4">PERFECT</a>
+<a href="../fibonacci/" style="color:#fc0">FIBONACCI</a>
+<a href="../fractal/" style="color:#f0a">FRACTAL</a>
+<a href="../goldbach/" style="color:#4ff">GOLDBACH</a>
+<a href="../hexagon/" style="color:#ff4">HEXAGON</a>
+<a href="../flow/" style="color:#0f8">FLOW</a>
+<a href="../harmony/" style="color:#f4a;text-shadow:0 0 6px rgba(255,68,170,.5)">HARMONY</a>
+</nav>
+<div id="main-wrap">
+<div id="canvas-col">
+<canvas id="main-canvas"></canvas>
+<div id="solo-hint">click lane to solo &middot; click again to unsolo</div>
+</div>
+<div id="right-panel">
+<h3>SPECTRUM</h3>
+<canvas id="spectrum" width="144" height="200"></canvas>
+<h3>LISSAJOUS</h3>
+<div id="lissajous-wrap">
+<canvas id="lissajous-canvas" width="130" height="130"></canvas>
+<div id="lissajous-label">2 : 3</div>
+</div>
+<h3>PHASE &phi;</h3>
+<div id="phase-controls"></div>
+</div>
+</div>
+<footer>
+<span>510,510</span> = 2&times;3&times;5&times;7&times;11&times;13&times;17 &nbsp;.&nbsp; SEVEN FREQUENCIES IN PERFECT HARMONY
+</footer>
+<script>
+(function(){
+"use strict";
+
+var PRIMES = [2,3,5,7,11,13,17];
+var COLORS = ['#604','#0ad','#fa0','#f44','#4a4','#a4f','#fff'];
+var COLORS_RGB = [
+  [102,0,68],[0,170,221],[255,170,0],[255,68,68],[68,170,68],[170,68,255],[255,255,255]
+];
+
+// Harmonic ratio pairs to display
+var RATIO_PAIRS = [
+  [0,1,'2:3','perfect fifth'],
+  [1,2,'3:5','major sixth'],
+  [0,2,'2:5','major third+oct'],
+  [2,3,'5:7','harmonic 7th'],
+  [3,4,'7:11','undecimal tritone'],
+  [4,5,'11:13','tridecimal 2/3tone']
+];
+
+// Lissajous pairs cycle
+var LISS_PAIRS = [];
+for(var i=0;i<PRIMES.length;i++)
+  for(var j=i+1;j<PRIMES.length;j++)
+    LISS_PAIRS.push([i,j]);
+
+var canvas = document.getElementById('main-canvas');
+var ctx = canvas.getContext('2d');
+var specCanvas = document.getElementById('spectrum');
+var specCtx = specCanvas.getContext('2d');
+var lissCanvas = document.getElementById('lissajous-canvas');
+var lissCtx = lissCanvas.getContext('2d');
+
+var W, H, laneH, compositeH;
+var soloIndex = -1;
+var phases = [0,0,0,0,0,0,0];
+var amplitudes = [1,1,1,1,1,1,1];
+var exponents = [1,0.9,0.8,0.7,0.6,0.55,0.5];
+var lissIdx = 0;
+var lissTimer = 0;
+var LISS_INTERVAL = 5000;
+var t = 0;
+
+function resize(){
+    var col = document.getElementById('canvas-col');
+    W = col.clientWidth;
+    H = col.clientHeight;
+    canvas.width = W;
+    canvas.height = H;
+    laneH = Math.floor((H - 2) / 8.5);
+    compositeH = H - laneH * 7 - 14;
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Phase controls
+  var pcDiv = document.getElementById('phase-controls');
+  PRIMES.forEach(function(p, i){
+    var row = document.createElement('div');
+    row.className = 'row';
+    var lbl = document.createElement('span');
+    lbl.className = 'prime-label';
+    lbl.style.color = COLORS[i];
+    lbl.textContent = p;
+    var bm = document.createElement('button');
+    bm.textContent = '\u2212';
+    bm.title = 'Shift phase -';
+    bm.addEventListener('click', function(){ phases[i] -= 0.2; });
+    var bp = document.createElement('button');
+    bp.textContent = '+';
+    bp.title = 'Shift phase +';
+    bp.addEventListener('click', function(){ phases[i] += 0.2; });
+    var br = document.createElement('button');
+    br.textContent = '0';
+    br.title = 'Reset phase';
+    br.addEventListener('click', function(){ phases[i] = 0; });
+    row.appendChild(lbl);
+    row.appendChild(bm);
+    row.appendChild(bp);
+    row.appendChild(br);
+    pcDiv.appendChild(row);
+  });
+
+  // Click to solo
+  canvas.addEventListener('click', function(e){
+    var rect = canvas.getBoundingClientRect();
+    var y = e.clientY - rect.top;
+    var lane = Math.floor(y / laneH);
+    if(lane >= 0 && lane < 7){
+      soloIndex = (soloIndex === lane) ? -1 : lane;
+    }
+  });
+
+  function waveVal(primeIdx, x, time){
+    var freq = PRIMES[primeIdx];
+    var baseFreq = freq * 0.04;
+    var amp = exponents[primeIdx];
+    return amp * Math.sin(baseFreq * x - time * freq * 0.5 + phases[primeIdx]);
+  }
+
+  function drawLane(idx, yOff){
+    var active = (soloIndex === -1 || soloIndex === idx);
+    var alpha = active ? 1.0 : 0.12;
+    var r = COLORS_RGB[idx][0], g = COLORS_RGB[idx][1], b = COLORS_RGB[idx][2];
+
+    // Lane background
+    ctx.fillStyle = active ? 'rgba(10,10,30,0.6)' : 'rgba(6,6,16,0.8)';
+    ctx.fillRect(0, yOff, W, laneH);
+
+    // Lane separator
+    ctx.strokeStyle = 'rgba(40,40,80,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(0, yOff + laneH);
+    ctx.lineTo(W, yOff + laneH);
+    ctx.stroke();
+
+    // Prime label
+    ctx.fillStyle = 'rgba('+r+','+g+','+b+','+alpha*0.7+')';
+    ctx.font = '10px Courier New';
+    ctx.fillText('p='+PRIMES[idx], 4, yOff + 12);
+
+    // Frequency info
+    ctx.fillStyle = 'rgba('+r+','+g+','+b+','+alpha*0.35+')';
+    ctx.font = '9px Courier New';
+    ctx.fillText('f=' + PRIMES[idx] + 'Hz', 4, yOff + 22);
+
+    var midY = yOff + laneH * 0.5;
+    var amp = (laneH * 0.4) * exponents[idx];
+
+    // Glow behind wave
+    if(active){
+      ctx.shadowColor = 'rgba('+r+','+g+','+b+',0.4)';
+      ctx.shadowBlur = 12;
+    }
+
+    // Draw wave
+    ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+alpha+')';
+    ctx.lineWidth = active ? 2 : 1;
+    ctx.beginPath();
+    for(var x = 0; x < W; x++){
+      var v = waveVal(idx, x, t);
+      var py = midY - v * amp;
+      if(x === 0) ctx.moveTo(x, py);
+      else ctx.lineTo(x, py);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Standing wave nodes - where the wave crosses zero
+    if(active){
+      var freq = PRIMES[idx] * 0.04;
+      var wavelength = 2 * Math.PI / freq;
+      var phaseOff = (t * PRIMES[idx] * 0.5 - phases[idx]) / freq;
+      var nodeSpacing = wavelength * 0.5;
+      var startNode = Math.ceil((phaseOff) / nodeSpacing) * nodeSpacing;
+      for(var nx = startNode - phaseOff; nx < W; nx += nodeSpacing){
+        if(nx < 0) continue;
+        var pulse = 0.5 + 0.5 * Math.sin(t * 2 + nx * 0.01);
+        var glowR = 3 + pulse * 4;
+        ctx.beginPath();
+        ctx.arc(nx, midY, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba('+r+','+g+','+b+','+(0.3 + pulse * 0.5)+')';
+        ctx.fill();
+        // Outer glow ring
+        ctx.beginPath();
+        ctx.arc(nx, midY, glowR + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba('+r+','+g+','+b+','+(0.1 + pulse * 0.2)+')';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawComposite(yOff, h){
+    ctx.fillStyle = 'rgba(8,8,20,0.7)';
+    ctx.fillRect(0, yOff, W, h);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '10px Courier New';
+    ctx.fillText('COMPOSITE \u03A3', 4, yOff + 12);
+
+    var midY = yOff + h * 0.5;
+    var maxAmp = 0;
+    for(var i = 0; i < 7; i++) maxAmp += exponents[i];
+    var scale = (h * 0.42) / maxAmp;
+
+    // Draw composite with gradient coloring
+    ctx.lineWidth = 2;
+    for(var x = 0; x < W; x++){
+      var sum = 0;
+      for(var i = 0; i < 7; i++){
+        if(soloIndex !== -1 && soloIndex !== i) continue;
+        sum += waveVal(i, x, t);
+      }
+      var py = midY - sum * scale;
+
+      // Color based on instantaneous value
+      var norm = Math.abs(sum) / maxAmp;
+      var shimmer = 0.6 + 0.4 * Math.sin(t * 3 + x * 0.005);
+
+      if(x === 0){
+        ctx.beginPath();
+        ctx.moveTo(x, py);
+      } else {
+        ctx.lineTo(x, py);
+      }
+    }
+
+    // Gradient stroke
+    var grad = ctx.createLinearGradient(0, yOff, W, yOff);
+    grad.addColorStop(0, 'rgba(102,0,68,0.9)');
+    grad.addColorStop(0.17, 'rgba(0,170,221,0.9)');
+    grad.addColorStop(0.33, 'rgba(255,170,0,0.9)');
+    grad.addColorStop(0.5, 'rgba(255,68,68,0.9)');
+    grad.addColorStop(0.67, 'rgba(68,170,68,0.9)');
+    grad.addColorStop(0.83, 'rgba(170,68,255,0.9)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.9)');
+    ctx.strokeStyle = grad;
+    ctx.shadowColor = 'rgba(255,170,255,0.3)';
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Shimmering fill under curve
+    ctx.lineTo(W, midY);
+    ctx.lineTo(0, midY);
+    ctx.closePath();
+    var fillGrad = ctx.createLinearGradient(0, yOff, 0, yOff + h);
+    fillGrad.addColorStop(0, 'rgba(170,68,255,0.06)');
+    fillGrad.addColorStop(0.5, 'rgba(0,170,221,0.03)');
+    fillGrad.addColorStop(1, 'rgba(102,0,68,0.06)');
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+  }
+
+  function drawRatioLines(){
+    if(soloIndex !== -1) return;
+    RATIO_PAIRS.forEach(function(pair){
+      var a = pair[0], b = pair[1];
+      var ratio = pair[2], name = pair[3];
+      var y1 = a * laneH + laneH * 0.5;
+      var y2 = b * laneH + laneH * 0.5;
+      var xBase = W - 80;
+      var pulse = 0.3 + 0.3 * Math.sin(t * 1.5 + a + b);
+
+      ctx.strokeStyle = 'rgba(100,100,180,' + pulse * 0.4 + ')';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xBase, y1);
+      ctx.bezierCurveTo(xBase + 30, y1, xBase + 30, y2, xBase, y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      var my = (y1 + y2) * 0.5;
+      ctx.fillStyle = 'rgba(150,150,220,' + (0.3 + pulse * 0.4) + ')';
+      ctx.font = '9px Courier New';
+      ctx.fillText(ratio, xBase + 10, my - 2);
+      ctx.fillStyle = 'rgba(100,100,170,' + (0.2 + pulse * 0.3) + ')';
+      ctx.font = '8px Courier New';
+      ctx.fillText(name, xBase + 2, my + 8);
+    });
+  }
+
+  function drawSpectrum(){
+    var sw = specCanvas.width, sh = specCanvas.height;
+    specCtx.clearRect(0, 0, sw, sh);
+
+    var barW = Math.floor((sw - 16) / 7);
+    var gap = 3;
+    var startX = Math.floor((sw - barW * 7) / 2);
+
+    for(var i = 0; i < 7; i++){
+      var active = (soloIndex === -1 || soloIndex === i);
+      var amp = active ? exponents[i] : exponents[i] * 0.15;
+      var pulse = active ? (0.85 + 0.15 * Math.sin(t * PRIMES[i] * 0.3 + i)) : 0.3;
+      var barH = amp * (sh - 30) * pulse;
+      var x = startX + i * barW;
+      var y = sh - 14 - barH;
+
+      var r = COLORS_RGB[i][0], g = COLORS_RGB[i][1], b = COLORS_RGB[i][2];
+      var grad = specCtx.createLinearGradient(x, y, x, sh - 14);
+      grad.addColorStop(0, 'rgba('+r+','+g+','+b+','+(active?0.9:0.2)+')');
+      grad.addColorStop(1, 'rgba('+r+','+g+','+b+','+(active?0.3:0.05)+')');
+      specCtx.fillStyle = grad;
+      specCtx.fillRect(x + 1, y, barW - 2, barH);
+
+      // Glow at top
+      if(active){
+        specCtx.shadowColor = 'rgba('+r+','+g+','+b+',0.6)';
+        specCtx.shadowBlur = 8;
+        specCtx.fillRect(x + 1, y, barW - 2, 2);
+        specCtx.shadowBlur = 0;
+      }
+
+      // Label
+      specCtx.fillStyle = 'rgba('+r+','+g+','+b+','+(active?0.8:0.2)+')';
+      specCtx.font = '9px Courier New';
+      specCtx.textAlign = 'center';
+      specCtx.fillText(PRIMES[i], x + barW * 0.5, sh - 3);
+    }
+    specCtx.textAlign = 'left';
+  }
+
+  function drawLissajous(){
+    var cw = lissCanvas.width, ch = lissCanvas.height;
+    var cx = cw * 0.5, cy = ch * 0.5;
+    var r = cw * 0.42;
+
+    lissCtx.fillStyle = 'rgba(6,6,16,0.15)';
+    lissCtx.fillRect(0, 0, cw, ch);
+
+    var pair = LISS_PAIRS[lissIdx];
+    var a = pair[0], b = pair[1];
+    var pA = PRIMES[a], pB = PRIMES[b];
+    var rA = COLORS_RGB[a], rB = COLORS_RGB[b];
+
+    // Update label
+    document.getElementById('lissajous-label').textContent = pA + ' : ' + pB;
+
+    // Draw Lissajous curve
+    lissCtx.lineWidth = 1.5;
+    var steps = 500;
+    lissCtx.beginPath();
+    for(var i = 0; i <= steps; i++){
+      var th = (i / steps) * Math.PI * 2 * pB;
+      var lx = cx + r * Math.sin(pA * th / pB + phases[a] + t * 0.5);
+      var ly = cy + r * Math.cos(th + phases[b] + t * 0.3);
+      if(i === 0) lissCtx.moveTo(lx, ly);
+      else lissCtx.lineTo(lx, ly);
+    }
+    var mixR = Math.round((rA[0] + rB[0]) * 0.5);
+    var mixG = Math.round((rA[1] + rB[1]) * 0.5);
+    var mixB = Math.round((rA[2] + rB[2]) * 0.5);
+    lissCtx.strokeStyle = 'rgba('+mixR+','+mixG+','+mixB+',0.7)';
+    lissCtx.shadowColor = 'rgba('+mixR+','+mixG+','+mixB+',0.5)';
+    lissCtx.shadowBlur = 6;
+    lissCtx.stroke();
+    lissCtx.shadowBlur = 0;
+
+    // Draw circular viewport border
+    lissCtx.beginPath();
+    lissCtx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+    lissCtx.strokeStyle = 'rgba('+mixR+','+mixG+','+mixB+',0.15)';
+    lissCtx.lineWidth = 1;
+    lissCtx.stroke();
+  }
+
+  function animate(now){
+    t = now * 0.001;
+
+    // Cycle Lissajous pairs
+    if(now - lissTimer > LISS_INTERVAL){
+      lissTimer = now;
+      lissIdx = (lissIdx + 1) % LISS_PAIRS.length;
+      // Clear Lissajous canvas on pair change
+      lissCtx.clearRect(0, 0, lissCanvas.width, lissCanvas.height);
+    }
+
+    // Clear main canvas
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw 7 lanes
+    for(var i = 0; i < 7; i++){
+      drawLane(i, i * laneH);
+    }
+
+    // Composite wave
+    var compY = 7 * laneH;
+    drawComposite(compY, H - compY);
+
+    // Harmonic ratio connection lines
+    drawRatioLines();
+
+    // Spectrum
+    drawSpectrum();
+
+    // Lissajous
+    drawLissajous();
+
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+
+})();
+</script>
+</body>
+</html>
