@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Mycelium Network</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#060610;color:#c0c8e0;font-family:'Courier New',monospace;overflow:hidden;width:100vw;height:100vh;}
+canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;}
+
+#top-bar{
+  position:fixed;top:0;left:0;right:0;height:44px;z-index:10;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,rgba(6,6,16,0.95),rgba(6,6,16,0.6));
+  border-bottom:1px solid rgba(0,170,255,0.15);
+  letter-spacing:3px;font-size:13px;color:#8090c0;
+  text-shadow:0 0 12px rgba(0,255,136,0.3);
+  backdrop-filter:blur(8px);
+}
+#top-bar .accent{color:#0f8;font-weight:bold;}
+
+#stats-panel{
+  position:fixed;top:54px;left:14px;z-index:10;
+  background:rgba(6,6,16,0.92);border:1px solid rgba(0,170,255,0.15);
+  border-radius:6px;padding:14px 18px;min-width:200px;
+  font-size:12px;line-height:2.2;
+  backdrop-filter:blur(8px);
+}
+#stats-panel .label{color:#6878a0;letter-spacing:1px;}
+#stats-panel .value{color:#0f8;float:right;font-weight:bold;text-shadow:0 0 8px rgba(0,255,136,0.3);}
+
+#hover-panel{
+  position:fixed;bottom:50px;right:14px;z-index:10;
+  background:rgba(6,6,16,0.92);border:1px solid rgba(0,170,255,0.15);
+  border-radius:6px;padding:10px 14px;font-size:11px;line-height:1.9;
+  display:none;min-width:190px;
+  backdrop-filter:blur(8px);
+}
+#hover-panel .hl{color:#0f8;}
+#hover-panel .accent{color:#8f0;}
+
+#bottom-bar{
+  position:fixed;bottom:0;left:0;right:0;height:38px;z-index:10;
+  display:flex;align-items:center;justify-content:center;gap:40px;
+  background:linear-gradient(0deg,rgba(6,6,16,0.95),rgba(6,6,16,0.6));
+  border-top:1px solid rgba(0,170,255,0.15);
+  font-size:12px;color:#6878a0;letter-spacing:1px;
+  backdrop-filter:blur(8px);
+}
+#bottom-bar .val{color:#0f8;}
+
+#instructions{
+  position:fixed;top:54px;right:14px;z-index:10;
+  background:rgba(6,6,16,0.92);border:1px solid rgba(0,170,255,0.15);
+  border-radius:6px;padding:12px 16px;font-size:10px;line-height:1.9;
+  color:#6878a0;min-width:170px;letter-spacing:0.5px;
+  backdrop-filter:blur(8px);
+}
+#instructions .key{color:#0f8;font-weight:bold;}
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <span class="accent">PRIME</span>&nbsp;&nbsp;MYCELIUM&nbsp;&nbsp;<span class="accent">NETWORK</span>
+</div>
+
+<div id="stats-panel">
+  <div><span class="label">CONNECTED PRIMES</span><span class="value" id="s-connected">1</span></div>
+  <div><span class="label">TOTAL PRIMES</span><span class="value" id="s-total">0</span></div>
+  <div><span class="label">NETWORK LENGTH</span><span class="value" id="s-length">0</span></div>
+  <div><span class="label">GROWTH RATE</span><span class="value" id="s-rate">0/s</span></div>
+  <div><span class="label">ACTIVE TENDRILS</span><span class="value" id="s-tendrils">0</span></div>
+</div>
+
+<div id="instructions">
+  <div><span class="key">CLICK PRIME</span> Spore burst</div>
+  <div><span class="key">HOVER</span> Inspect node</div>
+  <div><span class="key">SCROLL</span> Zoom in/out</div>
+  <div><span class="key">DRAG</span> Pan view</div>
+</div>
+
+<div id="hover-panel">
+  <div>PRIME: <span class="hl" id="h-value">—</span></div>
+  <div>CONNECTIONS: <span class="accent" id="h-conn">—</span></div>
+  <div>NEAREST: <span class="hl" id="h-nearest">—</span></div>
+</div>
+
+<div id="bottom-bar">
+  <span>RANGE <span class="val">1 — 2000</span></span>
+  <span>GRID <span class="val" id="b-grid">—</span></span>
+  <span>FRAME <span class="val" id="b-frame">0</span></span>
+</div>
+
+<canvas id="c"></canvas>
+
+<script>
+(function(){
+"use strict";
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// --- Sieve of Eratosthenes ---
+const MAX_N = 2000;
+const isPrime = new Uint8Array(MAX_N + 1);
+isPrime.fill(1); isPrime[0] = isPrime[1] = 0;
+for (let i = 2; i * i <= MAX_N; i++) {
+  if (isPrime[i]) for (let j = i * i; j <= MAX_N; j += i) isPrime[j] = 0;
+}
+const primes = [];
+for (let i = 2; i <= MAX_N; i++) if (isPrime[i]) primes.push(i);
+
+// --- Grid layout ---
+const COLS = 50;
+const ROWS = Math.ceil(MAX_N / COLS);
+const CELL = 18;
+
+function numToGrid(n) {
+  const idx = n - 1;
+  const col = idx % COLS;
+  const row = Math.floor(idx / COLS);
+  return { x: col * CELL + CELL / 2, y: row * CELL + CELL / 2 };
+}
+
+const gridW = COLS * CELL;
+const gridH = ROWS * CELL;
+
+// --- Camera ---
+let camX = 0, camY = 0, zoom = 1;
+let dragging = false, dragX = 0, dragY = 0;
+
+// --- Number data ---
+const nodeData = new Array(MAX_N + 1);
+for (let n = 1; n <= MAX_N; n++) {
+  const pos = numToGrid(n);
+  nodeData[n] = {
+    n, x: pos.x, y: pos.y,
+    prime: !!isPrime[n],
+    connected: false,
+    connections: 0,
+    glow: 0,
+    pulseTime: -1
+  };
+}
+nodeData[2].connected = true;
+
+// --- Nearest prime lookup ---
+function nearestPrime(n) {
+  let bestDist = Infinity, bestP = -1;
+  const src = nodeData[n];
+  for (let i = 0; i < primes.length; i++) {
+    const p = primes[i];
+    if (p === n) continue;
+    const nd = nodeData[p];
+    const dx = nd.x - src.x, dy = nd.y - src.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestDist) { bestDist = d; bestP = p; }
+  }
+  return { prime: bestP, dist: bestDist };
+}
+
+function nearestUnconnectedPrime(x, y) {
+  let bestDist = Infinity, bestP = -1;
+  for (let i = 0; i < primes.length; i++) {
+    const p = primes[i];
+    if (nodeData[p].connected) continue;
+    const nd = nodeData[p];
+    const dx = nd.x - x, dy = nd.y - y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestDist) { bestDist = d; bestP = p; }
+  }
+  return bestP;
+}
+
+// --- Tendril system ---
+const tendrils = [];
+const connections = []; // finished connections
+const pulses = []; // light pulses traveling back
+
+const TENDRIL_SPEED = 1.8;
+const BRANCH_CHANCE = 0.012;
+const MAX_TENDRILS = 120;
+
+function createTendril(fromX, fromY, fromNode, targetPrime) {
+  if (tendrils.length >= MAX_TENDRILS) return;
+  if (targetPrime < 0) return;
+  const target = nodeData[targetPrime];
+  if (!target || target.connected) return;
+
+  const dx = target.x - fromX;
+  const dy = target.y - fromY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const baseAngle = Math.atan2(dy, dx);
+  const angle = baseAngle + (Math.random() - 0.5) * 0.8;
+
+  tendrils.push({
+    points: [{ x: fromX, y: fromY }],
+    x: fromX, y: fromY,
+    angle,
+    targetPrime,
+    fromNode,
+    age: 0,
+    thickness: 1.2 + Math.random() * 1.5,
+    wobblePhase: Math.random() * Math.PI * 2,
+    wobbleFreq: 2 + Math.random() * 3,
+    dead: false,
+    totalDist: 0,
+    maxDist: dist * 2.5
+  });
+}
+
+function spawnFromPrime(p) {
+  const nd = nodeData[p];
+  const unconnected = primes.filter(q => q !== p && !nodeData[q].connected);
+  if (unconnected.length === 0) return;
+
+  // Sort by distance, pick closest few with some randomness
+  unconnected.sort((a, b) => {
+    const da = Math.hypot(nodeData[a].x - nd.x, nodeData[a].y - nd.y);
+    const db = Math.hypot(nodeData[b].x - nd.x, nodeData[b].y - nd.y);
+    return da - db;
+  });
+
+  const count = Math.min(2 + Math.floor(Math.random() * 3), unconnected.length);
+  for (let i = 0; i < count; i++) {
+    createTendril(nd.x, nd.y, p, unconnected[i]);
+  }
+}
+
+function sporeBurst(p) {
+  const nd = nodeData[p];
+  if (!nd.prime) return;
+  nd.glow = 2.0;
+  nd.pulseTime = performance.now();
+
+  const unconnected = primes.filter(q => q !== p && !nodeData[q].connected);
+  unconnected.sort((a, b) => {
+    const da = Math.hypot(nodeData[a].x - nd.x, nodeData[a].y - nd.y);
+    const db = Math.hypot(nodeData[b].x - nd.x, nodeData[b].y - nd.y);
+    return da - db;
+  });
+
+  const count = Math.min(5 + Math.floor(Math.random() * 4), unconnected.length);
+  for (let i = 0; i < count; i++) {
+    createTendril(nd.x, nd.y, p, unconnected[i]);
+  }
+}
+
+// --- Growth stats ---
+let connectedCount = 1;
+let totalLength = 0;
+let lastConnectedCount = 1;
+let lastRateTime = performance.now();
+let growthRate = 0;
+
+// --- Start initial tendrils ---
+spawnFromPrime(2);
+
+// --- Update tendrils ---
+function updateTendrils(dt) {
+  const now = performance.now();
+
+  for (let i = tendrils.length - 1; i >= 0; i--) {
+    const t = tendrils[i];
+    if (t.dead) { tendrils.splice(i, 1); continue; }
+
+    t.age += dt;
+    const target = nodeData[t.targetPrime];
+
+    if (target.connected) {
+      t.dead = true;
+      tendrils.splice(i, 1);
+      continue;
+    }
+
+    // Steer toward target
+    const dx = target.x - t.x;
+    const dy = target.y - t.y;
+    const distToTarget = Math.sqrt(dx * dx + dy * dy);
+    const targetAngle = Math.atan2(dy, dx);
+
+    // Blend current angle toward target with wobble
+    let angleDiff = targetAngle - t.angle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+    const steerStrength = 0.06 + 0.1 * (1 / (1 + distToTarget * 0.02));
+    t.angle += angleDiff * steerStrength;
+
+    // Organic wobble
+    const wobble = Math.sin(t.age * t.wobbleFreq + t.wobblePhase) * 0.08;
+    t.angle += wobble;
+
+    // Move
+    const speed = TENDRIL_SPEED * (0.8 + 0.4 * Math.random());
+    t.x += Math.cos(t.angle) * speed;
+    t.y += Math.sin(t.angle) * speed;
+    t.totalDist += speed;
+
+    t.points.push({ x: t.x, y: t.y });
+
+    // Keep points manageable
+    if (t.points.length > 500) {
+      t.points.splice(0, 100);
+    }
+
+    // Check if reached target
+    if (distToTarget < CELL * 0.6) {
+      // Connect!
+      target.connected = true;
+      target.glow = 2.0;
+      target.pulseTime = now;
+      nodeData[t.fromNode].connections++;
+      target.connections++;
+      connectedCount++;
+
+      const connLength = t.totalDist;
+      totalLength += connLength;
+
+      connections.push({
+        points: [...t.points, { x: target.x, y: target.y }],
+        age: 0,
+        thickness: t.thickness,
+        fromNode: t.fromNode,
+        toNode: t.targetPrime
+      });
+
+      // Create pulse traveling back
+      const pts = [...t.points, { x: target.x, y: target.y }];
+      pulses.push({
+        points: pts.reverse(),
+        progress: 0,
+        speed: 0.03 + Math.random() * 0.02
+      });
+
+      t.dead = true;
+      tendrils.splice(i, 1);
+
+      // Spawn new tendrils from the newly connected prime
+      setTimeout(() => spawnFromPrime(t.targetPrime), 200 + Math.random() * 500);
+      continue;
+    }
+
+    // Too far — kill
+    if (t.totalDist > t.maxDist) {
+      t.dead = true;
+      tendrils.splice(i, 1);
+      continue;
+    }
+
+    // Random branching
+    if (Math.random() < BRANCH_CHANCE && t.points.length > 10) {
+      const nearP = nearestUnconnectedPrime(t.x, t.y);
+      if (nearP > 0 && nearP !== t.targetPrime) {
+        createTendril(t.x, t.y, t.fromNode, nearP);
+      }
+    }
+  }
+
+  // Update pulses
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    pulses[i].progress += pulses[i].speed;
+    if (pulses[i].progress >= 1) pulses.splice(i, 1);
+  }
+
+  // Growth rate
+  if (now - lastRateTime > 1000) {
+    growthRate = connectedCount - lastConnectedCount;
+    lastConnectedCount = connectedCount;
+    lastRateTime = now;
+  }
+
+  // Ensure we always have active tendrils if primes remain
+  if (tendrils.length < 3) {
+    const connected = primes.filter(p => nodeData[p].connected);
+    if (connected.length < primes.length) {
+      const src = connected[Math.floor(Math.random() * connected.length)];
+      spawnFromPrime(src);
+    }
+  }
+}
+
+// --- Rendering ---
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  if (camX === 0 && camY === 0) {
+    camX = gridW / 2 - W / 2;
+    camY = gridH / 2 - H / 2;
+    zoom = Math.min(W / gridW, H / gridH) * 0.85;
+  }
+}
+resize();
+window.addEventListener('resize', resize);
+
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - camX) * zoom + W / 2,
+    y: (wy - camY) * zoom + H / 2
+  };
+}
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / zoom + camX,
+    y: (sy - H / 2) / zoom + camY
+  };
+}
+
+function drawCurve(points, color, thickness, alpha) {
+  if (points.length < 2) return;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = thickness * zoom;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+
+  const p0 = worldToScreen(points[0].x, points[0].y);
+  ctx.moveTo(p0.x, p0.y);
+
+  if (points.length === 2) {
+    const p1 = worldToScreen(points[1].x, points[1].y);
+    ctx.lineTo(p1.x, p1.y);
+  } else {
+    // Draw smooth curve through points (sample every few points for performance)
+    const step = Math.max(1, Math.floor(points.length / 80));
+    const sampled = [points[0]];
+    for (let i = step; i < points.length - 1; i += step) sampled.push(points[i]);
+    sampled.push(points[points.length - 1]);
+
+    for (let i = 1; i < sampled.length - 1; i++) {
+      const prev = worldToScreen(sampled[i].x, sampled[i].y);
+      const next = worldToScreen(sampled[i + 1].x, sampled[i + 1].y);
+      const cpx = (prev.x + next.x) / 2;
+      const cpy = (prev.y + next.y) / 2;
+      ctx.quadraticCurveTo(prev.x, prev.y, cpx, cpy);
+    }
+    const last = worldToScreen(sampled[sampled.length - 1].x, sampled[sampled.length - 1].y);
+    ctx.lineTo(last.x, last.y);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function render(now) {
+  ctx.clearRect(0, 0, W, H);
+
+  // Determine visible bounds in world coords
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(W, H);
+  const margin = CELL * 2;
+
+  // Draw grid numbers
+  const fontSize = Math.max(6, Math.min(11, 9 * zoom));
+  ctx.font = `${fontSize}px 'Courier New', monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let n = 1; n <= MAX_N; n++) {
+    const nd = nodeData[n];
+    if (nd.x < tl.x - margin || nd.x > br.x + margin || nd.y < tl.y - margin || nd.y > br.y + margin) continue;
+
+    const s = worldToScreen(nd.x, nd.y);
+
+    if (nd.prime) {
+      // Glow decay
+      if (nd.glow > 0) nd.glow *= 0.98;
+
+      const baseGlow = nd.connected ? 0.9 : 0.4;
+      const glowAmount = baseGlow + nd.glow;
+
+      // Pulse animation
+      let pulseR = 0;
+      if (nd.pulseTime > 0) {
+        const elapsed = (now - nd.pulseTime) / 1000;
+        if (elapsed < 2) {
+          pulseR = elapsed * CELL * 3 * zoom;
+          const pulseAlpha = Math.max(0, 1 - elapsed / 2) * 0.4;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, pulseR, 0, Math.PI * 2);
+          ctx.strokeStyle = '#0f8';
+          ctx.globalAlpha = pulseAlpha;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // Node glow
+      if (nd.connected && zoom > 0.3) {
+        const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, CELL * zoom * 1.5);
+        grad.addColorStop(0, `rgba(0,255,136,${0.15 * glowAmount})`);
+        grad.addColorStop(1, 'rgba(0,255,136,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, CELL * zoom * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Node dot
+      const dotR = nd.connected ? 3 * zoom : 2 * zoom;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = nd.connected ? `rgba(0,255,136,${glowAmount})` : 'rgba(0,255,136,0.35)';
+      ctx.fill();
+
+      // Number label
+      if (zoom > 0.5) {
+        ctx.fillStyle = nd.connected ? `rgba(0,255,136,${0.7 + nd.glow * 0.3})` : 'rgba(0,255,136,0.25)';
+        ctx.fillText(n, s.x, s.y - CELL * zoom * 0.5);
+      }
+    } else {
+      // Composite — dim dot
+      if (zoom > 0.6) {
+        ctx.fillStyle = 'rgba(100,120,160,0.08)';
+        ctx.fillText(n, s.x, s.y);
+      } else if (zoom > 0.35) {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 0.8 * zoom, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(100,120,160,0.06)';
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw established connections
+  const wobbleTime = now * 0.001;
+  for (let i = 0; i < connections.length; i++) {
+    const c = connections[i];
+    c.age += 0.016;
+    const fadeIn = Math.min(1, c.age / 0.5);
+    const brightness = Math.max(0.15, 0.5 - c.age * 0.005);
+
+    // Wobble the points slightly for organic feel
+    const wobbled = c.points.map((p, idx) => ({
+      x: p.x + Math.sin(wobbleTime * 1.5 + idx * 0.3) * 0.3,
+      y: p.y + Math.cos(wobbleTime * 1.2 + idx * 0.4) * 0.3
+    }));
+
+    drawCurve(wobbled, '#0f8', c.thickness * 0.7, brightness * fadeIn);
+  }
+
+  // Draw active tendrils
+  for (let i = 0; i < tendrils.length; i++) {
+    const t = tendrils[i];
+    const alpha = Math.min(1, t.age * 2);
+
+    // Wobble points
+    const wobbled = t.points.map((p, idx) => ({
+      x: p.x + Math.sin(wobbleTime * 2 + idx * 0.5 + t.wobblePhase) * 0.5,
+      y: p.y + Math.cos(wobbleTime * 1.8 + idx * 0.6 + t.wobblePhase) * 0.5
+    }));
+
+    drawCurve(wobbled, '#0f8', t.thickness, alpha * 0.8);
+
+    // Bright tip
+    const tip = worldToScreen(t.x, t.y);
+    const tipGrad = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 5 * zoom);
+    tipGrad.addColorStop(0, 'rgba(136,255,0,0.9)');
+    tipGrad.addColorStop(1, 'rgba(136,255,0,0)');
+    ctx.fillStyle = tipGrad;
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 5 * zoom, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw pulses
+  for (let i = 0; i < pulses.length; i++) {
+    const p = pulses[i];
+    const idx = Math.floor(p.progress * (p.points.length - 1));
+    const pt = p.points[Math.min(idx, p.points.length - 1)];
+    const s = worldToScreen(pt.x, pt.y);
+    const alpha = Math.sin(p.progress * Math.PI);
+
+    const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 8 * zoom);
+    grad.addColorStop(0, `rgba(255,255,255,${0.9 * alpha})`);
+    grad.addColorStop(0.3, `rgba(0,255,136,${0.5 * alpha})`);
+    grad.addColorStop(1, 'rgba(0,255,136,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 8 * zoom, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Trail
+    for (let t = 1; t < 6; t++) {
+      const ti = Math.max(0, idx - t * 3);
+      const tp = p.points[ti];
+      const ts = worldToScreen(tp.x, tp.y);
+      const ta = alpha * (1 - t / 6) * 0.4;
+      ctx.beginPath();
+      ctx.arc(ts.x, ts.y, (5 - t * 0.5) * zoom, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${ta})`;
+      ctx.fill();
+    }
+  }
+}
+
+// --- Main loop ---
+let lastTime = performance.now();
+let frameCount = 0;
+
+function loop() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+  frameCount++;
+
+  updateTendrils(dt);
+  render(now);
+
+  // Update stats
+  if (frameCount % 15 === 0) {
+    document.getElementById('s-connected').textContent = connectedCount;
+    document.getElementById('s-total').textContent = primes.length;
+    document.getElementById('s-length').textContent = Math.round(totalLength);
+    document.getElementById('s-rate').textContent = growthRate + '/s';
+    document.getElementById('s-tendrils').textContent = tendrils.length;
+    document.getElementById('b-grid').textContent = COLS + ' x ' + ROWS;
+    document.getElementById('b-frame').textContent = frameCount;
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// --- Interaction ---
+let hoveredNode = null;
+const hoverPanel = document.getElementById('hover-panel');
+
+canvas.addEventListener('mousemove', function(e) {
+  if (dragging) {
+    camX -= (e.clientX - dragX) / zoom;
+    camY -= (e.clientY - dragY) / zoom;
+    dragX = e.clientX;
+    dragY = e.clientY;
+    return;
+  }
+
+  const w = screenToWorld(e.clientX, e.clientY);
+  let bestDist = CELL * 1.2;
+  let bestNode = null;
+
+  // Check only primes for hover
+  for (let i = 0; i < primes.length; i++) {
+    const nd = nodeData[primes[i]];
+    const dx = nd.x - w.x, dy = nd.y - w.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestDist) { bestDist = d; bestNode = nd; }
+  }
+
+  if (bestNode) {
+    hoveredNode = bestNode;
+    hoverPanel.style.display = 'block';
+    document.getElementById('h-value').textContent = bestNode.n;
+    document.getElementById('h-conn').textContent = bestNode.connections;
+    const nearest = nearestPrime(bestNode.n);
+    document.getElementById('h-nearest').textContent = nearest.prime + ' (d=' + Math.round(nearest.dist) + ')';
+  } else {
+    hoveredNode = null;
+    hoverPanel.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mousedown', function(e) {
+  dragging = true;
+  dragX = e.clientX;
+  dragY = e.clientY;
+});
+
+canvas.addEventListener('mouseup', function(e) {
+  const wasDrag = Math.abs(e.clientX - dragX) > 3 || Math.abs(e.clientY - dragY) > 3;
+  dragging = false;
+
+  if (!wasDrag && hoveredNode && hoveredNode.prime) {
+    // Spore burst!
+    if (!hoveredNode.connected) {
+      hoveredNode.connected = true;
+      connectedCount++;
+    }
+    sporeBurst(hoveredNode.n);
+  }
+});
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  const oldZoom = zoom;
+  zoom = Math.max(0.15, Math.min(5, zoom * factor));
+
+  // Zoom toward mouse
+  const mx = e.clientX, my = e.clientY;
+  camX += (mx - W / 2) * (1 / oldZoom - 1 / zoom);
+  camY += (my - H / 2) * (1 / oldZoom - 1 / zoom);
+}, { passive: false });
+
+canvas.addEventListener('mouseleave', function() {
+  dragging = false;
+  hoveredNode = null;
+  hoverPanel.style.display = 'none';
+});
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

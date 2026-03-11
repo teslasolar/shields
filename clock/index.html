@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-CLOCK · Prime Clocks · Sieve of Eratosthenes as Time</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:#060610;font-family:'Courier New',monospace;color:#aac}
+
+canvas{display:block;position:absolute;top:0;left:0}
+
+#ui{position:fixed;top:44px;left:0;right:0;bottom:28px;pointer-events:none;z-index:10}
+
+#stats{position:fixed;top:44px;right:8px;width:240px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:12px 14px;font-size:10px;line-height:1.7;pointer-events:auto;z-index:20;max-height:calc(100vh - 100px);overflow-y:auto;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#stats h3{font-size:9px;letter-spacing:2px;color:#0af;margin-bottom:6px;border-bottom:1px solid rgba(0,170,255,.15);padding-bottom:4px}
+#stats .row{display:flex;justify-content:space-between;color:#889}
+#stats .row .val{color:#aac}
+#stats .row .val.prime{color:#fff;text-shadow:0 0 6px rgba(255,255,255,.6)}
+#stats .row .val.composite{color:#f44}
+#stats .row .val.gold{color:#ffd700}
+#stats .caught{font-size:8px;color:#667;margin-top:4px;line-height:1.5;max-height:120px;overflow-y:auto}
+#stats .caught span.p{color:#f44}
+#stats .caught span.g{color:#ffd700}
+#stats .caught span.w{color:#fff}
+
+#controls{position:fixed;bottom:36px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:8px 18px;pointer-events:auto;z-index:20;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#controls label{font-size:8px;letter-spacing:1.5px;color:#667}
+#controls button{background:rgba(0,170,255,.1);border:1px solid rgba(0,170,255,.2);color:#0af;font-family:inherit;font-size:8px;letter-spacing:1px;padding:4px 10px;border-radius:3px;cursor:pointer}
+#controls button:hover{background:rgba(0,170,255,.2)}
+#controls button.active{background:rgba(0,170,255,.25);border-color:#0af}
+
+#overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;z-index:40;cursor:pointer}
+#detail{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);display:none;z-index:50;pointer-events:auto}
+#detail canvas{border:1px solid rgba(0,170,255,.15);border-radius:50%}
+#detail-info{position:absolute;right:-250px;top:0;width:240px;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.12);border-radius:6px;padding:12px;font-size:9px;line-height:1.6;max-height:400px;overflow-y:auto}
+#detail-info h3{font-size:9px;letter-spacing:2px;color:#0af;margin-bottom:6px}
+#close-detail{position:absolute;top:-12px;right:-12px;width:24px;height:24px;border-radius:50%;background:#111;border:1px solid rgba(0,170,255,.3);color:#0af;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:55}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <h3>PRIME CLOCKS</h3>
+  <div id="stats-content"></div>
+</div>
+
+<div id="controls">
+  <label>SPEED</label>
+  <button id="sp-slow">SLOW</button>
+  <button id="sp-med" class="active">MED</button>
+  <button id="sp-fast">FAST</button>
+  <span style="color:#334;margin:0 4px">|</span>
+  <button id="trail-btn">TRAILS</button>
+  <span style="color:#334;margin:0 4px">|</span>
+  <button id="play-btn" class="active">PLAY</button>
+  <button id="reset-btn">RESET</button>
+</div>
+
+<div id="overlay"></div>
+<div id="detail">
+  <button id="close-detail">&times;</button>
+  <canvas id="detail-canvas" width="400" height="400"></canvas>
+  <div id="detail-info">
+    <h3>RESIDUE PATTERN</h3>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const MAX_N = 500;
+const SIEVE_LIMIT = 17 * 17; // 289 — primes fully determined up to here
+
+// Pre-compute true primes up to 500
+const isPrime = new Uint8Array(MAX_N + 1);
+isPrime.fill(1);
+isPrime[0] = isPrime[1] = 0;
+for (let i = 2; i * i <= MAX_N; i++) {
+  if (isPrime[i]) for (let j = i * i; j <= MAX_N; j += i) isPrime[j] = 0;
+}
+
+// Canvas
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+// State
+let currentN = 0;
+let playing = true;
+let trailMode = false;
+let speed = 2; // 0=slow, 1=med, 2=fast
+let tickTimer = 0;
+const SPEEDS = [800, 200, 30]; // ms per tick
+
+let primesFound = [];
+let compositesFound = 0;
+let lastCaughtBy = '';
+let lastFlash = 0;
+let lastFlashType = ''; // 'composite', 'prime', 'gold'
+let flashClocks = [];
+
+// Trail data: for each clock, array of {pos, age}
+const trails = PRIMES.map(p => []);
+
+// Clock layout
+let clocks = []; // {cx, cy, r, p, index}
+let enlargedClock = -1;
+
+// History for stats
+const history = []; // {n, type:'prime'|'composite'|'gold', caughtBy:[]}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  layoutClocks();
+}
+
+function layoutClocks() {
+  clocks = [];
+  const margin = 44;
+  const top = margin + 10;
+  const bottom = H - 70;
+  const left = 20;
+  const right = W - 260;
+  const areaW = right - left;
+  const areaH = bottom - top;
+
+  // 2 rows: top 4, bottom 3 (centered)
+  const cols1 = 4, cols2 = 3;
+  const rows = 2;
+  const rowH = areaH / rows;
+  const cellW1 = areaW / cols1;
+  const cellW2 = areaW / cols2;
+  const maxR = Math.min(rowH, Math.min(cellW1, cellW2)) * 0.38;
+
+  for (let i = 0; i < 4; i++) {
+    const cx = left + cellW1 * (i + 0.5);
+    const cy = top + rowH * 0.5;
+    const r = Math.min(maxR, cellW1 * 0.38, rowH * 0.38);
+    clocks.push({cx, cy, r, p: PRIMES[i], index: i});
+  }
+  for (let i = 0; i < 3; i++) {
+    const cx = left + (areaW - cellW2 * cols2) / 2 + cellW2 * (i + 0.5);
+    const cy = top + rowH * 1.5;
+    const r = Math.min(maxR, cellW2 * 0.38, rowH * 0.38);
+    clocks.push({cx, cy, r, p: PRIMES[i + 4], index: i + 4});
+  }
+}
+
+function angleForPos(pos, total) {
+  return -Math.PI / 2 + (2 * Math.PI * pos) / total;
+}
+
+function drawClock(ctx, cx, cy, r, p, idx, isDetail) {
+  const residue = currentN > 0 ? currentN % p : -1;
+  const isFlashing = (Date.now() - lastFlash < 400);
+  const flashThis = isFlashing && flashClocks.includes(idx);
+  const scale = isDetail ? 1 : 1;
+
+  // Clock face background
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  let bgColor = 'rgba(6,6,16,.92)';
+  if (flashThis && lastFlashType === 'composite') bgColor = 'rgba(80,0,0,.85)';
+  else if (flashThis && lastFlashType === 'gold') bgColor = 'rgba(60,50,0,.85)';
+  else if (flashThis && lastFlashType === 'prime') bgColor = 'rgba(40,40,60,.85)';
+  ctx.fillStyle = bgColor;
+  ctx.fill();
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = flashThis && lastFlashType === 'composite' ? 'rgba(255,50,50,.5)' :
+                     flashThis && lastFlashType === 'gold' ? 'rgba(255,215,0,.5)' :
+                     flashThis && lastFlashType === 'prime' ? 'rgba(255,255,255,.5)' :
+                     'rgba(0,170,255,.2)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,170,255,.08)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Tick marks and labels
+  const fontSize = isDetail ? 14 : Math.max(8, r * 0.14);
+  ctx.font = fontSize + 'px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i < p; i++) {
+    const a = angleForPos(i, p);
+    const tickOuter = r * 0.92;
+    const tickInner = r * 0.82;
+    const labelR = r * 0.72;
+
+    const x1 = cx + Math.cos(a) * tickInner;
+    const y1 = cy + Math.sin(a) * tickInner;
+    const x2 = cx + Math.cos(a) * tickOuter;
+    const y2 = cy + Math.sin(a) * tickOuter;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    const isZero = i === 0;
+    ctx.strokeStyle = isZero ? 'rgba(255,50,50,.6)' : 'rgba(0,200,255,.3)';
+    ctx.lineWidth = isZero ? 2 : 1;
+    ctx.stroke();
+
+    const lx = cx + Math.cos(a) * labelR;
+    const ly = cy + Math.sin(a) * labelR;
+    ctx.fillStyle = isZero ? '#f44' : (i === residue && currentN > 0 ? '#fff' : '#556');
+    ctx.fillText(i, lx, ly);
+  }
+
+  // Trails
+  if (trailMode && trails[idx].length > 0) {
+    for (const t of trails[idx]) {
+      const a = angleForPos(t.pos, p);
+      const tr = r * 0.55;
+      const tx = cx + Math.cos(a) * tr;
+      const ty = cy + Math.sin(a) * tr;
+      const alpha = Math.max(0, 1 - t.age / 50) * 0.5;
+      ctx.beginPath();
+      ctx.arc(tx, ty, Math.max(1.5, r * 0.02), 0, Math.PI * 2);
+      ctx.fillStyle = t.pos === 0 ? `rgba(255,50,50,${alpha})` : `rgba(0,200,255,${alpha})`;
+      ctx.fill();
+    }
+  }
+
+  // Hand
+  if (currentN > 0 && residue >= 0) {
+    const a = angleForPos(residue, p);
+    const handLen = r * 0.6;
+    const hx = cx + Math.cos(a) * handLen;
+    const hy = cy + Math.sin(a) * handLen;
+
+    // Hand glow
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(hx, hy);
+    ctx.strokeStyle = residue === 0 ?
+      (currentN === p ? 'rgba(255,215,0,.8)' : 'rgba(255,50,50,.8)') :
+      'rgba(255,215,0,.6)';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = residue === 0 ?
+      (currentN === p ? '#ffd700' : '#f44') : '#ffd700';
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Hand line
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(hx, hy);
+    ctx.strokeStyle = residue === 0 ?
+      (currentN === p ? '#ffd700' : '#f44') : '#ffd700';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.04, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd700';
+    ctx.fill();
+
+    // Tip dot
+    ctx.beginPath();
+    ctx.arc(hx, hy, r * 0.03, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+
+  // Prime label
+  const labelSize = isDetail ? 20 : Math.max(10, r * 0.2);
+  ctx.font = 'bold ' + labelSize + 'px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = flashThis && lastFlashType === 'gold' ? '#ffd700' : '#0af';
+  ctx.fillText('mod ' + p, cx, cy + r + labelSize * 1.2);
+
+  ctx.restore();
+}
+
+function tick() {
+  if (currentN >= MAX_N) { playing = false; return; }
+  currentN++;
+
+  const n = currentN;
+  const caughtBy = [];
+
+  // Check each clock
+  for (let i = 0; i < PRIMES.length; i++) {
+    const p = PRIMES[i];
+    const residue = n % p;
+
+    // Add trail
+    trails[i].push({pos: residue, age: 0});
+    if (trails[i].length > 60) trails[i].shift();
+
+    if (residue === 0 && n !== p) {
+      caughtBy.push(p);
+    }
+  }
+
+  // Determine type
+  let type;
+  flashClocks = [];
+
+  if (caughtBy.length > 0) {
+    type = 'composite';
+    compositesFound++;
+    lastFlashType = 'composite';
+    // Flash the clocks that caught it
+    for (let i = 0; i < PRIMES.length; i++) {
+      if (caughtBy.includes(PRIMES[i])) flashClocks.push(i);
+    }
+    lastFlash = Date.now();
+    lastCaughtBy = caughtBy.join(', ');
+  } else if (PRIMES.includes(n)) {
+    type = 'gold';
+    lastFlashType = 'gold';
+    flashClocks = [PRIMES.indexOf(n)];
+    lastFlash = Date.now();
+    primesFound.push(n);
+    lastCaughtBy = 'SHIELD PRIME';
+  } else if (isPrime[n]) {
+    type = 'prime';
+    lastFlashType = 'prime';
+    flashClocks = [0,1,2,3,4,5,6];
+    lastFlash = Date.now();
+    primesFound.push(n);
+    lastCaughtBy = 'SURVIVES ALL';
+  } else if (n > SIEVE_LIMIT) {
+    // Beyond sieve range — might be composite but not caught by our 7 primes
+    // Need to check if truly prime
+    if (isPrime[n]) {
+      type = 'prime';
+      primesFound.push(n);
+      lastFlashType = 'prime';
+      flashClocks = [0,1,2,3,4,5,6];
+      lastFlash = Date.now();
+      lastCaughtBy = 'SURVIVES ALL';
+    } else {
+      type = 'composite';
+      compositesFound++;
+      // Find actual smallest factor
+      const factors = [];
+      for (const p of PRIMES) { if (n % p === 0) factors.push(p); }
+      if (factors.length > 0) {
+        lastCaughtBy = factors.join(', ');
+        lastFlashType = 'composite';
+        for (let i = 0; i < PRIMES.length; i++) {
+          if (factors.includes(PRIMES[i])) flashClocks.push(i);
+        }
+        lastFlash = Date.now();
+      } else {
+        lastCaughtBy = 'factor > 17';
+        lastFlashType = 'composite';
+      }
+    }
+  } else {
+    // n <= 289, not caught, not a shield prime — must be prime
+    type = 'prime';
+    primesFound.push(n);
+    lastFlashType = 'prime';
+    flashClocks = [0,1,2,3,4,5,6];
+    lastFlash = Date.now();
+    lastCaughtBy = 'SURVIVES ALL';
+  }
+
+  history.push({n, type, caughtBy: [...caughtBy]});
+  updateStats();
+}
+
+function updateStats() {
+  const sc = document.getElementById('stats-content');
+  const n = currentN;
+  const typeLabel = n === 0 ? '---' :
+    (history.length > 0 ? history[history.length - 1].type : '---');
+
+  let typeClass = '';
+  let typeText = '---';
+  if (n > 0 && history.length > 0) {
+    const h = history[history.length - 1];
+    if (h.type === 'prime') { typeClass = 'prime'; typeText = 'PRIME'; }
+    else if (h.type === 'gold') { typeClass = 'gold'; typeText = 'SHIELD PRIME'; }
+    else { typeClass = 'composite'; typeText = 'COMPOSITE'; }
+  }
+
+  let html = `
+    <div class="row"><span>Current n</span><span class="val">${n || '---'}</span></div>
+    <div class="row"><span>Status</span><span class="val ${typeClass}">${typeText}</span></div>
+    <div class="row"><span>Primes found</span><span class="val" style="color:#0f8">${primesFound.length}</span></div>
+    <div class="row"><span>Composites</span><span class="val" style="color:#f44">${compositesFound}</span></div>
+    <div class="row"><span>Caught by</span><span class="val" style="color:#f80">${lastCaughtBy || '---'}</span></div>
+    <div class="row"><span>Progress</span><span class="val">${n}/${MAX_N}</span></div>
+  `;
+
+  // Recent primes
+  const recent = primesFound.slice(-12);
+  if (recent.length > 0) {
+    html += `<div style="margin-top:8px;border-top:1px solid rgba(0,170,255,.1);padding-top:6px">`;
+    html += `<div style="font-size:8px;color:#667;letter-spacing:1px;margin-bottom:4px">RECENT PRIMES</div>`;
+    html += `<div style="font-size:9px;color:#0f8;line-height:1.5;word-break:break-all">`;
+    html += recent.map(p => PRIMES.includes(p) ?
+      `<span style="color:#ffd700">${p}</span>` : p).join(', ');
+    html += `</div></div>`;
+  }
+
+  // Recent catches
+  const recentH = history.slice(-8).reverse().filter(h => h.type === 'composite');
+  if (recentH.length > 0) {
+    html += `<div class="caught" style="margin-top:6px;border-top:1px solid rgba(0,170,255,.1);padding-top:6px">`;
+    html += `<div style="font-size:8px;color:#667;letter-spacing:1px;margin-bottom:2px">RECENT CATCHES</div>`;
+    for (const h of recentH) {
+      html += `<div><span class="p">${h.n}</span> <span style="color:#556">by mod</span> ${h.caughtBy.join(',')}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  sc.innerHTML = html;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(0,170,255,.03)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Title
+  ctx.font = 'bold 11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#0af';
+  ctx.fillText('PRIME CLOCKS', 16, 30);
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = '#445';
+  ctx.fillText('Sieve of Eratosthenes as modular time', 140, 30);
+
+  // Draw clocks
+  for (const c of clocks) {
+    drawClock(ctx, c.cx, c.cy, c.r, c.p, c.index, false);
+  }
+
+  // Global prime flash overlay
+  const flashAge = Date.now() - lastFlash;
+  if (flashAge < 400 && lastFlashType === 'prime') {
+    const alpha = (1 - flashAge / 400) * 0.08;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Age trails
+  for (const trail of trails) {
+    for (const t of trail) t.age++;
+  }
+}
+
+// Detail view
+const detailCanvas = document.getElementById('detail-canvas');
+const detailCtx = detailCanvas.getContext('2d');
+
+function showDetail(idx) {
+  enlargedClock = idx;
+  const p = PRIMES[idx];
+  document.getElementById('overlay').style.display = 'block';
+  document.getElementById('detail').style.display = 'block';
+
+  detailCanvas.width = 400;
+  detailCanvas.height = 400;
+  detailCtx.clearRect(0, 0, 400, 400);
+  drawClock(detailCtx, 200, 185, 160, p, idx, true);
+
+  // Residue info
+  const dc = document.getElementById('detail-content');
+  let html = `<div style="color:#0af;font-size:11px;margin-bottom:8px">mod ${p}</div>`;
+  html += `<div style="color:#889;font-size:8px;margin-bottom:6px">Residue distribution for numbers 1..${currentN}</div>`;
+
+  // Count residues
+  const counts = new Array(p).fill(0);
+  const caughtNums = [];
+  for (let i = 1; i <= currentN; i++) {
+    counts[i % p]++;
+    if (i % p === 0 && i !== p) caughtNums.push(i);
+  }
+
+  html += `<table style="border-collapse:collapse;width:100%;margin-top:4px">`;
+  html += `<tr><th style="padding:2px 4px;font-size:8px;color:#0af;border:1px solid rgba(0,170,255,.08)">r</th>`;
+  html += `<th style="padding:2px 4px;font-size:8px;color:#0af;border:1px solid rgba(0,170,255,.08)">count</th></tr>`;
+  for (let i = 0; i < p; i++) {
+    const color = i === 0 ? '#f44' : '#889';
+    html += `<tr><td style="padding:2px 4px;font-size:8px;color:${color};border:1px solid rgba(0,170,255,.08);text-align:center">${i}</td>`;
+    html += `<td style="padding:2px 4px;font-size:8px;color:#aac;border:1px solid rgba(0,170,255,.08);text-align:center">${counts[i]}</td></tr>`;
+  }
+  html += `</table>`;
+
+  html += `<div style="margin-top:8px;font-size:8px;color:#667">Composites caught: <span style="color:#f44">${caughtNums.length}</span></div>`;
+  if (caughtNums.length > 0) {
+    const shown = caughtNums.slice(-20);
+    html += `<div style="font-size:8px;color:#556;margin-top:2px;line-height:1.4">${shown.join(', ')}${caughtNums.length > 20 ? '...' : ''}</div>`;
+  }
+
+  dc.innerHTML = html;
+}
+
+function hideDetail() {
+  enlargedClock = -1;
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('detail').style.display = 'none';
+}
+
+// Click detection
+canvas.addEventListener('click', function(e) {
+  const mx = e.clientX, my = e.clientY;
+  for (const c of clocks) {
+    const dx = mx - c.cx, dy = my - c.cy;
+    if (dx * dx + dy * dy < c.r * c.r) {
+      showDetail(c.index);
+      return;
+    }
+  }
+});
+
+document.getElementById('overlay').addEventListener('click', hideDetail);
+document.getElementById('close-detail').addEventListener('click', hideDetail);
+
+// Controls
+const speedBtns = [
+  document.getElementById('sp-slow'),
+  document.getElementById('sp-med'),
+  document.getElementById('sp-fast')
+];
+speedBtns.forEach((btn, i) => {
+  btn.addEventListener('click', () => {
+    speed = i;
+    speedBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+document.getElementById('trail-btn').addEventListener('click', function() {
+  trailMode = !trailMode;
+  this.classList.toggle('active', trailMode);
+});
+
+document.getElementById('play-btn').addEventListener('click', function() {
+  playing = !playing;
+  this.classList.toggle('active', playing);
+  this.textContent = playing ? 'PLAY' : 'PAUSE';
+});
+
+document.getElementById('reset-btn').addEventListener('click', function() {
+  currentN = 0;
+  playing = true;
+  primesFound = [];
+  compositesFound = 0;
+  lastCaughtBy = '';
+  lastFlash = 0;
+  history.length = 0;
+  for (const t of trails) t.length = 0;
+  document.getElementById('play-btn').classList.add('active');
+  document.getElementById('play-btn').textContent = 'PLAY';
+  updateStats();
+});
+
+// Main loop
+let lastTick = 0;
+
+function loop(ts) {
+  requestAnimationFrame(loop);
+
+  if (playing && currentN < MAX_N) {
+    if (ts - lastTick >= SPEEDS[speed]) {
+      tick();
+      lastTick = ts;
+    }
+  }
+
+  draw();
+
+  // Update detail if open
+  if (enlargedClock >= 0) {
+    detailCtx.clearRect(0, 0, 400, 400);
+    const c = clocks[enlargedClock];
+    drawClock(detailCtx, 200, 185, 160, c.p, c.index, true);
+  }
+}
+
+window.addEventListener('resize', resize);
+resize();
+updateStats();
+requestAnimationFrame(loop);
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Pendulum Harmony</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh;display:flex;flex-direction:column}
+#main-wrap{display:flex;flex:1;overflow:hidden}
+#canvas-col{flex:1;position:relative;min-width:0}
+#main-canvas{display:block;width:100%;height:100%}
+#right-panel{width:240px;background:rgba(6,6,16,.92);border-left:1px solid rgba(0,170,255,.15);display:flex;flex-direction:column;padding:10px;gap:8px;overflow-y:auto;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#right-panel h3{font-size:11px;color:#0af;text-align:center;letter-spacing:3px;margin:4px 0 2px;text-transform:uppercase}
+.panel-box{background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:4px;padding:8px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#controls{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:4px 0}
+#controls button{background:#0a0a1a;border:1px solid rgba(0,170,255,.25);color:#0af;font-family:inherit;font-size:11px;padding:4px 10px;cursor:pointer;border-radius:3px;transition:background .2s,border-color .2s,color .2s}
+#controls button:hover{background:#0d1a2a;border-color:#0af}
+#controls button.active{background:rgba(0,170,255,.15);border-color:#0af;color:#fff}
+#stats{font-size:10px;line-height:1.7}
+#stats .label{color:#556}
+#stats .value{color:#0af}
+#stats .grand{color:#fc0}
+#phase-list{font-size:10px;line-height:1.8}
+.phase-row{display:flex;align-items:center;gap:6px}
+.phase-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.phase-prime{width:20px;text-align:right;color:#889}
+.phase-angle{color:#0af;width:50px;text-align:right}
+.phase-bar-wrap{flex:1;height:4px;background:rgba(255,255,255,.05);border-radius:2px;overflow:hidden}
+.phase-bar{height:100%;border-radius:2px;transition:width .05s linear}
+#lissajous-panel{text-align:center}
+#lissajous-canvas{border:1px solid rgba(0,170,255,.15);border-radius:4px;cursor:pointer;display:block;margin:4px auto}
+#lissajous-label{font-size:10px;color:#889;margin-top:4px}
+#select-hint{font-size:9px;color:#445;margin-top:2px}
+#prime-select{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:4px}
+#prime-select button{background:#0a0a1a;border:1px solid rgba(0,170,255,.15);color:#889;font-family:inherit;font-size:10px;padding:2px 6px;cursor:pointer;border-radius:3px;transition:all .2s}
+#prime-select button.selected{border-color:currentColor;color:#fff;text-shadow:0 0 6px currentColor}
+#grand-countdown{text-align:center;font-size:10px;color:#fc0;margin-top:4px;padding:6px;border:1px solid rgba(255,204,0,.15);border-radius:4px;background:rgba(255,204,0,.03)}
+footer{text-align:center;padding:8px;font-size:11px;color:#445;border-top:1px solid rgba(0,170,255,.1);background:#08081a;letter-spacing:1px}
+footer span{color:#fc0}
+</style>
+</head>
+<body>
+<div id="main-wrap">
+<div id="canvas-col">
+<canvas id="main-canvas"></canvas>
+</div>
+<div id="right-panel">
+<h3>Controls</h3>
+<div class="panel-box" id="controls">
+<button id="btn-play" class="active">&#9654; Play</button>
+<button id="btn-pause">&#10074;&#10074; Pause</button>
+<button id="btn-1x" class="active">1x</button>
+<button id="btn-2x">2x</button>
+<button id="btn-4x">4x</button>
+<button id="btn-reset">&#8634; Reset</button>
+</div>
+
+<h3>Stats</h3>
+<div class="panel-box" id="stats"></div>
+
+<h3>Phase Angles</h3>
+<div class="panel-box" id="phase-list"></div>
+
+<h3>Grand Alignment</h3>
+<div class="panel-box" id="grand-countdown"></div>
+
+<h3>Lissajous</h3>
+<div class="panel-box" id="lissajous-panel">
+<canvas id="lissajous-canvas" width="200" height="200"></canvas>
+<div id="lissajous-label">Select two primes</div>
+<div id="select-hint">Click two primes below</div>
+<div id="prime-select"></div>
+</div>
+</div>
+</div>
+<footer>
+<span>510,510</span> = 2&times;3&times;5&times;7&times;11&times;13&times;17 &mdash; PRIME PENDULUM HARMONY
+</footer>
+
+<script>
+(function(){
+"use strict";
+
+var PRIMES = [2, 3, 5, 7, 11, 13, 17];
+var COLORS = ['#ff3366', '#00ccff', '#ffaa00', '#44ff44', '#aa44ff', '#ff6644', '#ffffff'];
+var GRAND_PERIOD = 510510;
+var PHASE_THRESHOLD = 0.12; // radians for "in phase"
+var TRAIL_LENGTH = 120;
+var BASE_PERIOD = 0.8; // seconds for prime=1
+
+var canvas = document.getElementById('main-canvas');
+var ctx = canvas.getContext('2d');
+var lCanvas = document.getElementById('lissajous-canvas');
+var lCtx = lCanvas.getContext('2d');
+
+var playing = true;
+var speed = 1;
+var elapsed = 0;
+var pendulums = [];
+var selectedPair = [];
+var lissajousTrail = [];
+var maxLissajousTrail = 2000;
+
+// Initialize pendulums
+function initPendulums() {
+    pendulums = PRIMES.map(function(p, i) {
+        return {
+            prime: p,
+            color: COLORS[i],
+            amplitude: 0.55, // radians
+            period: BASE_PERIOD * p,
+            trail: [],
+            angle: 0,
+            x: 0,
+            y: 0
+        };
+    });
+}
+
+// Build prime selection buttons
+var primeSelectDiv = document.getElementById('prime-select');
+PRIMES.forEach(function(p, i) {
+    var btn = document.createElement('button');
+    btn.textContent = p;
+    btn.style.color = COLORS[i];
+    btn.dataset.index = i;
+    btn.addEventListener('click', function() {
+        togglePrimeSelection(i, btn);
+    });
+    primeSelectDiv.appendChild(btn);
+});
+
+function togglePrimeSelection(idx, btn) {
+    var pos = selectedPair.indexOf(idx);
+    if (pos !== -1) {
+        selectedPair.splice(pos, 1);
+        btn.classList.remove('selected');
+    } else {
+        if (selectedPair.length >= 2) {
+            var oldIdx = selectedPair.shift();
+            primeSelectDiv.children[oldIdx].classList.remove('selected');
+        }
+        selectedPair.push(idx);
+        btn.classList.add('selected');
+    }
+    lissajousTrail = [];
+    updateLissajousLabel();
+}
+
+function updateLissajousLabel() {
+    var label = document.getElementById('lissajous-label');
+    if (selectedPair.length === 2) {
+        label.textContent = PRIMES[selectedPair[0]] + ' : ' + PRIMES[selectedPair[1]];
+    } else {
+        label.textContent = 'Select two primes';
+    }
+}
+
+// Build phase list DOM
+var phaseListDiv = document.getElementById('phase-list');
+var phaseRows = [];
+PRIMES.forEach(function(p, i) {
+    var row = document.createElement('div');
+    row.className = 'phase-row';
+    row.innerHTML = '<span class="phase-dot" style="background:' + COLORS[i] + '"></span>' +
+        '<span class="phase-prime">' + p + '</span>' +
+        '<span class="phase-angle" id="pa-' + i + '">0.000</span>' +
+        '<span class="phase-bar-wrap"><span class="phase-bar" id="pb-' + i + '" style="background:' + COLORS[i] + ';width:0%"></span></span>';
+    phaseListDiv.appendChild(row);
+    phaseRows.push(row);
+});
+
+// Controls
+document.getElementById('btn-play').addEventListener('click', function() {
+    playing = true;
+    this.classList.add('active');
+    document.getElementById('btn-pause').classList.remove('active');
+});
+document.getElementById('btn-pause').addEventListener('click', function() {
+    playing = false;
+    this.classList.add('active');
+    document.getElementById('btn-play').classList.remove('active');
+});
+document.getElementById('btn-1x').addEventListener('click', function() { setSpeed(1, this); });
+document.getElementById('btn-2x').addEventListener('click', function() { setSpeed(2, this); });
+document.getElementById('btn-4x').addEventListener('click', function() { setSpeed(4, this); });
+document.getElementById('btn-reset').addEventListener('click', function() {
+    elapsed = 0;
+    lissajousTrail = [];
+    pendulums.forEach(function(p) { p.trail = []; });
+    lCtx.clearRect(0, 0, lCanvas.width, lCanvas.height);
+});
+
+function setSpeed(s, btn) {
+    speed = s;
+    ['btn-1x','btn-2x','btn-4x'].forEach(function(id) {
+        document.getElementById(id).classList.remove('active');
+    });
+    btn.classList.add('active');
+}
+
+// Resize
+function resize() {
+    canvas.width = canvas.parentElement.clientWidth;
+    canvas.height = canvas.parentElement.clientHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+initPendulums();
+
+// Select first two primes by default
+selectedPair = [0, 1];
+primeSelectDiv.children[0].classList.add('selected');
+primeSelectDiv.children[1].classList.add('selected');
+updateLissajousLabel();
+
+// Physics
+function getAngle(pendulum, t) {
+    var phase = (2 * Math.PI * t) / pendulum.period;
+    return pendulum.amplitude * Math.sin(phase);
+}
+
+function getNormalizedPhase(pendulum, t) {
+    var phase = (2 * Math.PI * t) / pendulum.period;
+    return ((phase % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+}
+
+// Find next time when all pendulums have phase near 0 (mod 2pi)
+function predictNextAlignment(t) {
+    var grandT = GRAND_PERIOD * BASE_PERIOD;
+    var currentCycle = Math.floor(t / grandT);
+    var nextAlignment = (currentCycle + 1) * grandT;
+    return nextAlignment - t;
+}
+
+// Main render
+var lastTime = 0;
+
+function render(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    var dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    if (playing) {
+        elapsed += dt * speed;
+    }
+
+    var W = canvas.width;
+    var H = canvas.height;
+    var barY = 50;
+    var spacing = W / (PRIMES.length + 1);
+    var maxLen = H * 0.55;
+    var minLen = H * 0.15;
+
+    // Clear with slight fade for trail effect
+    ctx.fillStyle = 'rgba(6,6,16,0.15)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw horizontal bar
+    ctx.strokeStyle = '#1a2a3a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(spacing * 0.5, barY);
+    ctx.lineTo(W - spacing * 0.5, barY);
+    ctx.stroke();
+
+    // Pivot points
+    var pivotPoints = [];
+    PRIMES.forEach(function(p, i) {
+        pivotPoints.push({ x: spacing * (i + 1), y: barY });
+    });
+
+    // Draw pivot bolts
+    pivotPoints.forEach(function(pt) {
+        ctx.fillStyle = '#2a3a4a';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Update and draw pendulums
+    var bobPositions = [];
+    pendulums.forEach(function(pend, i) {
+        var angle = getAngle(pend, elapsed);
+        pend.angle = angle;
+
+        // Length proportional to prime, normalized
+        var lenNorm = (pend.prime - 2) / (17 - 2);
+        var len = minLen + lenNorm * (maxLen - minLen);
+
+        var px = pivotPoints[i].x;
+        var py = pivotPoints[i].y;
+        var bx = px + len * Math.sin(angle);
+        var by = py + len * Math.cos(angle);
+
+        pend.x = bx;
+        pend.y = by;
+
+        // Trail
+        pend.trail.push({ x: bx, y: by });
+        if (pend.trail.length > TRAIL_LENGTH) {
+            pend.trail.shift();
+        }
+
+        // Draw trail
+        if (pend.trail.length > 1) {
+            for (var t = 1; t < pend.trail.length; t++) {
+                var alpha = (t / pend.trail.length) * 0.5;
+                ctx.strokeStyle = hexToRGBA(pend.color, alpha);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(pend.trail[t-1].x, pend.trail[t-1].y);
+                ctx.lineTo(pend.trail[t].x, pend.trail[t].y);
+                ctx.stroke();
+            }
+        }
+
+        // Draw rod
+        ctx.strokeStyle = hexToRGBA(pend.color, 0.3);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+
+        // Draw bob
+        ctx.shadowColor = pend.color;
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = pend.color;
+        ctx.beginPath();
+        ctx.arc(bx, by, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Prime label below bob
+        ctx.fillStyle = pend.color;
+        ctx.font = '10px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText(pend.prime, bx, by + 18);
+
+        bobPositions.push({ x: bx, y: by, idx: i });
+    });
+
+    // Phase alignment detection — draw golden lines between aligned pendulums
+    var alignedPairs = [];
+    for (var i = 0; i < pendulums.length; i++) {
+        for (var j = i + 1; j < pendulums.length; j++) {
+            var phaseI = getNormalizedPhase(pendulums[i], elapsed);
+            var phaseJ = getNormalizedPhase(pendulums[j], elapsed);
+            var diff = Math.abs(phaseI - phaseJ);
+            if (diff > Math.PI) diff = 2 * Math.PI - diff;
+            if (diff < PHASE_THRESHOLD) {
+                alignedPairs.push([i, j]);
+            }
+        }
+    }
+
+    // Draw alignment connections
+    alignedPairs.forEach(function(pair) {
+        var a = pendulums[pair[0]];
+        var b = pendulums[pair[1]];
+        ctx.strokeStyle = 'rgba(255,204,0,0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#fc0';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Glow at midpoint
+        var mx = (a.x + b.x) / 2;
+        var my = (a.y + b.y) / 2;
+        ctx.fillStyle = 'rgba(255,204,0,0.3)';
+        ctx.beginPath();
+        ctx.arc(mx, my, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Alignment count indicator top-right
+    if (alignedPairs.length > 0) {
+        ctx.fillStyle = 'rgba(255,204,0,0.8)';
+        ctx.font = '12px Courier New';
+        ctx.textAlign = 'right';
+        ctx.fillText(alignedPairs.length + ' alignment' + (alignedPairs.length > 1 ? 's' : ''), W - 15, 25);
+    }
+
+    // Update stats panel
+    updateStats(alignedPairs);
+
+    // Update phase angles
+    updatePhases();
+
+    // Update Lissajous
+    updateLissajous();
+
+    requestAnimationFrame(render);
+}
+
+function updateStats(alignedPairs) {
+    var grandT = GRAND_PERIOD * BASE_PERIOD;
+    var timeToGrand = predictNextAlignment(elapsed);
+    var statsDiv = document.getElementById('stats');
+    var alignCount = alignedPairs.length;
+
+    // Find next pairwise alignment prediction
+    var nextPairAlign = '---';
+    if (pendulums.length >= 2) {
+        var minNext = Infinity;
+        for (var i = 0; i < pendulums.length; i++) {
+            for (var j = i + 1; j < pendulums.length; j++) {
+                // Next alignment for pair: LCM of their periods
+                var lcmP = lcm(pendulums[i].period * 1000, pendulums[j].period * 1000) / 1000;
+                var currentCycle = Math.floor(elapsed / lcmP);
+                var nextT = (currentCycle + 1) * lcmP - elapsed;
+                if (nextT < 0.01) nextT = lcmP;
+                if (nextT < minNext) {
+                    minNext = nextT;
+                    nextPairAlign = PRIMES[i] + '&' + PRIMES[j] + ' in ' + minNext.toFixed(1) + 's';
+                }
+            }
+        }
+    }
+
+    statsDiv.innerHTML =
+        '<span class="label">Elapsed: </span><span class="value">' + formatTime(elapsed) + '</span><br>' +
+        '<span class="label">Speed: </span><span class="value">' + speed + 'x</span><br>' +
+        '<span class="label">Aligned: </span><span class="value">' + alignCount + ' pair' + (alignCount !== 1 ? 's' : '') + '</span><br>' +
+        '<span class="label">Next pair: </span><span class="value">' + nextPairAlign + '</span>';
+
+    // Grand countdown
+    var grandDiv = document.getElementById('grand-countdown');
+    var grandRemain = (GRAND_PERIOD * BASE_PERIOD) - (elapsed % (GRAND_PERIOD * BASE_PERIOD));
+    if (grandRemain < 0.5) {
+        grandDiv.innerHTML = '<span class="grand" style="font-size:13px">&#10024; GRAND ALIGNMENT &#10024;</span>';
+        grandDiv.style.borderColor = 'rgba(255,204,0,.5)';
+    } else {
+        var pct = ((elapsed % (GRAND_PERIOD * BASE_PERIOD)) / (GRAND_PERIOD * BASE_PERIOD) * 100).toFixed(6);
+        grandDiv.innerHTML =
+            '<span class="label">Grand Period:</span> <span class="grand">' + GRAND_PERIOD.toLocaleString() + 's</span><br>' +
+            '<span class="label">Countdown:</span> <span class="grand">' + formatTime(grandRemain) + '</span><br>' +
+            '<span class="label">Progress:</span> <span class="grand">' + pct + '%</span>';
+        grandDiv.style.borderColor = 'rgba(255,204,0,.15)';
+    }
+}
+
+function updatePhases() {
+    pendulums.forEach(function(pend, i) {
+        var phase = getNormalizedPhase(pend, elapsed);
+        var deg = (phase * 180 / Math.PI).toFixed(1);
+        var pct = (phase / (2 * Math.PI) * 100).toFixed(1);
+        var angleEl = document.getElementById('pa-' + i);
+        var barEl = document.getElementById('pb-' + i);
+        if (angleEl) angleEl.textContent = deg + '\u00B0';
+        if (barEl) barEl.style.width = pct + '%';
+    });
+}
+
+function updateLissajous() {
+    if (selectedPair.length !== 2) return;
+
+    var p1 = pendulums[selectedPair[0]];
+    var p2 = pendulums[selectedPair[1]];
+    var W = lCanvas.width;
+    var H = lCanvas.height;
+    var margin = 20;
+
+    // Normalized positions [-1, 1] based on sin of angle
+    var x = Math.sin(getAngle(p1, elapsed) / p1.amplitude * Math.PI);
+    var y = Math.sin(getAngle(p2, elapsed) / p2.amplitude * Math.PI);
+
+    // Map to canvas
+    var cx = margin + (x + 1) / 2 * (W - 2 * margin);
+    var cy = margin + (y + 1) / 2 * (H - 2 * margin);
+
+    lissajousTrail.push({ x: cx, y: cy });
+    if (lissajousTrail.length > maxLissajousTrail) {
+        lissajousTrail.shift();
+    }
+
+    // Fade background
+    lCtx.fillStyle = 'rgba(6,6,16,0.04)';
+    lCtx.fillRect(0, 0, W, H);
+
+    // Draw trail
+    if (lissajousTrail.length > 1) {
+        var len = lissajousTrail.length;
+        for (var t = 1; t < len; t++) {
+            var alpha = (t / len) * 0.8;
+            var r = Math.round(lerp(parseInt(p1.color.slice(1,3),16)||parseInt(p1.color.slice(1,2),16)*17, parseInt(p2.color.slice(1,3),16)||parseInt(p2.color.slice(1,2),16)*17, t/len));
+            lCtx.strokeStyle = 'rgba(0,170,255,' + alpha + ')';
+            lCtx.lineWidth = 1;
+            lCtx.beginPath();
+            lCtx.moveTo(lissajousTrail[t-1].x, lissajousTrail[t-1].y);
+            lCtx.lineTo(lissajousTrail[t].x, lissajousTrail[t].y);
+            lCtx.stroke();
+        }
+    }
+
+    // Current point
+    lCtx.fillStyle = '#fff';
+    lCtx.shadowColor = '#0af';
+    lCtx.shadowBlur = 6;
+    lCtx.beginPath();
+    lCtx.arc(cx, cy, 3, 0, Math.PI * 2);
+    lCtx.fill();
+    lCtx.shadowBlur = 0;
+}
+
+// Utilities
+function hexToRGBA(hex, alpha) {
+    var r, g, b;
+    if (hex.length === 4) {
+        r = parseInt(hex[1] + hex[1], 16);
+        g = parseInt(hex[2] + hex[2], 16);
+        b = parseInt(hex[3] + hex[3], 16);
+    } else {
+        r = parseInt(hex.slice(1,3), 16);
+        g = parseInt(hex.slice(3,5), 16);
+        b = parseInt(hex.slice(5,7), 16);
+    }
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function gcd(a, b) {
+    a = Math.round(a);
+    b = Math.round(b);
+    while (b) { var t = b; b = a % b; a = t; }
+    return a;
+}
+
+function lcm(a, b) {
+    return Math.abs(a * b) / gcd(a, b);
+}
+
+function formatTime(s) {
+    if (s > 86400) {
+        var d = Math.floor(s / 86400);
+        var h = Math.floor((s % 86400) / 3600);
+        return d + 'd ' + h + 'h';
+    }
+    if (s > 3600) {
+        var h = Math.floor(s / 3600);
+        var m = Math.floor((s % 3600) / 60);
+        return h + 'h ' + m + 'm';
+    }
+    if (s > 60) {
+        var m = Math.floor(s / 60);
+        var sec = Math.floor(s % 60);
+        return m + 'm ' + sec + 's';
+    }
+    return s.toFixed(1) + 's';
+}
+
+requestAnimationFrame(render);
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

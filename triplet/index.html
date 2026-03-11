@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Triplets | M7 Shields</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#060610;
+  color:#c8d0e0;
+  font-family:'Courier New',monospace;
+  overflow:hidden;
+  padding-top:36px;
+}
+#main-canvas {
+  display:block;
+  cursor:crosshair;
+}
+.panel {
+  position:fixed;
+  background:rgba(6,6,16,.92);
+  border:1px solid rgba(0,170,255,.15);
+  backdrop-filter:blur(12px);
+  border-radius:6px;
+  padding:14px 18px;
+  font-size:11px;
+  line-height:1.6;
+  pointer-events:auto;
+}
+#stats-panel {
+  top:50px;
+  right:14px;
+  width:260px;
+  z-index:100;
+}
+#stats-panel h3 {
+  font-size:10px;
+  letter-spacing:2px;
+  color:#0af;
+  margin-bottom:8px;
+  border-bottom:1px solid rgba(0,170,255,.15);
+  padding-bottom:6px;
+}
+#stats-panel .row {
+  display:flex;
+  justify-content:space-between;
+  margin:3px 0;
+}
+#stats-panel .label { color:#667; }
+#stats-panel .val { font-weight:bold; }
+#stats-panel .cyan { color:#0ff; }
+#stats-panel .magenta { color:#f0f; }
+#stats-panel .gold { color:#ffd700; }
+#density-canvas {
+  width:100%;
+  height:80px;
+  margin-top:10px;
+  border:1px solid rgba(0,170,255,.1);
+  border-radius:3px;
+}
+#tooltip {
+  position:fixed;
+  background:rgba(6,6,16,.95);
+  border:1px solid rgba(0,170,255,.25);
+  backdrop-filter:blur(12px);
+  border-radius:6px;
+  padding:10px 14px;
+  font-size:11px;
+  line-height:1.6;
+  pointer-events:none;
+  z-index:200;
+  display:none;
+  max-width:280px;
+}
+#tooltip .tt-title { color:#0af; font-size:10px; letter-spacing:1.5px; margin-bottom:4px; }
+#zoom-overlay {
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(6,6,16,.85);
+  backdrop-filter:blur(6px);
+  z-index:300;
+  display:none;
+  justify-content:center;
+  align-items:center;
+}
+#zoom-panel {
+  background:rgba(6,6,16,.95);
+  border:1px solid rgba(0,170,255,.2);
+  border-radius:8px;
+  padding:24px 32px;
+  max-width:600px;
+  width:90%;
+}
+#zoom-panel h3 {
+  font-size:10px;
+  letter-spacing:2px;
+  color:#0af;
+  margin-bottom:12px;
+}
+#zoom-numbers {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin:10px 0;
+}
+#zoom-numbers .num {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:44px;
+  height:28px;
+  border-radius:4px;
+  font-size:10px;
+  font-weight:bold;
+}
+#zoom-numbers .num.prime { background:rgba(0,255,255,.15); color:#0ff; border:1px solid rgba(0,255,255,.3); }
+#zoom-numbers .num.triplet-member { border:2px solid; }
+#zoom-numbers .num.composite { background:rgba(255,255,255,.04); color:#445; border:1px solid rgba(255,255,255,.05); }
+#zoom-close {
+  margin-top:14px;
+  background:none;
+  border:1px solid rgba(0,170,255,.3);
+  color:#0af;
+  padding:6px 18px;
+  border-radius:4px;
+  font-family:'Courier New',monospace;
+  font-size:10px;
+  letter-spacing:1.5px;
+  cursor:pointer;
+}
+#zoom-close:hover { background:rgba(0,170,255,.1); }
+#controls {
+  position:fixed;
+  bottom:14px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:100;
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+#controls .info {
+  font-size:9px;
+  color:#556;
+  letter-spacing:1px;
+}
+</style>
+</head>
+<body>
+<canvas id="main-canvas"></canvas>
+
+<div id="stats-panel" class="panel">
+  <h3>PRIME TRIPLETS &mdash; STATISTICS</h3>
+  <div class="row"><span class="label">PRIMES (2-10000):</span><span class="val" id="s-primes">0</span></div>
+  <div class="row"><span class="label">TYPE 1 (p,p+2,p+6):</span><span class="val cyan" id="s-type1">0</span></div>
+  <div class="row"><span class="label">TYPE 2 (p,p+4,p+6):</span><span class="val magenta" id="s-type2">0</span></div>
+  <div class="row"><span class="label">SPECIAL (3,5,7):</span><span class="val gold" id="s-special">1</span></div>
+  <div class="row"><span class="label">TOTAL TRIPLETS:</span><span class="val" id="s-total">0</span></div>
+  <div class="row"><span class="label">LARGEST GAP:</span><span class="val" id="s-gap">0</span></div>
+  <h3 style="margin-top:12px">DENSITY: TYPE 1 vs TYPE 2</h3>
+  <canvas id="density-canvas"></canvas>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="zoom-overlay" onclick="closeZoom()">
+  <div id="zoom-panel" onclick="event.stopPropagation()">
+    <h3 id="zoom-title">TRIPLET DETAIL</h3>
+    <div id="zoom-numbers"></div>
+    <button id="zoom-close" onclick="closeZoom()">CLOSE [ESC]</button>
+  </div>
+</div>
+
+<div id="controls">
+  <span class="info">SCROLL: PAN &bull; CTRL+SCROLL: ZOOM &bull; CLICK TRIPLET: DETAIL</span>
+</div>
+
+<script>
+// --- Prime sieve ---
+const MAX = 10000;
+const sieve = new Uint8Array(MAX + 1);
+sieve[0] = sieve[1] = 1;
+for (let i = 2; i * i <= MAX; i++) {
+  if (!sieve[i]) for (let j = i * i; j <= MAX; j += i) sieve[j] = 1;
+}
+const primes = [];
+const isPrime = new Set();
+for (let i = 2; i <= MAX; i++) {
+  if (!sieve[i]) { primes.push(i); isPrime.add(i); }
+}
+
+// --- Find prime triplets ---
+const triplets = [];
+// Special triplet (3,5,7) - gap pattern (2,2)
+triplets.push({ p: [3, 5, 7], type: 0, gaps: [2, 2], index: 0 });
+
+for (let i = 0; i < primes.length; i++) {
+  const p = primes[i];
+  // Type 1: (p, p+2, p+6)
+  if (isPrime.has(p + 2) && isPrime.has(p + 6)) {
+    if (p === 3) continue; // already captured as special
+    triplets.push({ p: [p, p + 2, p + 6], type: 1, gaps: [2, 4], index: triplets.length });
+  }
+  // Type 2: (p, p+4, p+6)
+  if (isPrime.has(p + 4) && isPrime.has(p + 6)) {
+    if (p === 3) continue;
+    triplets.push({ p: [p, p + 4, p + 6], type: 2, gaps: [4, 2], index: triplets.length });
+  }
+}
+
+// Re-index
+triplets.forEach((t, i) => t.index = i);
+
+// Stats
+const type1 = triplets.filter(t => t.type === 1);
+const type2 = triplets.filter(t => t.type === 2);
+let largestGap = 0;
+for (let i = 1; i < triplets.length; i++) {
+  const gap = triplets[i].p[0] - triplets[i - 1].p[2];
+  if (gap > largestGap) largestGap = gap;
+}
+
+document.getElementById('s-primes').textContent = primes.length;
+document.getElementById('s-type1').textContent = type1.length;
+document.getElementById('s-type2').textContent = type2.length;
+document.getElementById('s-total').textContent = triplets.length;
+document.getElementById('s-gap').textContent = largestGap;
+
+// --- Running density chart ---
+function drawDensityChart() {
+  const dc = document.getElementById('density-canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = dc.getBoundingClientRect();
+  dc.width = rect.width * dpr;
+  dc.height = rect.height * dpr;
+  const ctx = dc.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  // Build running counts
+  const steps = [];
+  let c1 = 0, c2 = 0;
+  for (const t of triplets) {
+    if (t.type === 1) c1++;
+    else if (t.type === 2) c2++;
+    steps.push({ x: t.p[0], c1, c2 });
+  }
+  const maxC = Math.max(c1, c2, 1);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(0,170,255,.03)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Type 1 line (cyan)
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(0,255,255,.7)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < steps.length; i++) {
+    const sx = (steps[i].x / MAX) * W;
+    const sy = H - (steps[i].c1 / maxC) * (H - 6) - 3;
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+
+  // Type 2 line (magenta)
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(255,0,255,.7)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < steps.length; i++) {
+    const sx = (steps[i].x / MAX) * W;
+    const sy = H - (steps[i].c2 / maxC) * (H - 6) - 3;
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+
+  // Labels
+  ctx.font = '8px Courier New';
+  ctx.fillStyle = '#0ff';
+  ctx.fillText('TYPE 1: ' + type1.length, 4, 10);
+  ctx.fillStyle = '#f0f';
+  ctx.fillText('TYPE 2: ' + type2.length, 4, 20);
+}
+
+// --- Main canvas ---
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+
+// Grid layout: numbers arranged in rows of COLS
+const COLS = 200;
+const CELL_BASE = 6;
+
+// View state
+let offsetX = 0, offsetY = 0;
+let zoom = 1;
+let hoveredTriplet = null;
+let animTime = 0;
+let mouseX = 0, mouseY = 0;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight - 36;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawDensityChart();
+}
+
+function numToGrid(n) {
+  const row = Math.floor((n - 2) / COLS);
+  const col = (n - 2) % COLS;
+  return { x: col * CELL_BASE, y: row * CELL_BASE };
+}
+
+function gridToScreen(gx, gy) {
+  return {
+    x: gx * zoom + offsetX,
+    y: gy * zoom + offsetY + 36
+  };
+}
+
+function screenToGrid(sx, sy) {
+  return {
+    x: (sx - offsetX) / zoom,
+    y: (sy - 36 - offsetY) / zoom
+  };
+}
+
+function screenToNum(sx, sy) {
+  const g = screenToGrid(sx, sy);
+  const col = Math.round(g.x / CELL_BASE);
+  const row = Math.round(g.y / CELL_BASE);
+  if (col < 0 || col >= COLS || row < 0) return -1;
+  const n = row * COLS + col + 2;
+  return (n >= 2 && n <= MAX) ? n : -1;
+}
+
+function getTrianglePoints(t) {
+  const pts = t.p.map(n => {
+    const g = numToGrid(n);
+    return gridToScreen(g.x, g.y);
+  });
+  return pts;
+}
+
+function pointInTriangle(px, py, pts) {
+  const [a, b, c] = pts;
+  const area = 0.5 * (-b.y * c.x + a.y * (-b.x + c.x) + a.x * (b.y - c.y) + b.x * c.y);
+  const s = (a.y * c.x - a.x * c.y + (c.y - a.y) * px + (a.x - c.x) * py) / (2 * area);
+  const u = (a.x * b.y - a.y * b.x + (a.y - b.y) * px + (b.x - a.x) * py) / (2 * area);
+  const v = 1 - s - u;
+  return s >= -0.15 && u >= -0.15 && v >= -0.15; // slight padding for easier hover
+}
+
+function draw() {
+  animTime += 0.016;
+  ctx.clearRect(0, 0, W, H);
+
+  const cellScreen = CELL_BASE * zoom;
+
+  // Determine visible range
+  const gTopLeft = screenToGrid(0, 36);
+  const gBottomRight = screenToGrid(W, H + 36);
+  const rowStart = Math.max(0, Math.floor(gTopLeft.y / CELL_BASE) - 1);
+  const rowEnd = Math.min(Math.ceil(MAX / COLS), Math.ceil(gBottomRight.y / CELL_BASE) + 1);
+  const colStart = Math.max(0, Math.floor(gTopLeft.x / CELL_BASE) - 1);
+  const colEnd = Math.min(COLS, Math.ceil(gBottomRight.x / CELL_BASE) + 1);
+
+  // Draw triplet triangles (behind dots)
+  const pulse = 0.6 + 0.4 * Math.sin(animTime * 1.5);
+  const breathe = 0.4 + 0.3 * Math.sin(animTime * 2.0);
+
+  for (const t of triplets) {
+    const pts = getTrianglePoints(t);
+    // Skip if all points off screen
+    const anyVisible = pts.some(p => p.x > -50 && p.x < W + 50 && p.y > -50 && p.y < H + 50);
+    if (!anyVisible) continue;
+
+    const isHovered = hoveredTriplet === t;
+    let fillColor, strokeColor;
+    if (t.type === 0) {
+      fillColor = `rgba(255,215,0,${(isHovered ? 0.25 : 0.1) * pulse})`;
+      strokeColor = `rgba(255,215,0,${(isHovered ? 0.9 : 0.5) * breathe})`;
+    } else if (t.type === 1) {
+      fillColor = `rgba(0,255,255,${(isHovered ? 0.2 : 0.07) * pulse})`;
+      strokeColor = `rgba(0,255,255,${(isHovered ? 0.8 : 0.35) * breathe})`;
+    } else {
+      fillColor = `rgba(255,0,255,${(isHovered ? 0.2 : 0.07) * pulse})`;
+      strokeColor = `rgba(255,0,255,${(isHovered ? 0.8 : 0.35) * breathe})`;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    ctx.lineTo(pts[1].x, pts[1].y);
+    ctx.lineTo(pts[2].x, pts[2].y);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.stroke();
+  }
+
+  // Draw prime dots
+  if (cellScreen >= 2) {
+    for (let row = rowStart; row <= rowEnd; row++) {
+      for (let col = colStart; col <= colEnd; col++) {
+        const n = row * COLS + col + 2;
+        if (n < 2 || n > MAX) continue;
+        if (!isPrime.has(n)) continue;
+        const g = numToGrid(n);
+        const s = gridToScreen(g.x, g.y);
+        const r = Math.max(1.2, Math.min(cellScreen * 0.3, 4));
+
+        // Check if this prime is part of hovered triplet
+        let highlight = false;
+        if (hoveredTriplet && hoveredTriplet.p.includes(n)) highlight = true;
+
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        if (highlight) {
+          ctx.fillStyle = hoveredTriplet.type === 0 ? '#ffd700' :
+                          hoveredTriplet.type === 1 ? '#0ff' : '#f0f';
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.shadowBlur = 8;
+        } else {
+          ctx.fillStyle = `rgba(0,170,255,${0.5 + 0.3 * pulse})`;
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+
+  // Draw number labels if zoomed in enough
+  if (cellScreen >= 28) {
+    ctx.font = `${Math.min(10, cellScreen * 0.35)}px Courier New`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (let row = rowStart; row <= rowEnd; row++) {
+      for (let col = colStart; col <= colEnd; col++) {
+        const n = row * COLS + col + 2;
+        if (n < 2 || n > MAX) continue;
+        const g = numToGrid(n);
+        const s = gridToScreen(g.x, g.y);
+        if (isPrime.has(n)) {
+          ctx.fillStyle = 'rgba(0,200,255,.7)';
+        } else {
+          ctx.fillStyle = 'rgba(100,100,130,.3)';
+        }
+        ctx.fillText(n, s.x, s.y - Math.max(2, cellScreen * 0.2));
+      }
+    }
+  }
+
+  // Title
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#334';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`PRIME TRIPLETS  |  RANGE: 2-${MAX}  |  ZOOM: ${zoom.toFixed(2)}x`, 14, 48);
+
+  requestAnimationFrame(draw);
+}
+
+// --- Tooltip ---
+const tooltip = document.getElementById('tooltip');
+
+function updateHover(mx, my) {
+  mouseX = mx; mouseY = my;
+  hoveredTriplet = null;
+
+  for (let i = triplets.length - 1; i >= 0; i--) {
+    const pts = getTrianglePoints(triplets[i]);
+    if (pointInTriangle(mx, my, pts)) {
+      hoveredTriplet = triplets[i];
+      break;
+    }
+  }
+
+  if (hoveredTriplet) {
+    const t = hoveredTriplet;
+    const typeLabel = t.type === 0 ? '<span style="color:#ffd700">SPECIAL (2,2)</span>' :
+                      t.type === 1 ? '<span style="color:#0ff">TYPE 1 (p,p+2,p+6)</span>' :
+                                     '<span style="color:#f0f">TYPE 2 (p,p+4,p+6)</span>';
+    tooltip.innerHTML = `
+      <div class="tt-title">PRIME TRIPLET #${t.index + 1}</div>
+      <div>Primes: <b style="color:#fff">(${t.p.join(', ')})</b></div>
+      <div>Type: ${typeLabel}</div>
+      <div>Gaps: [${t.gaps.join(', ')}]</div>
+      <div style="color:#556;margin-top:4px;font-size:9px">Click to zoom in</div>
+    `;
+    tooltip.style.display = 'block';
+    let tx = mx + 16, ty = my - 10;
+    if (tx + 260 > W) tx = mx - 270;
+    if (ty + 120 > H) ty = my - 120;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+    canvas.style.cursor = 'pointer';
+  } else {
+    tooltip.style.display = 'none';
+    canvas.style.cursor = 'crosshair';
+  }
+}
+
+// --- Zoom detail overlay ---
+function openZoom(t) {
+  const overlay = document.getElementById('zoom-overlay');
+  const title = document.getElementById('zoom-title');
+  const nums = document.getElementById('zoom-numbers');
+  const typeLabel = t.type === 0 ? 'SPECIAL' : t.type === 1 ? 'TYPE 1' : 'TYPE 2';
+  const col = t.type === 0 ? '#ffd700' : t.type === 1 ? '#0ff' : '#f0f';
+  title.innerHTML = `TRIPLET #${t.index + 1} &mdash; <span style="color:${col}">${typeLabel}</span> &mdash; (${t.p.join(', ')})`;
+
+  nums.innerHTML = '';
+  const lo = t.p[0], hi = t.p[2];
+  for (let n = lo; n <= hi; n++) {
+    const div = document.createElement('div');
+    div.className = 'num';
+    div.textContent = n;
+    if (t.p.includes(n)) {
+      div.classList.add('prime', 'triplet-member');
+      div.style.borderColor = col;
+    } else if (isPrime.has(n)) {
+      div.classList.add('prime');
+    } else {
+      div.classList.add('composite');
+    }
+    nums.appendChild(div);
+  }
+  overlay.style.display = 'flex';
+}
+
+function closeZoom() {
+  document.getElementById('zoom-overlay').style.display = 'none';
+}
+
+// --- Events ---
+canvas.addEventListener('mousemove', e => updateHover(e.clientX, e.clientY));
+canvas.addEventListener('mouseleave', () => {
+  hoveredTriplet = null;
+  tooltip.style.display = 'none';
+});
+
+canvas.addEventListener('click', e => {
+  if (hoveredTriplet) {
+    openZoom(hoveredTriplet);
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeZoom();
+});
+
+// Pan with scroll, zoom with ctrl+scroll
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    const newZoom = Math.max(0.3, Math.min(30, zoom * factor));
+    // Zoom toward mouse
+    const mx = e.clientX, my = e.clientY - 36;
+    offsetX = mx - (mx - offsetX) * (newZoom / zoom);
+    offsetY = (my) - ((my) - offsetY) * (newZoom / zoom);
+    zoom = newZoom;
+  } else {
+    offsetX -= e.deltaX || 0;
+    offsetY -= e.deltaY || 0;
+  }
+}, { passive: false });
+
+// Touch / drag pan
+let dragging = false, dragStartX, dragStartY, dragOffX, dragOffY;
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0 && !hoveredTriplet) {
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragOffX = offsetX;
+    dragOffY = offsetY;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (dragging) {
+    offsetX = dragOffX + (e.clientX - dragStartX);
+    offsetY = dragOffY + (e.clientY - dragStartY);
+  }
+});
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  canvas.style.cursor = 'crosshair';
+});
+
+window.addEventListener('resize', resize);
+resize();
+
+// Center the grid nicely on load
+offsetX = 40;
+offsetY = 20;
+zoom = 3;
+
+draw();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

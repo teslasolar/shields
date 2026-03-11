@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Cellular Automata</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8e0;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh}
+h1{text-align:center;font-size:22px;letter-spacing:6px;color:#fff;margin:56px 0 4px;text-transform:uppercase;text-shadow:0 0 30px rgba(0,170,255,.3)}
+.subtitle{text-align:center;font-size:10px;letter-spacing:4px;color:#556;margin-bottom:16px}
+
+.controls{display:flex;justify-content:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;padding:0 16px}
+.controls button{
+  background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);
+  color:#8af;font-family:'Courier New',monospace;font-size:11px;
+  padding:6px 14px;border-radius:4px;cursor:pointer;letter-spacing:1px;
+  transition:all .25s;backdrop-filter:blur(6px)
+}
+.controls button:hover{background:rgba(0,170,255,.1);border-color:rgba(0,170,255,.35)}
+.controls button.active{background:rgba(0,170,255,.15);border-color:#0af;color:#fff;box-shadow:0 0 12px rgba(0,170,255,.2)}
+
+.main-wrap{display:flex;gap:12px;padding:0 16px 20px;max-width:1400px;margin:0 auto;align-items:flex-start}
+
+.canvas-container{
+  flex:1;min-width:0;position:relative;
+  background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);
+  border-radius:6px;backdrop-filter:blur(8px);overflow:hidden
+}
+canvas#automaton{display:block;width:100%;cursor:crosshair}
+
+.side-panel{
+  width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:10px
+}
+.panel{
+  background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);
+  border-radius:6px;padding:14px;backdrop-filter:blur(8px)
+}
+.panel h3{font-size:9px;letter-spacing:3px;color:#556;margin-bottom:10px;text-transform:uppercase}
+.stat-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px}
+.stat-label{color:#668}
+.stat-value{color:#0af;font-weight:bold}
+.stat-value.gold{color:#ffd700}
+.stat-value.cyan{color:#0ff}
+.stat-value.white{color:#fff}
+
+.rule-binary{font-size:13px;letter-spacing:2px;color:#0af;text-align:center;margin:8px 0 4px;word-spacing:4px}
+.rule-visual{display:flex;justify-content:center;gap:2px;margin-top:8px}
+.rule-cell{width:16px;height:16px;border:1px solid rgba(0,170,255,.15);border-radius:2px}
+.rule-cell.on{background:#fff}
+.rule-cell.off{background:rgba(6,6,16,.8)}
+
+.cell-info{font-size:10px;line-height:1.8;color:#8af}
+.cell-info .highlight{color:#ffd700}
+.cell-info .cyan-hl{color:#0ff}
+
+.legend{display:flex;flex-direction:column;gap:5px;font-size:10px}
+.legend-item{display:flex;align-items:center;gap:8px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+
+.speed-control{display:flex;align-items:center;gap:8px;font-size:10px;color:#668}
+.speed-control input[type=range]{
+  flex:1;-webkit-appearance:none;height:3px;background:rgba(0,170,255,.2);
+  border-radius:2px;outline:none
+}
+.speed-control input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+  background:#0af;cursor:pointer
+}
+
+@keyframes pulse{
+  0%,100%{opacity:.7;box-shadow:0 0 2px #fff}
+  50%{opacity:1;box-shadow:0 0 8px #fff}
+}
+</style>
+</head>
+<body>
+<h1>Prime Cellular Automata</h1>
+<p class="subtitle">Elementary automata where primes reveal hidden structure</p>
+
+<div class="controls">
+  <button id="btn-rule30" class="active" onclick="setRule(30)">Rule 30</button>
+  <button id="btn-rule90" onclick="setRule(90)">Rule 90</button>
+  <button id="btn-rule110" onclick="setRule(110)">Rule 110</button>
+  <button id="btn-rule54" onclick="setRule(54)">Rule 54</button>
+  <span style="width:16px"></span>
+  <button id="btn-play" onclick="togglePlay()">&#9654; PLAY</button>
+  <button onclick="resetAutomaton()">RESET</button>
+  <div class="speed-control">
+    <span>SPEED</span>
+    <input type="range" id="speed-slider" min="1" max="60" value="20" oninput="updateSpeed(this.value)">
+  </div>
+</div>
+
+<div class="main-wrap">
+  <div class="canvas-container">
+    <canvas id="automaton"></canvas>
+  </div>
+  <div class="side-panel">
+    <div class="panel" id="stats-panel">
+      <h3>Statistics</h3>
+      <div class="stat-row"><span class="stat-label">Current Rule</span><span class="stat-value" id="stat-rule">30</span></div>
+      <div class="stat-row"><span class="stat-label">Rule Binary</span><span class="stat-value" id="stat-binary">00011110</span></div>
+      <div class="stat-row"><span class="stat-label">Rows Generated</span><span class="stat-value" id="stat-rows">0</span></div>
+      <div class="stat-row"><span class="stat-label">Prime Rows</span><span class="stat-value gold" id="stat-prime-rows">0</span></div>
+      <div class="stat-row"><span class="stat-label">Prime Columns</span><span class="stat-value cyan" id="stat-prime-cols">0</span></div>
+      <div class="stat-row"><span class="stat-label">P-P Intersections</span><span class="stat-value white" id="stat-intersections">0</span></div>
+      <div class="stat-row"><span class="stat-label">Active Cells</span><span class="stat-value" id="stat-active">0</span></div>
+      <div class="stat-row"><span class="stat-label">Density</span><span class="stat-value" id="stat-density">0%</span></div>
+      <div style="margin-top:10px">
+        <h3>Rule Lookup Table</h3>
+        <div id="rule-table" style="font-size:9px;color:#668;margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="cell-panel">
+      <h3>Cell Inspector</h3>
+      <div class="cell-info" id="cell-info">Click any cell on the grid to inspect it.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Legend</h3>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background:#fff"></div> Active cell</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#111"></div> Inactive cell</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(255,215,0,.35)"></div> Prime row (gold glow)</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(0,255,255,.2)"></div> Prime column (cyan tint)</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#fff;box-shadow:0 0 6px #fff"></div> Prime-prime intersection</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- Prime sieve ---
+const MAX_PRIME_CHECK = 2000;
+const primeSet = new Set();
+(function sieve() {
+  const flags = new Uint8Array(MAX_PRIME_CHECK + 1);
+  for (let i = 2; i <= MAX_PRIME_CHECK; i++) {
+    if (!flags[i]) {
+      primeSet.add(i);
+      for (let j = i * i; j <= MAX_PRIME_CHECK; j += i) flags[j] = 1;
+    }
+  }
+})();
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n <= MAX_PRIME_CHECK) return primeSet.has(n);
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+// --- Automaton state ---
+const canvas = document.getElementById('automaton');
+const ctx = canvas.getContext('2d');
+
+let currentRule = 30;
+let ruleBits = [];
+let gridWidth = 0;
+let cellSize = 3;
+let rows = [];
+let totalRowsGenerated = 0;
+let maxVisibleRows = 0;
+let playing = false;
+let playInterval = null;
+let rowsPerTick = 1;
+let tickDelay = 50;
+let primeRowCount = 0;
+let primeIntersections = 0;
+let activeCellCount = 0;
+let scrollOffset = 0;
+let targetRows = 300;
+
+function parseRule(n) {
+  ruleBits = [];
+  for (let i = 0; i < 8; i++) ruleBits[i] = (n >> i) & 1;
+  return ruleBits;
+}
+
+function applyRule(left, center, right) {
+  const idx = (left << 2) | (center << 1) | right;
+  return ruleBits[idx];
+}
+
+function initGrid() {
+  const containerWidth = canvas.parentElement.clientWidth;
+  gridWidth = Math.floor(containerWidth / cellSize);
+  if (gridWidth % 2 === 0) gridWidth++;
+  maxVisibleRows = Math.floor(600 / cellSize);
+
+  canvas.width = gridWidth * cellSize;
+  canvas.height = maxVisibleRows * cellSize;
+
+  rows = [];
+  totalRowsGenerated = 0;
+  primeRowCount = 0;
+  primeIntersections = 0;
+  activeCellCount = 0;
+  scrollOffset = 0;
+
+  const firstRow = new Uint8Array(gridWidth);
+  firstRow[Math.floor(gridWidth / 2)] = 1;
+  rows.push(firstRow);
+  totalRowsGenerated = 1;
+  activeCellCount = 1;
+}
+
+function generateRow() {
+  const prev = rows[rows.length - 1];
+  const newRow = new Uint8Array(gridWidth);
+  for (let i = 0; i < gridWidth; i++) {
+    const l = i > 0 ? prev[i - 1] : 0;
+    const c = prev[i];
+    const r = i < gridWidth - 1 ? prev[i + 1] : 0;
+    newRow[i] = applyRule(l, c, r);
+    if (newRow[i]) activeCellCount++;
+  }
+  rows.push(newRow);
+  totalRowsGenerated++;
+
+  const rowIdx = totalRowsGenerated - 1;
+  if (isPrime(rowIdx)) {
+    primeRowCount++;
+    for (let col = 0; col < gridWidth; col++) {
+      if (newRow[col] && isPrime(col)) primeIntersections++;
+    }
+  } else {
+    for (let col = 0; col < gridWidth; col++) {
+      // still count intersections where prime col meets active cell on prime row
+      // (already handled above)
+    }
+  }
+
+  // Keep memory bounded
+  if (rows.length > maxVisibleRows + 50) {
+    scrollOffset += 1;
+    rows.shift();
+  }
+}
+
+function render() {
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const startRow = Math.max(0, rows.length - maxVisibleRows);
+  const visibleRows = rows.slice(startRow);
+
+  const time = performance.now();
+  const pulseAlpha = 0.6 + 0.4 * Math.sin(time / 300);
+
+  for (let ry = 0; ry < visibleRows.length; ry++) {
+    const row = visibleRows[ry];
+    const globalRow = startRow + ry + scrollOffset;
+    const rowIsPrime = isPrime(globalRow);
+    const py = ry * cellSize;
+
+    // Prime row background glow
+    if (rowIsPrime) {
+      ctx.fillStyle = 'rgba(255,215,0,0.06)';
+      ctx.fillRect(0, py, canvas.width, cellSize);
+    }
+
+    for (let col = 0; col < gridWidth; col++) {
+      const colIsPrime = isPrime(col);
+      const px = col * cellSize;
+      const alive = row[col];
+
+      if (alive) {
+        if (rowIsPrime && colIsPrime) {
+          // Prime-prime intersection: bright white pulsing
+          const a = pulseAlpha;
+          ctx.fillStyle = `rgba(255,255,255,${a})`;
+          ctx.fillRect(px, py, cellSize, cellSize);
+          // Glow effect
+          if (cellSize >= 3) {
+            ctx.shadowColor = '#fff';
+            ctx.shadowBlur = 6 * a;
+            ctx.fillRect(px, py, cellSize, cellSize);
+            ctx.shadowBlur = 0;
+          }
+        } else if (rowIsPrime) {
+          // Prime row cell: gold tint
+          ctx.fillStyle = 'rgba(255,215,0,0.75)';
+          ctx.fillRect(px, py, cellSize, cellSize);
+        } else if (colIsPrime) {
+          // Prime column cell: cyan tint
+          ctx.fillStyle = 'rgba(0,255,255,0.7)';
+          ctx.fillRect(px, py, cellSize, cellSize);
+        } else {
+          // Normal active cell
+          ctx.fillStyle = 'rgba(220,230,255,0.85)';
+          ctx.fillRect(px, py, cellSize, cellSize);
+        }
+      } else {
+        // Inactive cell: subtle hints for prime rows/cols
+        if (rowIsPrime && colIsPrime) {
+          ctx.fillStyle = 'rgba(255,255,255,0.04)';
+          ctx.fillRect(px, py, cellSize, cellSize);
+        } else if (rowIsPrime) {
+          ctx.fillStyle = 'rgba(255,215,0,0.03)';
+          ctx.fillRect(px, py, cellSize, cellSize);
+        } else if (colIsPrime) {
+          ctx.fillStyle = 'rgba(0,255,255,0.025)';
+          ctx.fillRect(px, py, cellSize, cellSize);
+        }
+      }
+    }
+  }
+
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('stat-rule').textContent = currentRule;
+  document.getElementById('stat-binary').textContent = currentRule.toString(2).padStart(8, '0');
+  document.getElementById('stat-rows').textContent = totalRowsGenerated;
+  document.getElementById('stat-prime-rows').textContent = primeRowCount;
+  document.getElementById('stat-intersections').textContent = primeIntersections;
+  document.getElementById('stat-active').textContent = activeCellCount;
+
+  const totalCells = totalRowsGenerated * gridWidth;
+  const density = totalCells > 0 ? (activeCellCount / totalCells * 100).toFixed(1) : 0;
+  document.getElementById('stat-density').textContent = density + '%';
+
+  // Count prime columns
+  let primeCols = 0;
+  for (let c = 0; c < gridWidth; c++) {
+    if (isPrime(c)) primeCols++;
+  }
+  document.getElementById('stat-prime-cols').textContent = primeCols;
+}
+
+function buildRuleTable() {
+  const container = document.getElementById('rule-table');
+  let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">';
+  for (let i = 7; i >= 0; i--) {
+    const bits = [(i >> 2) & 1, (i >> 1) & 1, i & 1];
+    const result = ruleBits[i];
+    const topColor = '#668';
+    const botColor = result ? '#0af' : '#223';
+    html += `<div style="text-align:center">
+      <div style="display:flex;gap:1px;justify-content:center">
+        ${bits.map(b => `<div style="width:10px;height:10px;background:${b ? topColor : '#181820'};border:1px solid #223;border-radius:1px"></div>`).join('')}
+      </div>
+      <div style="width:10px;height:10px;margin:2px auto 0;background:${botColor};border:1px solid #223;border-radius:1px"></div>
+    </div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// --- Controls ---
+function setRule(n) {
+  currentRule = n;
+  parseRule(n);
+  buildRuleTable();
+
+  document.querySelectorAll('.controls button[id^="btn-rule"]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-rule' + n);
+  if (btn) btn.classList.add('active');
+
+  resetAutomaton();
+}
+
+function resetAutomaton() {
+  const wasPlaying = playing;
+  if (playing) togglePlay();
+  initGrid();
+  // Generate initial batch
+  for (let i = 0; i < Math.min(targetRows, maxVisibleRows); i++) {
+    generateRow();
+  }
+  render();
+  if (wasPlaying) togglePlay();
+}
+
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('btn-play');
+  if (playing) {
+    btn.classList.add('active');
+    btn.innerHTML = '&#9646;&#9646; PAUSE';
+    startPlay();
+  } else {
+    btn.classList.remove('active');
+    btn.innerHTML = '&#9654; PLAY';
+    if (playInterval) {
+      clearInterval(playInterval);
+      playInterval = null;
+    }
+  }
+}
+
+function startPlay() {
+  if (playInterval) clearInterval(playInterval);
+  playInterval = setInterval(() => {
+    if (!playing) return;
+    for (let i = 0; i < rowsPerTick; i++) {
+      generateRow();
+    }
+    render();
+  }, tickDelay);
+}
+
+function updateSpeed(val) {
+  const v = parseInt(val);
+  if (v <= 20) {
+    rowsPerTick = 1;
+    tickDelay = Math.max(10, 100 - v * 4);
+  } else {
+    tickDelay = 16;
+    rowsPerTick = Math.floor((v - 20) / 5) + 1;
+  }
+  if (playing) startPlay();
+}
+
+// --- Cell Inspector ---
+canvas.addEventListener('click', function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+  const col = Math.floor(mx / cellSize);
+  const visRow = Math.floor(my / cellSize);
+
+  const startRow = Math.max(0, rows.length - maxVisibleRows);
+  const rowIdx = startRow + visRow;
+
+  if (rowIdx < 0 || rowIdx >= rows.length || col < 0 || col >= gridWidth) return;
+
+  const globalRow = rowIdx + scrollOffset;
+  const state = rows[rowIdx][col];
+  const rowP = isPrime(globalRow);
+  const colP = isPrime(col);
+
+  let info = `<div>Generation: <span class="highlight">${globalRow}</span></div>`;
+  info += `<div>Column: <span class="cyan-hl">${col}</span></div>`;
+  info += `<div>State: <span style="color:${state ? '#0f8' : '#f44'}">${state ? 'ALIVE' : 'DEAD'}</span></div>`;
+  info += `<div>Row is prime: <span class="${rowP ? 'highlight' : ''}">${rowP ? 'YES' : 'no'}</span></div>`;
+  info += `<div>Col is prime: <span class="${colP ? 'cyan-hl' : ''}">${colP ? 'YES' : 'no'}</span></div>`;
+  if (rowP && colP) {
+    info += `<div style="color:#fff;font-weight:bold;margin-top:4px">PRIME-PRIME INTERSECTION</div>`;
+  }
+
+  // Neighborhood
+  const prev = rowIdx > 0 ? rows[rowIdx - 1] : null;
+  if (prev) {
+    const l = col > 0 ? prev[col - 1] : 0;
+    const c = prev[col];
+    const r = col < gridWidth - 1 ? prev[col + 1] : 0;
+    info += `<div style="margin-top:6px;color:#556">Parent: [${l},${c},${r}] = pattern ${(l << 2) | (c << 1) | r}</div>`;
+  }
+
+  document.getElementById('cell-info').innerHTML = info;
+});
+
+// --- Mouse hover cursor guide lines ---
+let hoverCol = -1, hoverRow = -1;
+canvas.addEventListener('mousemove', function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  hoverCol = Math.floor((e.clientX - rect.left) * scaleX / cellSize);
+  hoverRow = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / cellSize);
+});
+canvas.addEventListener('mouseleave', function() {
+  hoverCol = -1;
+  hoverRow = -1;
+});
+
+// --- Resize ---
+let resizeTimeout;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => setRule(currentRule), 200);
+});
+
+// --- Init ---
+parseRule(30);
+buildRuleTable();
+initGrid();
+for (let i = 0; i < Math.min(targetRows, maxVisibleRows); i++) {
+  generateRow();
+}
+render();
+
+// Start auto-play by default
+setTimeout(() => togglePlay(), 500);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
