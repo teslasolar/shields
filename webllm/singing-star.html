@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SINGING STAR — Voice-Driven Hyperdimensional Topology</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #030a12;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+canvas#star {
+  display: block;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Header */
+#header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 38px;
+  background: rgba(3,15,28,0.94);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  z-index: 200;
+  border-bottom: 1px solid rgba(0,229,255,0.15);
+  gap: 14px;
+}
+#header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #ff2d78, #00e5ff, #b4ff3c, #ff9500, #cc44ff, #00e5ff);
+  background-size: 300% 100%;
+  animation: headerGrad 6s linear infinite;
+}
+@keyframes headerGrad {
+  0% { background-position: 0% 0; }
+  100% { background-position: 300% 0; }
+}
+#logo {
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #00e5ff;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(0,229,255,0.4);
+  white-space: nowrap;
+}
+.pill {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  padding: 2px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #556;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+.pill.active { color: #0f8; border-color: rgba(0,255,136,0.4); text-shadow: 0 0 6px rgba(0,255,136,0.3); }
+.pill.warn { color: #fc0; border-color: rgba(255,204,0,0.4); }
+#manifold-name {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #cc44ff;
+}
+
+/* Panels */
+.panel {
+  position: fixed;
+  z-index: 150;
+  background: rgba(3,15,28,0.94);
+  border: 1px solid rgba(0,229,255,0.12);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  backdrop-filter: blur(8px);
+  pointer-events: all;
+  overflow-y: auto;
+}
+.panel h3 {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: #00e5ff;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  font-weight: normal;
+  border-bottom: 1px solid rgba(0,229,255,0.1);
+  padding-bottom: 4px;
+}
+
+/* Left panel */
+#left-panel {
+  top: 44px; left: 6px; bottom: 44px;
+  width: 220px;
+}
+.mfld-btn {
+  display: block;
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(0,229,255,0.1);
+  border-radius: 4px;
+  color: #8899aa;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 4px 8px;
+  margin: 2px 0;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+.mfld-btn:hover { border-color: rgba(0,229,255,0.3); color: #cde; }
+.mfld-btn.active { border-color: #00e5ff; color: #00e5ff; background: rgba(0,229,255,0.08); }
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+  font-size: 9px;
+  color: #8899aa;
+  cursor: pointer;
+}
+.toggle-row input { accent-color: #00e5ff; cursor: pointer; }
+.slider-row { margin: 4px 0; }
+.slider-row label { display: block; font-size: 8px; color: #556; letter-spacing: 1px; margin-bottom: 2px; }
+.slider-row input[type=range] {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  outline: none;
+}
+.slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #00e5ff;
+  cursor: pointer;
+}
+
+/* Right panel */
+#right-panel {
+  top: 44px; right: 6px; bottom: 44px;
+  width: 200px;
+}
+#mic-bar-wrap { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+#mic-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #556; flex-shrink: 0; transition: background 0.15s;
+}
+#mic-bar {
+  flex: 1; height: 5px;
+  background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;
+}
+#mic-bar-fill {
+  height: 100%; width: 0%;
+  background: #00e5ff; border-radius: 3px;
+  transition: width 0.05s;
+}
+.pitch-display { font-size: 12px; color: #b4ff3c; margin: 4px 0; min-height: 16px; }
+.vowel-display { font-size: 11px; color: #ff9500; margin: 2px 0; min-height: 14px; }
+.spectrum-bar-row {
+  display: flex; align-items: center; gap: 4px;
+  margin: 2px 0; font-size: 8px;
+}
+.spectrum-bar-label { width: 52px; color: #556; letter-spacing: 0.5px; }
+.spectrum-bar-track {
+  flex: 1; height: 6px;
+  background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden;
+}
+.spectrum-bar-fill {
+  height: 100%; width: 0%;
+  border-radius: 3px; transition: width 0.06s;
+}
+.harm-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(204,68,255,0.15);
+  border-radius: 3px;
+  color: #889;
+  font-family: 'Courier New', monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  padding: 3px 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.harm-btn:hover { border-color: rgba(204,68,255,0.4); color: #cce; }
+.harm-btn.active { border-color: #cc44ff; color: #cc44ff; background: rgba(204,68,255,0.1); }
+.stat-row { display: flex; justify-content: space-between; font-size: 9px; margin: 2px 0; }
+.stat-label { color: #556; }
+.stat-val { color: #c0c0d0; }
+
+/* Bottom bar */
+#bottom-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 40px;
+  background: rgba(3,15,28,0.94);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  padding: 0 240px;
+  z-index: 200;
+  border-top: 1px solid rgba(0,229,255,0.1);
+  gap: 4px;
+}
+.bottom-band {
+  flex: 1; height: 22px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.bottom-band-fill {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 0%;
+  border-radius: 3px;
+  transition: height 0.08s;
+}
+.bottom-band-label {
+  position: absolute;
+  top: 1px; left: 0; right: 0;
+  text-align: center;
+  font-size: 6px;
+  letter-spacing: 0.5px;
+  color: rgba(255,255,255,0.25);
+}
+#footer-text {
+  position: fixed;
+  bottom: 4px; left: 0; right: 0;
+  text-align: center;
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  color: #334;
+  z-index: 201;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<canvas id="star"></canvas>
+
+<!-- Header -->
+<div id="header">
+  <span id="logo">SINGING STAR</span>
+  <span class="pill" id="pill-voice">VOICE</span>
+  <span class="pill" id="pill-topo">TOPO</span>
+  <span class="pill" id="pill-harmony">HARMONY</span>
+  <span id="manifold-name">TESSERACT</span>
+</div>
+
+<!-- Left Panel -->
+<div class="panel" id="left-panel">
+  <h3>Manifolds</h3>
+  <div id="mfld-buttons"></div>
+
+  <h3 style="margin-top:10px">Voice Drive</h3>
+  <div id="voice-toggles"></div>
+
+  <h3 style="margin-top:10px">Rotation Planes</h3>
+  <div class="slider-row"><label>XW (4th)</label><input type="range" id="sl-xw" min="0" max="100" value="30"></div>
+  <div class="slider-row"><label>XV (5th)</label><input type="range" id="sl-xv" min="0" max="100" value="0"></div>
+  <div class="slider-row"><label>PROJ DIST</label><input type="range" id="sl-proj" min="10" max="100" value="40"></div>
+  <div class="slider-row"><label>SPEED</label><input type="range" id="sl-speed" min="0" max="100" value="35"></div>
+</div>
+
+<!-- Right Panel -->
+<div class="panel" id="right-panel">
+  <h3>Voice Input</h3>
+  <div id="mic-bar-wrap">
+    <div id="mic-dot"></div>
+    <div id="mic-bar"><div id="mic-bar-fill"></div></div>
+  </div>
+  <div class="pitch-display" id="pitch-display">—</div>
+  <div class="vowel-display" id="vowel-display">—</div>
+
+  <h3 style="margin-top:8px">Prime Spectrum</h3>
+  <div id="spectrum-bars"></div>
+
+  <h3 style="margin-top:8px">Harmony</h3>
+  <div id="harm-buttons" style="display:flex;gap:3px;flex-wrap:wrap;"></div>
+  <div class="slider-row" style="margin-top:6px"><label>HARM VOL</label><input type="range" id="sl-harmvol" min="0" max="100" value="40"></div>
+
+  <h3 style="margin-top:8px">Topology State</h3>
+  <div class="stat-row"><span class="stat-label">χ</span><span class="stat-val" id="st-euler">2</span></div>
+  <div class="stat-row"><span class="stat-label">DIM</span><span class="stat-val" id="st-dim">4</span></div>
+  <div class="stat-row"><span class="stat-label">ENTANGLE</span><span class="stat-val" id="st-entangle">0</span></div>
+  <div class="stat-row"><span class="stat-label">FPS</span><span class="stat-val" id="st-fps">0</span></div>
+</div>
+
+<!-- Bottom Bar -->
+<div id="bottom-bar"></div>
+<div id="footer-text">
+  <span style="color:#00e5ff">510,510</span> = 2×3×5×7×11×13×17 · SINGING STAR · VOICE → HYPERDIMENSION
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ═══════════ CONSTANTS ═══════════ */
+const M7 = 127, PHI = (1+Math.sqrt(5))/2, TAU = 2*Math.PI;
+const PRIMES = [2,3,5,7,11,13,17];
+const RING_HZ = [55,110,165,275,385,605,935];
+const RING_NAMES = ['GROUND','SENSE','GATE','HEART','VOICE','SIGHT','OBSERVER'];
+const RING_HUES = [0,25,50,140,210,270,300];
+const HARM_RATIOS = [3/2, 5/4, 7/4, 11/8, 13/8, 17/16];
+const MANIFOLDS = [
+  {name:'TESSERACT',    dim:4, cls:'Hypercube',     chi:0},
+  {name:'24-CELL',      dim:4, cls:'Self-dual',     chi:0},
+  {name:'600-CELL',     dim:4, cls:'Regular',       chi:0},
+  {name:'PENTERACT',    dim:5, cls:'5-cube',        chi:0},
+  {name:'HOPF FIBRATION',dim:4,cls:'Fiber bundle',  chi:0},
+  {name:'KLEIN BOTTLE', dim:4, cls:'Non-orientable',chi:0},
+  {name:'TREFOIL KNOT', dim:4, cls:'Torus knot',    chi:0}
+];
+const VOWEL_MAP = ['oo','oh','ah','eh','ee'];
+const VOWEL_MFLD = [0,4,1,5,6]; // oo→Tesseract, oh→Hopf, ah→24cell, eh→Klein, ee→Trefoil
+
+/* ═══════════ STATE ═══════════ */
+const S = {
+  mfldIdx: 0,
+  targetIdx: 0,
+  morphT: 1,
+  morphStart: 0,
+  projDist: 4.0,
+  speed: 0.35,
+  camX: 0.3,
+  camY: 0.2,
+  rotAngles: new Float64Array(7), // 7 rotation planes
+  planeRates: new Float64Array(7),
+  ringEnergy: new Float64Array(7),
+  rms: 0,
+  f0: 0,
+  vowelIdx: -1,
+  vowelSustain: 0,
+  harmMode: 0, // 0=off,1=triad,2=fifth,3=seventh,4=full
+  harmVol: 0.4,
+  voiceDrive: [true,true,true,true,true],
+  entanglements: [],
+  prevRms: 0,
+  onsetCooldown: 0,
+  micActive: false,
+  dragging: false,
+  dragX: 0, dragY: 0,
+  fps: 0, frameCount: 0, lastFpsTime: 0,
+};
+
+/* ═══════════ CANVAS ═══════════ */
+const C = document.getElementById('star');
+const X = C.getContext('2d');
+let W, H;
+function resize(){
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+/* ═══════════ UI SETUP ═══════════ */
+// Manifold buttons
+const mfldDiv = document.getElementById('mfld-buttons');
+MANIFOLDS.forEach((m,i) => {
+  const b = document.createElement('button');
+  b.className = 'mfld-btn' + (i===0?' active':'');
+  b.textContent = (i+1) + '. ' + m.name;
+  b.onclick = () => selectManifold(i);
+  mfldDiv.appendChild(b);
+});
+
+// Voice drive toggles
+const toggleDiv = document.getElementById('voice-toggles');
+const driveLabels = ['Pitch → Rotation','Volume → Glow','Bands → Planes','Vowel → Morph','Onset → Entangle'];
+driveLabels.forEach((lbl,i) => {
+  const row = document.createElement('label');
+  row.className = 'toggle-row';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = true;
+  cb.onchange = () => { S.voiceDrive[i] = cb.checked; };
+  row.appendChild(cb);
+  row.appendChild(document.createTextNode(lbl));
+  toggleDiv.appendChild(row);
+});
+
+// Spectrum bars
+const specDiv = document.getElementById('spectrum-bars');
+const specFills = [];
+RING_NAMES.forEach((n,i) => {
+  const row = document.createElement('div');
+  row.className = 'spectrum-bar-row';
+  const lbl = document.createElement('span');
+  lbl.className = 'spectrum-bar-label';
+  lbl.textContent = n;
+  const track = document.createElement('div');
+  track.className = 'spectrum-bar-track';
+  const fill = document.createElement('div');
+  fill.className = 'spectrum-bar-fill';
+  fill.style.background = `hsl(${RING_HUES[i]},80%,55%)`;
+  track.appendChild(fill);
+  row.appendChild(lbl);
+  row.appendChild(track);
+  specDiv.appendChild(row);
+  specFills.push(fill);
+});
+
+// Harmony buttons
+const harmDiv = document.getElementById('harm-buttons');
+const harmLabels = ['OFF','TRIAD','5TH','7TH','FULL'];
+const harmBtns = [];
+harmLabels.forEach((lbl,i) => {
+  const b = document.createElement('button');
+  b.className = 'harm-btn' + (i===0?' active':'');
+  b.textContent = lbl;
+  b.onclick = () => setHarmony(i);
+  harmDiv.appendChild(b);
+  harmBtns.push(b);
+});
+
+// Bottom bar bands
+const bottomBar = document.getElementById('bottom-bar');
+const bottomFills = [];
+RING_NAMES.forEach((n,i) => {
+  const band = document.createElement('div');
+  band.className = 'bottom-band';
+  const fill = document.createElement('div');
+  fill.className = 'bottom-band-fill';
+  fill.style.background = `hsl(${RING_HUES[i]},70%,50%)`;
+  const label = document.createElement('div');
+  label.className = 'bottom-band-label';
+  label.textContent = n;
+  band.appendChild(fill);
+  band.appendChild(label);
+  bottomBar.appendChild(band);
+  bottomFills.push(fill);
+});
+
+/* ═══════════ MANIFOLD GENERATION ═══════════ */
+function genTesseract(){
+  const v = [];
+  for(let i=0;i<16;i++){
+    v.push([(i&1)?1:-1, (i&2)?1:-1, (i&4)?1:-1, (i&8)?1:-1]);
+  }
+  const e = [];
+  for(let i=0;i<16;i++) for(let j=i+1;j<16;j++){
+    let diff=0;
+    for(let k=0;k<4;k++) if(v[i][k]!==v[j][k]) diff++;
+    if(diff===1) e.push([i,j]);
+  }
+  return {v,e,dim:4};
+}
+
+function gen24Cell(){
+  const v = [];
+  // permutations of (±1,±1,0,0)
+  for(let i=0;i<4;i++) for(let j=i+1;j<4;j++){
+    for(let si of [-1,1]) for(let sj of [-1,1]){
+      const p = [0,0,0,0]; p[i]=si; p[j]=sj;
+      v.push(p);
+    }
+  }
+  const e = [];
+  for(let i=0;i<v.length;i++) for(let j=i+1;j<v.length;j++){
+    let d2=0;
+    for(let k=0;k<4;k++) d2+=(v[i][k]-v[j][k])**2;
+    if(Math.abs(d2-2)<0.01) e.push([i,j]);
+  }
+  return {v,e,dim:4};
+}
+
+function gen600Cell(){
+  const v = [];
+  // all permutations of (±1,±1,±1,±1)/2 with even # of minus signs
+  for(let i=0;i<16;i++){
+    const p = [((i&1)?-1:1)/2, ((i&2)?-1:1)/2, ((i&4)?-1:1)/2, ((i&8)?-1:1)/2];
+    let neg = 0; for(let k=0;k<4;k++) if(p[k]<0) neg++;
+    v.push(p);
+  }
+  // all permutations of (±1,0,0,0)
+  for(let i=0;i<4;i++) for(let s of [-1,1]){
+    const p=[0,0,0,0]; p[i]=s; v.push(p);
+  }
+  // golden ratio vertices: permutations of (±φ/2, ±1/2, ±1/(2φ), 0)
+  const hp = PHI/2, hi = 1/(2*PHI);
+  const vals = [hp, 0.5, hi, 0];
+  // even permutations with sign combinations
+  const perms = [[0,1,2,3],[0,2,3,1],[0,3,1,2],[1,0,3,2],[1,2,0,3],[1,3,2,0],
+                 [2,0,1,3],[2,1,3,0],[2,3,0,1],[3,0,2,1],[3,1,0,2],[3,2,1,0]];
+  for(const perm of perms){
+    for(let sb=0;sb<8;sb++){
+      const p = [0,0,0,0];
+      p[perm[0]] = (sb&1)?-vals[0]:vals[0];
+      p[perm[1]] = (sb&2)?-vals[1]:vals[1];
+      p[perm[2]] = (sb&4)?-vals[2]:vals[2];
+      p[perm[3]] = 0;
+      // check uniqueness
+      let dup = false;
+      for(const u of v){
+        let d2=0; for(let k=0;k<4;k++) d2+=(u[k]-p[k])**2;
+        if(d2<0.001){dup=true;break;}
+      }
+      if(!dup && v.length<80) v.push(p);
+    }
+    if(v.length>=80) break;
+  }
+  // trim to 80 vertices
+  while(v.length>80) v.pop();
+  // connect edges: nearest neighbors on unit sphere
+  // normalize all
+  for(const p of v){
+    let m=0; for(let k=0;k<4;k++) m+=p[k]*p[k]; m=Math.sqrt(m)||1;
+    for(let k=0;k<4;k++) p[k]/=m;
+  }
+  const e = [];
+  const thresh = 0.95; // dot product threshold for edges
+  for(let i=0;i<v.length;i++) for(let j=i+1;j<v.length;j++){
+    let dot=0; for(let k=0;k<4;k++) dot+=v[i][k]*v[j][k];
+    if(dot>thresh && e.length<720) e.push([i,j]);
+  }
+  // if too few edges, lower threshold
+  if(e.length<100){
+    for(let i=0;i<v.length;i++) for(let j=i+1;j<v.length;j++){
+      let dot=0; for(let k=0;k<4;k++) dot+=v[i][k]*v[j][k];
+      if(dot>0.7){
+        let exists=false;
+        for(const ed of e) if(ed[0]===i&&ed[1]===j){exists=true;break;}
+        if(!exists && e.length<720) e.push([i,j]);
+      }
+    }
+  }
+  return {v,e,dim:4};
+}
+
+function genPenteract(){
+  const v = [];
+  for(let i=0;i<32;i++){
+    v.push([(i&1)?1:-1,(i&2)?1:-1,(i&4)?1:-1,(i&8)?1:-1,(i&16)?1:-1]);
+  }
+  const e = [];
+  for(let i=0;i<32;i++) for(let j=i+1;j<32;j++){
+    let diff=0;
+    for(let k=0;k<5;k++) if(v[i][k]!==v[j][k]) diff++;
+    if(diff===1) e.push([i,j]);
+  }
+  return {v,e,dim:5};
+}
+
+function genHopf(){
+  const v = [], e = [];
+  const nFibers = 12, nPts = 8;
+  for(let f=0;f<nFibers;f++){
+    const theta = (f/nFibers)*Math.PI;
+    const phi = (f/nFibers)*TAU*PHI;
+    // base point on S2
+    const bx = Math.sin(theta)*Math.cos(phi);
+    const by = Math.sin(theta)*Math.sin(phi);
+    const bz = Math.cos(theta);
+    const base = f*nPts;
+    for(let p=0;p<nPts;p++){
+      const t = (p/nPts)*TAU;
+      const ct=Math.cos(t), st=Math.sin(t);
+      const half = Math.acos(bz)/2;
+      const ch=Math.cos(half), sh=Math.sin(half);
+      const ang = Math.atan2(by,bx);
+      v.push([
+        ch*ct,
+        ch*st,
+        sh*Math.cos(ang+t),
+        sh*Math.sin(ang+t)
+      ]);
+      e.push([base+p, base+(p+1)%nPts]);
+    }
+  }
+  // connect nearby fibers
+  for(let f=0;f<nFibers;f++) for(let g=f+1;g<nFibers;g++){
+    if(e.length>500) break;
+    // connect closest point pairs
+    let minD=999, mi=0, mj=0;
+    for(let p=0;p<nPts;p++){
+      const a=v[f*nPts+p], b=v[g*nPts];
+      let d=0; for(let k=0;k<4;k++) d+=(a[k]-b[k])**2;
+      if(d<minD){minD=d;mi=f*nPts+p;mj=g*nPts;}
+    }
+    if(minD<1.5) e.push([mi,mj]);
+  }
+  return {v,e,dim:4};
+}
+
+function genKlein(){
+  const v = [], e = [];
+  const nu = 20, nv = 12;
+  for(let i=0;i<nu;i++) for(let j=0;j<nv;j++){
+    const u = (i/nu)*TAU, vv = (j/nv)*TAU;
+    const cu=Math.cos(u), su=Math.sin(u), cv=Math.cos(vv), sv=Math.sin(vv);
+    const r = 2;
+    let x,y,z,w;
+    if(u < Math.PI){
+      x = (r + cv*Math.cos(u/2))*cu;
+      y = (r + cv*Math.cos(u/2))*su;
+      z = sv*Math.cos(u/2);
+      w = sv*Math.sin(u/2);
+    } else {
+      x = (r + cv*Math.cos(u/2))*cu;
+      y = (r + cv*Math.cos(u/2))*su;
+      z = -sv*Math.cos(u/2);
+      w = sv*Math.sin(u/2);
+    }
+    v.push([x/2.5, y/2.5, z/2.5, w/2.5]);
+    const idx = i*nv+j;
+    e.push([idx, i*nv+(j+1)%nv]);
+    e.push([idx, ((i+1)%nu)*nv+j]);
+  }
+  return {v,e,dim:4};
+}
+
+function genTrefoil(){
+  const v = [], e = [];
+  const n = 60, tubeR = 0.3, tubeN = 6;
+  for(let i=0;i<n;i++){
+    const t = (i/n)*TAU;
+    // trefoil K(3,2) parameterization
+    const cx = Math.sin(t)+2*Math.sin(2*t);
+    const cy = Math.cos(t)-2*Math.cos(2*t);
+    const cz = -Math.sin(3*t);
+    const cw = Math.cos(3*t)*0.5;
+    // tangent
+    const dt = 0.01;
+    const t2 = t+dt;
+    const tx = Math.sin(t2)+2*Math.sin(2*t2)-cx;
+    const ty = Math.cos(t2)-2*Math.cos(2*t2)-cy;
+    const tz = -Math.sin(3*t2)-cz;
+    const tm = Math.sqrt(tx*tx+ty*ty+tz*tz)||1;
+    // normal approx
+    const nx2 = -ty/tm, ny2 = tx/tm, nz2 = 0;
+    const bx = ty*nz2-tz*ny2, by = tz*nx2-tx*nz2, bz = tx*ny2-ty*nx2;
+    const bm = Math.sqrt(bx*bx+by*by+bz*bz)||1;
+    const base = i*tubeN;
+    for(let j=0;j<tubeN;j++){
+      const a = (j/tubeN)*TAU;
+      const ca=Math.cos(a), sa=Math.sin(a);
+      v.push([
+        (cx+tubeR*(ca*nx2+sa*bx/bm))/3,
+        (cy+tubeR*(ca*ny2+sa*by/bm))/3,
+        (cz+tubeR*(ca*nz2+sa*bz/bm))/3,
+        cw/3
+      ]);
+      e.push([base+j, base+(j+1)%tubeN]);
+      e.push([base+j, ((i+1)%n)*tubeN+j]);
+    }
+  }
+  return {v,e,dim:4};
+}
+
+const manifoldGens = [genTesseract, gen24Cell, gen600Cell, genPenteract, genHopf, genKlein, genTrefoil];
+let manifoldCache = manifoldGens.map(g => g());
+let curVerts = null, curEdges = null, curDim = 4;
+let targetVerts = null;
+
+function padVert(v, dim){
+  // pad vertex to at least 5 dims
+  const out = [0,0,0,0,0];
+  for(let i=0;i<Math.min(v.length,5);i++) out[i]=v[i];
+  return out;
+}
+
+function loadManifold(idx){
+  const m = manifoldCache[idx];
+  curEdges = m.e;
+  curDim = m.dim;
+  const maxV = 800;
+  const verts = m.v.slice(0, maxV);
+  const edges = m.e.filter(e => e[0]<maxV && e[1]<maxV).slice(0, 1600);
+  curEdges = edges;
+  curVerts = verts.map(v => padVert(v, curDim));
+  document.getElementById('manifold-name').textContent = MANIFOLDS[idx].name;
+  document.getElementById('st-euler').textContent = MANIFOLDS[idx].chi;
+  document.getElementById('st-dim').textContent = MANIFOLDS[idx].dim;
+  // update buttons
+  document.querySelectorAll('.mfld-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+}
+
+function selectManifold(idx){
+  if(idx === S.mfldIdx && S.morphT >= 1) return;
+  S.targetIdx = idx;
+  targetVerts = manifoldCache[idx].v.slice(0,800).map(v => padVert(v, manifoldCache[idx].dim));
+  S.morphT = 0;
+  S.morphStart = performance.now();
+  // update immediately for edges
+  S.mfldIdx = idx;
+  const m = manifoldCache[idx];
+  curEdges = m.e.filter(e => e[0]<800 && e[1]<800).slice(0, 1600);
+  curDim = m.dim;
+  document.getElementById('manifold-name').textContent = MANIFOLDS[idx].name;
+  document.getElementById('st-euler').textContent = MANIFOLDS[idx].chi;
+  document.getElementById('st-dim').textContent = MANIFOLDS[idx].dim;
+  document.querySelectorAll('.mfld-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+}
+
+loadManifold(0);
+
+/* ═══════════ BACKGROUND STARS ═══════════ */
+const bgStars = [];
+for(let i=0;i<M7;i++){
+  const y = 1 - (2*i)/(M7-1);
+  const r = Math.sqrt(1-y*y);
+  const theta = TAU*i/PHI;
+  bgStars.push({
+    x: r*Math.cos(theta), y: y, z: r*Math.sin(theta),
+    ring: i % 7, size: 0.5 + Math.random()*1.5
+  });
+}
+
+/* ═══════════ ROTATION ENGINE ═══════════ */
+// Rotation plane pairs: XY,XZ,YZ,XW,YW,ZW,XV
+const rotPlanes = [[0,1],[0,2],[1,2],[0,3],[1,3],[2,3],[0,4]];
+
+function applyRotations(vert, angles){
+  const v = vert.slice();
+  for(let p=0;p<rotPlanes.length;p++){
+    const a = angles[p];
+    if(Math.abs(a)<1e-8) continue;
+    const [i,j] = rotPlanes[p];
+    if(i>=v.length || j>=v.length) continue;
+    const c=Math.cos(a), s=Math.sin(a);
+    const vi=v[i], vj=v[j];
+    v[i] = vi*c - vj*s;
+    v[j] = vi*s + vj*c;
+  }
+  return v;
+}
+
+function projectND(vert, dim, projD){
+  // iterative perspective projection from nD to 3D
+  let v = vert.slice();
+  for(let d=Math.max(dim,v.length)-1; d>=3; d--){
+    const w = v[d] || 0;
+    const denom = projD - w;
+    const scale = (denom > 0.1) ? projD / denom : projD / 0.1;
+    for(let i=0; i<d; i++) v[i] *= scale;
+  }
+  return [v[0], v[1], v[2]];
+}
+
+function project3D(p3, camX, camY){
+  // camera rotation
+  let [x,y,z] = p3;
+  const cx=Math.cos(camX), sx=Math.sin(camX);
+  const cy=Math.cos(camY), sy=Math.sin(camY);
+  // Y rotation
+  let x2 = x*cy + z*sy;
+  let z2 = -x*sy + z*cy;
+  // X rotation
+  let y2 = y*cx - z2*sx;
+  let z3 = y*sx + z2*cx;
+  return [x2, y2, z3];
+}
+
+/* ═══════════ AUDIO ENGINE ═══════════ */
+let actx = null, analyser = null, micStream = null;
+let fftData = null, timeData = null;
+let harmOscs = [], harmGains = [];
+
+async function initAudio(){
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)({sampleRate:44100});
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    micStream = stream;
+    const src = actx.createMediaStreamSource(stream);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.8;
+    src.connect(analyser);
+    fftData = new Float32Array(analyser.frequencyBinCount);
+    timeData = new Float32Array(analyser.fftSize);
+    S.micActive = true;
+    document.getElementById('pill-voice').classList.add('active');
+    document.getElementById('mic-dot').style.background = '#0f8';
+    // setup harmony oscillators
+    setupHarmony();
+  } catch(e){
+    console.warn('Mic not available:', e);
+  }
+}
+
+function setupHarmony(){
+  if(!actx) return;
+  harmOscs = [];
+  harmGains = [];
+  for(let i=0;i<6;i++){
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 220;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(actx.destination);
+    osc.start();
+    harmOscs.push(osc);
+    harmGains.push(gain);
+  }
+}
+
+function setHarmony(mode){
+  S.harmMode = mode;
+  harmBtns.forEach((b,i) => b.classList.toggle('active', i===mode));
+  document.getElementById('pill-harmony').classList.toggle('active', mode>0);
+}
+
+/* ═══════════ VOICE ANALYSIS ═══════════ */
+function detectF0(timeData, sr){
+  // autocorrelation pitch detection
+  const n = timeData.length;
+  const minP = Math.floor(sr/800), maxP = Math.floor(sr/50);
+  let bestCorr = 0, bestP = 0;
+  for(let p=minP; p<Math.min(maxP, n/2); p++){
+    let corr = 0, norm1 = 0, norm2 = 0;
+    for(let i=0; i<n-p; i+=4){
+      corr += timeData[i]*timeData[i+p];
+      norm1 += timeData[i]*timeData[i];
+      norm2 += timeData[i+p]*timeData[i+p];
+    }
+    const norm = Math.sqrt(norm1*norm2)||1;
+    corr /= norm;
+    if(corr > bestCorr){
+      bestCorr = corr;
+      bestP = p;
+    }
+  }
+  if(bestCorr > 0.3 && bestP > 0) return sr / bestP;
+  return 0;
+}
+
+function noteFromHz(hz){
+  if(hz<20) return '—';
+  const n = 12*Math.log2(hz/440);
+  const note = Math.round(n);
+  const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const idx = ((note%12)+12)%12;
+  const oct = Math.floor((note+9)/12)+4;
+  return names[idx]+oct;
+}
+
+function detectVowel(fftData, sr){
+  if(!fftData) return -1;
+  const binHz = sr / (fftData.length * 2);
+  // formant analysis: find peaks in 200-3000Hz range
+  const f1Start = Math.floor(200/binHz), f1End = Math.floor(1000/binHz);
+  const f2Start = Math.floor(800/binHz), f2End = Math.floor(3000/binHz);
+  let f1Peak = 0, f1Val = -999;
+  for(let i=f1Start;i<f1End&&i<fftData.length;i++){
+    if(fftData[i]>f1Val){f1Val=fftData[i];f1Peak=i*binHz;}
+  }
+  let f2Peak = 0, f2Val = -999;
+  for(let i=f2Start;i<f2End&&i<fftData.length;i++){
+    if(fftData[i]>f2Val){f2Val=fftData[i];f2Peak=i*binHz;}
+  }
+  if(f1Val < -60) return -1;
+  // rough vowel mapping by formant ratios
+  if(f1Peak<400 && f2Peak<1200) return 0; // oo
+  if(f1Peak<500 && f2Peak<1400) return 1; // oh
+  if(f1Peak>600 && f2Peak<1600) return 3; // eh
+  if(f1Peak>500 && f2Peak>1800) return 4; // ee
+  return 2; // ah
+}
+
+function computeRingEnergies(fftData, sr){
+  if(!fftData) return;
+  const binHz = sr / (fftData.length * 2);
+  for(let i=0;i<7;i++){
+    const center = RING_HZ[i];
+    const bw = center * 0.3;
+    const lo = Math.floor((center-bw)/binHz);
+    const hi = Math.ceil((center+bw)/binHz);
+    let sum = 0, count = 0;
+    for(let b=Math.max(0,lo); b<Math.min(hi,fftData.length); b++){
+      sum += Math.pow(10, fftData[b]/20);
+      count++;
+    }
+    const avg = count>0 ? sum/count : 0;
+    S.ringEnergy[i] = S.ringEnergy[i]*0.7 + avg*0.3;
+  }
+}
+
+function analyzeVoice(){
+  if(!analyser || !S.micActive) return;
+  analyser.getFloatFrequencyData(fftData);
+  analyser.getFloatTimeDomainData(timeData);
+  const sr = actx.sampleRate;
+  // RMS
+  let rms = 0;
+  for(let i=0;i<timeData.length;i++) rms += timeData[i]*timeData[i];
+  rms = Math.sqrt(rms/timeData.length);
+  S.rms = S.rms*0.7 + rms*0.3;
+  // F0
+  const f0 = detectF0(timeData, sr);
+  if(f0>0) S.f0 = S.f0*0.6 + f0*0.4;
+  else S.f0 *= 0.95;
+  // Vowel
+  const vowel = detectVowel(fftData, sr);
+  if(vowel>=0 && S.rms>0.01){
+    if(vowel === S.vowelIdx) S.vowelSustain += 1/60;
+    else { S.vowelIdx = vowel; S.vowelSustain = 0; }
+  } else { S.vowelSustain = 0; }
+  // Ring energies
+  computeRingEnergies(fftData, sr);
+  // Onset detection
+  if(S.onsetCooldown>0) S.onsetCooldown--;
+  if(S.rms > S.prevRms*2 + 0.02 && S.onsetCooldown<=0 && S.rms>0.015){
+    if(S.voiceDrive[4]) spawnEntanglements();
+    S.onsetCooldown = 15;
+  }
+  S.prevRms = S.rms;
+  // Update harmony oscillators
+  if(S.harmMode>0 && S.f0>50 && S.rms>0.01){
+    const activeCount = S.harmMode===1?2 : S.harmMode===2?1 : S.harmMode===3?3 : 6;
+    for(let i=0;i<6;i++){
+      if(i<activeCount){
+        harmOscs[i].frequency.setTargetAtTime(S.f0*HARM_RATIOS[i], actx.currentTime, 0.05);
+        harmGains[i].gain.setTargetAtTime(S.harmVol*0.15*S.rms*5, actx.currentTime, 0.05);
+      } else {
+        harmGains[i].gain.setTargetAtTime(0, actx.currentTime, 0.1);
+      }
+    }
+  } else {
+    for(let i=0;i<6;i++){
+      if(harmGains[i]) harmGains[i].gain.setTargetAtTime(0, actx.currentTime, 0.1);
+    }
+  }
+  // Update UI
+  const micFill = document.getElementById('mic-bar-fill');
+  micFill.style.width = Math.min(100, S.rms*500)+'%';
+  micFill.style.background = S.rms>0.05 ? '#b4ff3c' : '#00e5ff';
+  const pitchEl = document.getElementById('pitch-display');
+  pitchEl.textContent = S.f0>50 ? noteFromHz(S.f0)+' '+Math.round(S.f0)+'Hz' : '—';
+  const vowelEl = document.getElementById('vowel-display');
+  vowelEl.textContent = S.vowelIdx>=0&&S.rms>0.01 ? VOWEL_MAP[S.vowelIdx].toUpperCase()+' — '+RING_NAMES[S.vowelIdx] : '—';
+  // Spectrum bars
+  for(let i=0;i<7;i++){
+    const pct = Math.min(100, S.ringEnergy[i]*300);
+    specFills[i].style.width = pct+'%';
+    bottomFills[i].style.height = pct+'%';
+  }
+}
+
+function spawnEntanglements(){
+  if(!curVerts || curVerts.length<2) return;
+  const count = 3 + Math.floor(Math.random()*5);
+  const now = performance.now();
+  for(let i=0;i<count;i++){
+    const a = Math.floor(Math.random()*curVerts.length);
+    let b = Math.floor(Math.random()*curVerts.length);
+    if(b===a) b = (b+1)%curVerts.length;
+    S.entanglements.push({
+      a, b, birth: now,
+      hue: [340, 40, 140][Math.floor(Math.random()*3)]
+    });
+  }
+}
+
+/* ═══════════ VOICE DRIVE MAPPING ═══════════ */
+function applyVoiceDrive(dt){
+  if(!S.micActive) return;
+  // 1. Pitch → Rotation Speed
+  if(S.voiceDrive[0] && S.f0>50){
+    const f = S.f0;
+    const speedMul = Math.min(3, f/200);
+    S.speed = 0.2 + speedMul*0.3;
+    // activate planes based on pitch range
+    if(f<150){ S.planeRates[0]=1; S.planeRates[1]=0.7; }
+    if(f>=150&&f<350){ S.planeRates[3]=1; S.planeRates[4]=0.8; }
+    if(f>=350){ S.planeRates[6]=1; S.planeRates[5]=0.5; }
+  }
+  // 2. Volume → Glow (handled in render)
+  // 3. Bands → Plane rates
+  if(S.voiceDrive[2]){
+    for(let i=0;i<7;i++){
+      S.planeRates[i] = S.planeRates[i]*0.8 + S.ringEnergy[i]*20*0.2;
+    }
+  }
+  // 4. Vowel → Morph
+  if(S.voiceDrive[3] && S.vowelIdx>=0 && S.vowelSustain>0.5 && S.rms>0.01){
+    const targetMfld = VOWEL_MFLD[S.vowelIdx];
+    if(targetMfld !== S.mfldIdx) selectManifold(targetMfld);
+  }
+}
+
+/* ═══════════ INTERACTION ═══════════ */
+C.addEventListener('mousedown', e => {
+  if(e.button===0){ S.dragging=true; S.dragX=e.clientX; S.dragY=e.clientY; }
+});
+window.addEventListener('mouseup', () => S.dragging=false);
+window.addEventListener('mousemove', e => {
+  if(!S.dragging) return;
+  S.camY += (e.clientX-S.dragX)*0.005;
+  S.camX += (e.clientY-S.dragY)*0.005;
+  S.dragX=e.clientX; S.dragY=e.clientY;
+});
+C.addEventListener('wheel', e => {
+  S.projDist = Math.max(1.5, Math.min(10, S.projDist + e.deltaY*0.005));
+  document.getElementById('sl-proj').value = S.projDist*10;
+  e.preventDefault();
+}, {passive:false});
+C.addEventListener('dblclick', () => { S.camX=0.3; S.camY=0.2; });
+window.addEventListener('keydown', e => {
+  if(e.key>='1'&&e.key<='7') selectManifold(parseInt(e.key)-1);
+  if(e.key===' '||e.code==='Space'){
+    const on = !S.voiceDrive[0];
+    S.voiceDrive = S.voiceDrive.map(()=>on);
+    document.querySelectorAll('#voice-toggles input').forEach(cb=>cb.checked=on);
+    e.preventDefault();
+  }
+  if(e.key==='h'||e.key==='H'){
+    setHarmony((S.harmMode+1)%5);
+  }
+});
+
+// Sliders
+document.getElementById('sl-xw').oninput = function(){ S.planeRates[3] = this.value/100; };
+document.getElementById('sl-xv').oninput = function(){ S.planeRates[6] = this.value/100; };
+document.getElementById('sl-proj').oninput = function(){ S.projDist = this.value/10; };
+document.getElementById('sl-speed').oninput = function(){ S.speed = this.value/100; };
+document.getElementById('sl-harmvol').oninput = function(){ S.harmVol = this.value/100; };
+
+// Click to start audio
+C.addEventListener('click', () => {
+  if(!actx) initAudio();
+  else if(actx.state==='suspended') actx.resume();
+}, {once:false});
+
+/* ═══════════ RENDER ═══════════ */
+let lastT = 0;
+
+function render(t){
+  requestAnimationFrame(render);
+  const dt = Math.min(0.05, (t-lastT)/1000);
+  lastT = t;
+
+  // FPS
+  S.frameCount++;
+  if(t - S.lastFpsTime > 1000){
+    S.fps = S.frameCount;
+    S.frameCount = 0;
+    S.lastFpsTime = t;
+    document.getElementById('st-fps').textContent = S.fps;
+  }
+
+  // Voice analysis
+  analyzeVoice();
+  applyVoiceDrive(dt);
+
+  // Morphing
+  if(S.morphT < 1 && targetVerts){
+    S.morphT = Math.min(1, (t - S.morphStart) / 2000);
+    const mt = S.morphT * S.morphT * (3 - 2*S.morphT); // smoothstep
+    if(!curVerts) curVerts = targetVerts.slice();
+    const maxLen = Math.max(curVerts.length, targetVerts.length);
+    const newVerts = [];
+    for(let i=0; i<maxLen; i++){
+      const a = curVerts[i % curVerts.length];
+      const b = targetVerts[i % targetVerts.length];
+      const v = [0,0,0,0,0];
+      for(let k=0;k<5;k++) v[k] = a[k]*(1-mt) + b[k]*mt;
+      newVerts.push(v);
+    }
+    curVerts = newVerts;
+    if(S.morphT >= 1){
+      curVerts = targetVerts.slice();
+      targetVerts = null;
+    }
+  }
+
+  // Update rotation angles
+  const baseSpeed = S.speed;
+  for(let i=0;i<7;i++){
+    const rate = S.planeRates[i] || (i<3 ? 0.3-i*0.08 : i===3?0.15:0.05);
+    S.rotAngles[i] += rate * baseSpeed * dt * TAU * 0.15;
+  }
+
+  // Clear
+  X.fillStyle = '#030a12';
+  X.fillRect(0,0,W,H);
+
+  // Radial gradient bg
+  const bgGrad = X.createRadialGradient(W/2,H/2,0,W/2,H/2,W*0.6);
+  bgGrad.addColorStop(0, 'rgba(8,20,40,0.4)');
+  bgGrad.addColorStop(1, 'rgba(3,10,18,0)');
+  X.fillStyle = bgGrad;
+  X.fillRect(0,0,W,H);
+
+  const cx = W/2, cy = H/2;
+  const scale = Math.min(W,H)*0.22;
+
+  // Background stars
+  const starRot = t*0.00003;
+  const glow = S.voiceDrive[1] ? S.rms*8 : 0.3;
+  for(const s of bgStars){
+    const cs=Math.cos(starRot), ss=Math.sin(starRot);
+    const sx = s.x*cs - s.z*ss;
+    const sz = s.x*ss + s.z*cs;
+    const depth = 5 - sz*2;
+    const px = cx + sx*W*0.45/depth;
+    const py = cy + s.y*H*0.45/depth;
+    const energy = S.ringEnergy[s.ring] || 0;
+    const bright = 0.15 + glow*0.5 + energy*3;
+    const sz2 = s.size * (0.5 + bright*0.5);
+    X.beginPath();
+    X.arc(px, py, sz2, 0, TAU);
+    X.fillStyle = `hsla(${RING_HUES[s.ring]},60%,70%,${Math.min(1,bright)})`;
+    X.fill();
+  }
+
+  // Quantum wave field (when voice active)
+  if(S.rms>0.01 && S.voiceDrive[1]){
+    const waveAmp = S.rms * 80;
+    const waveFreq = S.f0 > 50 ? S.f0/50 : 3;
+    const hue = S.vowelIdx>=0 ? RING_HUES[S.vowelIdx] : 200;
+    X.strokeStyle = `hsla(${hue},70%,50%,${Math.min(0.15, S.rms*2)})`;
+    X.lineWidth = 1;
+    X.beginPath();
+    for(let x=0; x<W; x+=3){
+      const y = cy + Math.sin(x*waveFreq/W*TAU + t*0.003)*waveAmp
+                   + Math.sin(x*waveFreq*1.5/W*TAU - t*0.002)*waveAmp*0.5;
+      if(x===0) X.moveTo(x,y); else X.lineTo(x,y);
+    }
+    X.stroke();
+  }
+
+  // Project and render polytope
+  if(curVerts && curVerts.length>0){
+    const projD = S.projDist;
+    const projected = [];
+    for(const v of curVerts){
+      const rotated = applyRotations(v, S.rotAngles);
+      const p3 = projectND(rotated, curDim, projD);
+      const cam = project3D(p3, S.camX, S.camY);
+      const depth = cam[2];
+      const perspD = 4 - depth*0.5;
+      const persp = (perspD>0.3) ? 3/perspD : 10;
+      const sx = cx + cam[0]*scale*persp;
+      const sy = cy + cam[1]*scale*persp;
+      projected.push({x:sx, y:sy, depth: depth, persp: persp});
+    }
+
+    // Sort edges by depth
+    const edgesWithDepth = [];
+    for(const [a,b] of curEdges){
+      if(a>=projected.length || b>=projected.length) continue;
+      const avgDepth = (projected[a].depth + projected[b].depth)/2;
+      edgesWithDepth.push({a,b,depth:avgDepth});
+    }
+    edgesWithDepth.sort((a,b) => a.depth - b.depth);
+
+    // Glow volume factor
+    const glowFactor = S.voiceDrive[1] ? 1 + S.rms*20 : 1;
+
+    // Draw edges - glow pass
+    for(const edge of edgesWithDepth){
+      const pa = projected[edge.a], pb = projected[edge.b];
+      const depthNorm = (edge.depth + 3) / 6; // 0=far, 1=near
+      const hue = 200 + depthNorm*160; // blue(far) → cyan/white(near)
+      const alpha = 0.04 * glowFactor * (0.3 + depthNorm*0.7);
+      X.beginPath();
+      X.moveTo(pa.x, pa.y);
+      X.lineTo(pb.x, pb.y);
+      X.strokeStyle = `hsla(${hue%360},80%,60%,${Math.min(0.2,alpha)})`;
+      X.lineWidth = 4 * glowFactor;
+      X.stroke();
+    }
+
+    // Draw edges - crisp pass
+    for(const edge of edgesWithDepth){
+      const pa = projected[edge.a], pb = projected[edge.b];
+      const depthNorm = (edge.depth + 3) / 6;
+      const hue = 200 + depthNorm*160;
+      const light = 40 + depthNorm*40;
+      const alpha = 0.3 + depthNorm*0.6;
+      X.beginPath();
+      X.moveTo(pa.x, pa.y);
+      X.lineTo(pb.x, pb.y);
+      X.strokeStyle = `hsla(${hue%360},80%,${light}%,${alpha})`;
+      X.lineWidth = 0.5 + depthNorm*1.2;
+      X.stroke();
+    }
+
+    // Entanglement beams
+    const now = t;
+    S.entanglements = S.entanglements.filter(e => now-e.birth < 3000);
+    document.getElementById('st-entangle').textContent = S.entanglements.length;
+    for(const ent of S.entanglements){
+      const age = (now-ent.birth)/3000;
+      const alpha = (1-age)*0.6;
+      if(ent.a>=projected.length || ent.b>=projected.length) continue;
+      const pa = projected[ent.a], pb = projected[ent.b];
+      const grad = X.createLinearGradient(pa.x,pa.y,pb.x,pb.y);
+      grad.addColorStop(0, `hsla(340,90%,60%,${alpha})`);
+      grad.addColorStop(0.5, `hsla(40,90%,60%,${alpha})`);
+      grad.addColorStop(1, `hsla(140,80%,50%,${alpha})`);
+      X.beginPath();
+      X.setLineDash([4,6]);
+      X.moveTo(pa.x,pa.y);
+      X.lineTo(pb.x,pb.y);
+      X.strokeStyle = grad;
+      X.lineWidth = 1.5*(1-age);
+      X.stroke();
+      X.setLineDash([]);
+    }
+
+    // Draw vertices sorted by depth
+    const vertsSorted = projected.map((p,i)=>({...p,i})).sort((a,b)=>a.depth-b.depth);
+    const maxVDraw = Math.min(vertsSorted.length, 800);
+    for(let vi=0; vi<maxVDraw; vi++){
+      const p = vertsSorted[vi];
+      const depthNorm = (p.depth+3)/6;
+      const hue = 200 + depthNorm*160;
+      const r = (1 + depthNorm*3) * (S.voiceDrive[1] ? (1+S.rms*10) : 1);
+      // glow
+      if(r>1.5){
+        X.beginPath();
+        X.arc(p.x, p.y, r*2.5, 0, TAU);
+        X.fillStyle = `hsla(${hue%360},70%,60%,${0.08*depthNorm})`;
+        X.fill();
+      }
+      // dot
+      X.beginPath();
+      X.arc(p.x, p.y, r, 0, TAU);
+      const light = 50 + depthNorm*40;
+      X.fillStyle = `hsla(${hue%360},80%,${light}%,${0.4+depthNorm*0.6})`;
+      X.fill();
+    }
+  }
+
+  // HUD corners
+  X.font = '9px Courier New';
+  X.textBaseline = 'top';
+  // Top-left
+  const m = MANIFOLDS[S.mfldIdx];
+  X.fillStyle = 'rgba(0,229,255,0.5)';
+  X.fillText(m.name+' ['+m.cls+']', 234, 48);
+  X.fillStyle = 'rgba(180,180,200,0.4)';
+  X.fillText('DIM:'+m.dim+'  χ:'+m.chi, 234, 60);
+  // Top-right
+  X.textAlign = 'right';
+  X.fillStyle = 'rgba(180,180,200,0.4)';
+  const vc = curVerts?curVerts.length:0, ec = curEdges?curEdges.length:0;
+  X.fillText('V:'+vc+' E:'+ec, W-214, 48);
+  X.fillText('FPS:'+S.fps, W-214, 60);
+  // Bottom-left
+  X.textAlign = 'left';
+  X.textBaseline = 'bottom';
+  X.fillStyle = 'rgba(180,180,200,0.35)';
+  X.fillText('PITCH:'+(S.f0>50?Math.round(S.f0)+'Hz':'—')+' NOTE:'+(S.f0>50?noteFromHz(S.f0):'—'), 234, H-48);
+  // Bottom-right: mini ring bars
+  X.textAlign = 'right';
+  for(let i=0;i<7;i++){
+    const bx = W-214-i*14, by = H-48;
+    const bh = S.ringEnergy[i]*200;
+    X.fillStyle = `hsla(${RING_HUES[6-i]},60%,50%,0.5)`;
+    X.fillRect(bx-8, by-Math.min(30,bh), 6, Math.min(30,bh));
+  }
+  X.textAlign = 'left';
+  X.textBaseline = 'top';
+
+  // Harmony resonance rings
+  if(S.harmMode>0 && S.rms>0.01){
+    const harmEnergy = S.rms*S.harmVol*3;
+    for(let i=0;i<Math.min(S.harmMode+1,4);i++){
+      X.beginPath();
+      X.arc(cx,cy, 80+i*40+Math.sin(t*0.002+i)*10, 0, TAU);
+      X.strokeStyle = `hsla(${280+i*30},60%,50%,${harmEnergy*0.15})`;
+      X.lineWidth = 1;
+      X.stroke();
+    }
+  }
+
+  // Status pills
+  document.getElementById('pill-topo').classList.toggle('active', S.morphT<1 || S.speed>0.1);
+}
+
+requestAnimationFrame(render);
+
+// Initialize default plane rates
+S.planeRates[0] = 0.3;
+S.planeRates[1] = 0.22;
+S.planeRates[2] = 0.15;
+S.planeRates[3] = 0.3;
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
