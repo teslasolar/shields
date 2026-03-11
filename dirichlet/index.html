@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-DIRICHLET — Primes in Arithmetic Progressions</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas { display: block; }
+
+#statsPanel {
+  position: fixed; top: 50px; right: 14px; z-index: 90;
+  background: rgba(6,6,16,0.92); border: 1px solid rgba(0,170,255,0.15);
+  border-radius: 6px; padding: 14px 18px; font-size: 12px;
+  min-width: 260px; backdrop-filter: blur(8px);
+  line-height: 1.8; max-height: calc(100vh - 120px); overflow-y: auto;
+}
+#statsPanel .label { color: #607090; }
+#statsPanel .value { color: #a0c0e0; }
+#statsPanel .gold { color: #ffd700; }
+#statsPanel .cyan { color: #00e5ff; }
+#statsPanel .head { color: #ffd700; font-size: 13px; font-weight: bold; letter-spacing: 2px; margin-bottom: 6px; }
+#statsPanel .divider { border: none; border-top: 1px solid rgba(0,170,255,0.1); margin: 6px 0; }
+#statsPanel .class-row { display: flex; align-items: center; gap: 8px; }
+#statsPanel .class-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+#statsPanel .leader-tag { font-size: 9px; color: #ffd700; margin-left: 4px; }
+
+#controls {
+  position: fixed; top: 50px; left: 14px; z-index: 90;
+  background: rgba(6,6,16,0.92); border: 1px solid rgba(0,170,255,0.15);
+  border-radius: 6px; padding: 14px 16px; font-size: 11px;
+  backdrop-filter: blur(8px); width: 220px;
+}
+#controls .section-label {
+  color: #607090; font-size: 9px; letter-spacing: 2px; margin: 10px 0 6px;
+}
+#controls .section-label:first-child { margin-top: 0; }
+#controls .mod-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+}
+#controls button {
+  background: rgba(100,140,200,0.08); border: 1px solid rgba(0,170,255,0.2);
+  color: #aab; padding: 5px 8px; border-radius: 3px; cursor: pointer;
+  font-family: 'Courier New', monospace; font-size: 11px;
+  transition: all 0.2s;
+}
+#controls button:hover { border-color: #0af; color: #0af; }
+#controls button.active { border-color: #ffd700; color: #ffd700; background: rgba(255,215,0,0.1); }
+#controls .slider-row {
+  display: flex; align-items: center; gap: 8px; margin: 4px 0;
+}
+#controls .slider-row label { color: #607090; font-size: 10px; min-width: 50px; }
+#controls .slider-row span { color: #a0c0e0; font-size: 10px; min-width: 36px; text-align: right; }
+#controls input[type="range"] {
+  flex: 1; accent-color: #0af; height: 3px;
+  -webkit-appearance: none; appearance: none; background: rgba(0,170,255,0.15);
+  border-radius: 2px; outline: none;
+}
+#controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+  background: #0af; cursor: pointer;
+}
+#controls .play-row { display: flex; gap: 4px; margin-top: 6px; }
+#controls .play-row button { flex: 1; padding: 6px; }
+
+#tooltip {
+  position: fixed; z-index: 200; pointer-events: none;
+  background: rgba(6,6,16,0.95); border: 1px solid rgba(0,170,255,0.3);
+  border-radius: 4px; padding: 6px 10px; font-size: 11px;
+  backdrop-filter: blur(8px); display: none; white-space: nowrap;
+}
+#tooltip .tp-prime { color: #ffd700; font-size: 13px; }
+#tooltip .tp-class { color: #0af; }
+#tooltip .tp-info { color: #607090; }
+
+footer {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(6,6,16,0.92);
+  border-top: 1px solid rgba(0,170,255,0.15);
+  padding: 6px 16px; text-align: center;
+  font-size: 11px; color: #405060;
+  backdrop-filter: blur(8px);
+}
+footer span { color: #ffd700; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="controls">
+  <div class="section-label">MODULUS</div>
+  <div class="mod-grid" id="modButtons"></div>
+  <div class="section-label">SPEED</div>
+  <div class="slider-row">
+    <label>slow</label>
+    <input type="range" id="speedSlider" min="1" max="100" value="20">
+    <span id="speedVal">20</span>
+  </div>
+  <div class="section-label">RANGE</div>
+  <div class="slider-row">
+    <label>max</label>
+    <input type="range" id="rangeSlider" min="100" max="10000" step="100" value="2000">
+    <span id="rangeVal">2000</span>
+  </div>
+  <div class="section-label">PLAYBACK</div>
+  <div class="play-row">
+    <button id="btnPlay">▶ PLAY</button>
+    <button id="btnReset">⟲ RESET</button>
+  </div>
+</div>
+
+<div id="statsPanel">
+  <div class="head">DIRICHLET'S THEOREM</div>
+  <hr class="divider">
+  <div><span class="label">Modulus d = </span><span class="value" id="statMod">4</span></div>
+  <div><span class="label">φ(d) = </span><span class="value" id="statPhi">2</span></div>
+  <div><span class="label">Primes found: </span><span class="value" id="statTotal">0</span></div>
+  <div><span class="label">Checked up to: </span><span class="value" id="statUpTo">2</span></div>
+  <hr class="divider">
+  <div class="section-label" style="color:#607090;font-size:9px;letter-spacing:2px;margin:4px 0">RESIDUE CLASSES</div>
+  <div id="classStats"></div>
+  <hr class="divider">
+  <div><span class="label">Leader: </span><span class="gold" id="statLeader">—</span></div>
+  <div><span class="label">Bias ratio: </span><span class="cyan" id="statBias">—</span></div>
+</div>
+
+<div id="tooltip">
+  <div class="tp-prime" id="tpPrime"></div>
+  <div class="tp-class" id="tpClass"></div>
+  <div class="tp-info" id="tpInfo"></div>
+</div>
+
+<footer>
+  <span>DIRICHLET</span> — primes in arithmetic progressions — equally distributed among φ(d) residue classes
+</footer>
+
+<script>
+// ── Globals ──
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const MODULI = [3, 4, 5, 6, 7, 8, 10, 12];
+const CLASS_COLORS = [
+  '#ff4466', '#44aaff', '#44ff88', '#ffaa22',
+  '#cc66ff', '#ff66aa', '#66ffdd', '#ffdd44',
+  '#88aaff', '#ff8844', '#66ccff', '#aaff66'
+];
+
+let modulus = 4;
+let maxRange = 2000;
+let speed = 20;
+let playing = true;
+let primes = [];
+let allPrimes = [];
+let residueClasses = [];
+let classCounts = {};
+let classColors = {};
+let primeIndex = 0;
+let foundPrimes = []; // {value, class, index}
+let graphData = {}; // class -> [counts at each step]
+let hoverPrime = null;
+let hoverX = 0, hoverY = 0;
+
+// ── Sieve ──
+function sieve(n) {
+  const s = new Uint8Array(n + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= n; i++) {
+    if (!s[i]) for (let j = i * i; j <= n; j += i) s[j] = 1;
+  }
+  const result = [];
+  for (let i = 2; i <= n; i++) if (!s[i]) result.push(i);
+  return result;
+}
+
+function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
+
+function eulerPhi(n) {
+  let r = 0;
+  for (let i = 1; i < n; i++) if (gcd(i, n) === 1) r++;
+  return r;
+}
+
+function getResidueClasses(d) {
+  const classes = [];
+  for (let a = 1; a < d; a++) {
+    if (gcd(a, d) === 1) classes.push(a);
+  }
+  return classes;
+}
+
+// ── Init ──
+function initModulus(d) {
+  modulus = d;
+  residueClasses = getResidueClasses(d);
+  classCounts = {};
+  classColors = {};
+  graphData = {};
+  foundPrimes = [];
+  primeIndex = 0;
+
+  residueClasses.forEach((c, i) => {
+    classCounts[c] = 0;
+    classColors[c] = CLASS_COLORS[i % CLASS_COLORS.length];
+    graphData[c] = [0];
+  });
+
+  allPrimes = sieve(10000);
+  updateModButtons();
+  updateStats();
+}
+
+// ── Controls ──
+function buildModButtons() {
+  const grid = document.getElementById('modButtons');
+  grid.innerHTML = '';
+  MODULI.forEach(m => {
+    const btn = document.createElement('button');
+    btn.textContent = 'mod ' + m;
+    btn.dataset.mod = m;
+    if (m === modulus) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      initModulus(m);
+    });
+    grid.appendChild(btn);
+  });
+}
+
+function updateModButtons() {
+  document.querySelectorAll('#modButtons button').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.mod) === modulus);
+  });
+}
+
+const speedSlider = document.getElementById('speedSlider');
+const rangeSlider = document.getElementById('rangeSlider');
+const speedVal = document.getElementById('speedVal');
+const rangeVal = document.getElementById('rangeVal');
+const btnPlay = document.getElementById('btnPlay');
+const btnReset = document.getElementById('btnReset');
+
+speedSlider.addEventListener('input', () => {
+  speed = parseInt(speedSlider.value);
+  speedVal.textContent = speed;
+});
+
+rangeSlider.addEventListener('input', () => {
+  maxRange = parseInt(rangeSlider.value);
+  rangeVal.textContent = maxRange;
+});
+
+btnPlay.addEventListener('click', () => {
+  playing = !playing;
+  btnPlay.textContent = playing ? '❚❚ PAUSE' : '▶ PLAY';
+});
+
+btnReset.addEventListener('click', () => {
+  initModulus(modulus);
+  playing = true;
+  btnPlay.textContent = '❚❚ PAUSE';
+});
+
+// ── Stats update ──
+function updateStats() {
+  document.getElementById('statMod').textContent = modulus;
+  document.getElementById('statPhi').textContent = residueClasses.length;
+
+  const total = Object.values(classCounts).reduce((a, b) => a + b, 0);
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statUpTo').textContent =
+    primeIndex > 0 && primeIndex <= allPrimes.length ? allPrimes[primeIndex - 1] : 2;
+
+  const classDiv = document.getElementById('classStats');
+  let html = '';
+  let maxCount = 0, leader = '';
+  residueClasses.forEach(c => {
+    if (classCounts[c] > maxCount) { maxCount = classCounts[c]; leader = c; }
+  });
+
+  residueClasses.forEach(c => {
+    const isLeader = c === leader && maxCount > 0;
+    html += `<div class="class-row">
+      <span class="class-dot" style="background:${classColors[c]}"></span>
+      <span style="color:${classColors[c]}">${c} mod ${modulus}</span>
+      <span class="value" style="margin-left:auto">${classCounts[c]}</span>
+      ${isLeader ? '<span class="leader-tag">★ LEAD</span>' : ''}
+    </div>`;
+  });
+  classDiv.innerHTML = html;
+
+  document.getElementById('statLeader').textContent = maxCount > 0 ? `${leader} mod ${modulus}` : '—';
+
+  if (residueClasses.length >= 2 && maxCount > 0) {
+    const minCount = Math.min(...residueClasses.map(c => classCounts[c]));
+    if (minCount > 0) {
+      document.getElementById('statBias').textContent = (maxCount / minCount).toFixed(4);
+    } else {
+      document.getElementById('statBias').textContent = '—';
+    }
+  } else {
+    document.getElementById('statBias').textContent = '—';
+  }
+}
+
+// ── Simulation step ──
+function step() {
+  if (!playing) return 0;
+  const count = Math.max(1, Math.floor(speed / 5));
+  let added = 0;
+  for (let i = 0; i < count; i++) {
+    if (primeIndex >= allPrimes.length) break;
+    const p = allPrimes[primeIndex];
+    if (p > maxRange) break;
+    primeIndex++;
+
+    const r = p % modulus;
+    if (classCounts.hasOwnProperty(r)) {
+      classCounts[r]++;
+      foundPrimes.push({ value: p, cls: r, idx: foundPrimes.length });
+      added++;
+    }
+    // Update graph data
+    residueClasses.forEach(c => {
+      graphData[c].push(classCounts[c]);
+    });
+  }
+  if (added > 0) updateStats();
+  return added;
+}
+
+// ── Resize ──
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Drawing ──
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Layout: left portion for race bars, right portion for graph
+  const leftPanel = 250; // controls width area
+  const rightPanel = 290; // stats width area
+  const barAreaX = leftPanel + 20;
+  const barAreaW = (W - leftPanel - rightPanel - 40) * 0.4;
+  const graphX = barAreaX + barAreaW + 40;
+  const graphW = W - graphX - rightPanel - 20;
+  const topY = 70;
+  const bottomY = H - 50;
+  const areaH = bottomY - topY;
+
+  const numClasses = residueClasses.length;
+  if (numClasses === 0) return;
+
+  // ── Race bars (left side) ──
+  const laneH = Math.min(60, (areaH - 20) / numClasses - 10);
+  const laneGap = (areaH - numClasses * laneH) / (numClasses + 1);
+  const maxCount = Math.max(1, ...residueClasses.map(c => classCounts[c]));
+
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#405060';
+  ctx.textAlign = 'center';
+  ctx.fillText('PRIME RACE', barAreaX + barAreaW / 2, topY - 8);
+
+  residueClasses.forEach((c, i) => {
+    const y = topY + laneGap + i * (laneH + laneGap);
+    const count = classCounts[c];
+    const barW = barAreaW * (count / maxCount);
+    const color = classColors[c];
+
+    // Lane background
+    ctx.fillStyle = 'rgba(255,255,255,0.02)';
+    ctx.fillRect(barAreaX, y, barAreaW, laneH);
+
+    // Bar
+    const grad = ctx.createLinearGradient(barAreaX, y, barAreaX + barW, y);
+    grad.addColorStop(0, color + '44');
+    grad.addColorStop(1, color + 'cc');
+    ctx.fillStyle = grad;
+    ctx.fillRect(barAreaX, y, barW, laneH);
+
+    // Bar border glow
+    ctx.strokeStyle = color + '66';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barAreaX, y, barW, laneH);
+
+    // Label
+    ctx.fillStyle = color;
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${c} mod ${modulus}`, barAreaX - 8, y + laneH / 2 + 4);
+
+    // Count
+    ctx.fillStyle = '#c0c0d0';
+    ctx.font = '11px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText(count, barAreaX + barW + 6, y + laneH / 2 + 4);
+
+    // Recent primes in lane (last few)
+    const lanePrimes = foundPrimes.filter(fp => fp.cls === c);
+    const showCount = Math.min(lanePrimes.length, Math.floor(barAreaW / 28));
+    ctx.font = '8px Courier New';
+    ctx.textAlign = 'center';
+    for (let j = Math.max(0, lanePrimes.length - showCount); j < lanePrimes.length; j++) {
+      const fp = lanePrimes[j];
+      const px = barAreaX + 14 + (j - Math.max(0, lanePrimes.length - showCount)) * 28;
+      if (px + 14 > barAreaX + barW) break;
+      const py = y + laneH / 2;
+      ctx.fillStyle = color + '88';
+      ctx.fillText(fp.value, px, py + 3);
+
+      // Store position for hover detection
+      fp.screenX = px;
+      fp.screenY = py;
+      fp.screenR = 12;
+    }
+  });
+
+  // ── Accumulation graph (right side) ──
+  if (graphW > 100) {
+    ctx.fillStyle = '#405060';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('ACCUMULATION', graphX + graphW / 2, topY - 8);
+
+    // Graph border
+    ctx.strokeStyle = 'rgba(0,170,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(graphX, topY, graphW, areaH);
+
+    // Grid lines
+    const graphMaxY = Math.max(1, ...residueClasses.map(c => classCounts[c]));
+    const steps = graphData[residueClasses[0]].length;
+    if (steps > 1) {
+      // Horizontal grid
+      ctx.strokeStyle = 'rgba(0,170,255,0.05)';
+      for (let i = 1; i <= 4; i++) {
+        const gy = bottomY - (areaH * i / 4);
+        ctx.beginPath(); ctx.moveTo(graphX, gy); ctx.lineTo(graphX + graphW, gy); ctx.stroke();
+        ctx.fillStyle = '#405060';
+        ctx.font = '8px Courier New';
+        ctx.textAlign = 'right';
+        ctx.fillText(Math.round(graphMaxY * i / 4), graphX - 4, gy + 3);
+      }
+
+      // Lines per class
+      const downsample = Math.max(1, Math.floor(steps / graphW));
+      residueClasses.forEach(c => {
+        const data = graphData[c];
+        const color = classColors[c];
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let first = true;
+        for (let i = 0; i < data.length; i += downsample) {
+          const x = graphX + (i / (steps - 1)) * graphW;
+          const y = bottomY - (data[i] / graphMaxY) * areaH * 0.95;
+          if (first) { ctx.moveTo(x, y); first = false; }
+          else ctx.lineTo(x, y);
+        }
+        // Always draw to last point
+        const lastX = graphX + graphW;
+        const lastY = bottomY - (data[data.length - 1] / graphMaxY) * areaH * 0.95;
+        ctx.lineTo(lastX, lastY);
+        ctx.stroke();
+
+        // End label
+        ctx.fillStyle = color;
+        ctx.font = '9px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${c}`, lastX + 4, lastY + 3);
+      });
+    }
+
+    // X-axis label
+    ctx.fillStyle = '#405060';
+    ctx.font = '8px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('primes counted →', graphX + graphW / 2, bottomY + 14);
+  }
+
+  // ── Scatter of recent primes along bottom ──
+  const scatterY = bottomY + 28;
+  if (scatterY < H - 30) {
+    const recentN = Math.min(foundPrimes.length, 80);
+    const startIdx = foundPrimes.length - recentN;
+    ctx.font = '7px Courier New';
+    ctx.textAlign = 'center';
+    for (let i = startIdx; i < foundPrimes.length; i++) {
+      const fp = foundPrimes[i];
+      const x = barAreaX + ((i - startIdx) / recentN) * (W - leftPanel - rightPanel - 40);
+      ctx.fillStyle = classColors[fp.cls] + '66';
+      ctx.beginPath();
+      ctx.arc(x, scatterY, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ── Title ──
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 13px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-DIRICHLET', barAreaX, 54);
+  ctx.fillStyle = '#506070';
+  ctx.font = '10px Courier New';
+  ctx.fillText(`primes in arithmetic progressions mod ${modulus}`, barAreaX + 180, 54);
+}
+
+// ── Tooltip ──
+const tooltip = document.getElementById('tooltip');
+canvas.addEventListener('mousemove', (e) => {
+  hoverX = e.clientX;
+  hoverY = e.clientY;
+  hoverPrime = null;
+
+  for (let i = foundPrimes.length - 1; i >= 0; i--) {
+    const fp = foundPrimes[i];
+    if (fp.screenX !== undefined) {
+      const dx = e.clientX - fp.screenX;
+      const dy = e.clientY - fp.screenY;
+      if (Math.abs(dx) < fp.screenR && Math.abs(dy) < fp.screenR) {
+        hoverPrime = fp;
+        break;
+      }
+    }
+  }
+
+  if (hoverPrime) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    document.getElementById('tpPrime').textContent = hoverPrime.value;
+    document.getElementById('tpClass').textContent =
+      `≡ ${hoverPrime.cls} (mod ${modulus})`;
+    document.getElementById('tpInfo').textContent =
+      `class ${hoverPrime.cls}: ${classCounts[hoverPrime.cls]} primes`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  tooltip.style.display = 'none';
+  hoverPrime = null;
+});
+
+// ── Main loop ──
+let lastTime = 0;
+let accumulator = 0;
+
+function animate(time) {
+  const dt = Math.min(time - lastTime, 100);
+  lastTime = time;
+
+  if (playing) {
+    accumulator += dt;
+    const interval = Math.max(5, 500 / speed);
+    while (accumulator >= interval) {
+      accumulator -= interval;
+      step();
+    }
+  }
+
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// ── Boot ──
+buildModButtons();
+initModulus(4);
+playing = true;
+btnPlay.textContent = '❚❚ PAUSE';
+requestAnimationFrame(animate);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

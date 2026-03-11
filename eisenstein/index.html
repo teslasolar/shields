@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-EISENSTEIN</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; color: #aab; }
+canvas { display: block; cursor: crosshair; }
+#stats {
+  position: fixed; top: 48px; right: 12px;
+  background: rgba(6,6,16,.92); border: 1px solid rgba(0,170,255,.15);
+  padding: 14px 18px; font-size: 11px; line-height: 1.7;
+  color: #8af; border-radius: 4px; min-width: 240px;
+  pointer-events: none; letter-spacing: 1px;
+  backdrop-filter: blur(8px);
+}
+#stats .label { color: #556; }
+#stats .val { color: #adf; }
+#stats .title { color: #0af; font-size: 13px; margin-bottom: 6px; letter-spacing: 3px; }
+#stats .unit-list { color: #4f8; font-size: 10px; margin-top: 4px; }
+#tooltip {
+  position: fixed; display: none;
+  background: rgba(6,6,16,.95); border: 1px solid rgba(0,170,255,.3);
+  padding: 10px 14px; font-size: 11px; line-height: 1.6;
+  color: #cdf; border-radius: 4px; pointer-events: none;
+  letter-spacing: 1px; max-width: 320px;
+  backdrop-filter: blur(8px);
+}
+#tooltip .prime-yes { color: #0f8; }
+#tooltip .prime-no { color: #f55; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats"></div>
+<div id="tooltip"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statsEl = document.getElementById('stats');
+const tooltipEl = document.getElementById('tooltip');
+
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// View state
+let viewX = 0, viewY = 0, zoom = 1;
+let dragging = false, dragStartX, dragStartY, dragViewX, dragViewY;
+let mouseX = -1, mouseY = -1;
+let selectedAssociates = null;
+let animRadius = 0;
+const ANIM_SPEED = 0.04;
+const RANGE = 24;
+
+// Animation state
+let time = 0;
+let rotationAngle = 0;
+const ROTATION_SPEED = 0.0003;
+let pulsePhase = 0;
+
+// omega = e^(2*pi*i/3) = (-1 + sqrt(3)*i) / 2
+const SQRT3 = Math.sqrt(3);
+const OMEGA_RE = -0.5;
+const OMEGA_IM = SQRT3 / 2;
+
+// Convert Eisenstein coordinate (a,b) to complex plane (x,y)
+// a + b*omega => (a + b*(-1/2), b*(sqrt(3)/2))
+function eisToXY(a, b) {
+  return [a + b * OMEGA_RE, b * OMEGA_IM];
+}
+
+// Primality test
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+// Eisenstein norm: N(a + b*omega) = a^2 - a*b + b^2
+function eisNorm(a, b) {
+  return a * a - a * b + b * b;
+}
+
+// Eisenstein prime test
+function isEisensteinPrime(a, b) {
+  if (a === 0 && b === 0) return false;
+  const aa = Math.abs(a), ab = Math.abs(b);
+  // Pure real axis: b=0 => prime iff |a| is rational prime, |a| ≡ 2 (mod 3)
+  if (b === 0) return isPrime(aa) && aa % 3 === 2;
+  // Pure omega axis: a=0 => prime iff |b| is rational prime, |b| ≡ 2 (mod 3)
+  if (a === 0) return isPrime(ab) && ab % 3 === 2;
+  // Diagonal a=b: a+b*omega = a(1+omega) = -a*omega^2... norm = a^2 - a^2 + a^2 = a^2
+  // Actually a+b*omega with a=b: norm = a^2 - a*a + a^2 = a^2. So norm=a^2, only prime if |a| prime and... no.
+  // When a=b: a + a*omega = a*(1+omega). 1+omega = -omega^2, and -omega^2 is a unit times (1-omega+omega^2)...
+  // Actually 1+omega = -omega^2 (since 1+omega+omega^2=0). So a+a*omega = -a*omega^2.
+  // This is a unit (-omega^2) times a. So it's prime iff a is an Eisenstein prime on the real axis.
+  // i.e. |a| is rational prime with |a| ≡ 2 (mod 3).
+  if (a === b) return isPrime(aa) && aa % 3 === 2;
+  // General case: prime iff norm is a rational prime
+  const n = eisNorm(a, b);
+  return n > 0 && isPrime(n);
+}
+
+// Precompute grid
+const gridData = [];
+let primeCount = 0;
+const normDist = {};
+for (let a = -RANGE; a <= RANGE; a++) {
+  for (let b = -RANGE; b <= RANGE; b++) {
+    const [x, y] = eisToXY(a, b);
+    const n = eisNorm(a, b);
+    const ep = isEisensteinPrime(a, b);
+    if (ep) {
+      primeCount++;
+      normDist[n] = (normDist[n] || 0) + 1;
+    }
+    gridData.push({ a, b, x, y, prime: ep, norm: n });
+  }
+}
+
+// Get the 6 associates of (a,b) by multiplying by the 6 units: ±1, ±omega, ±omega^2
+// Units in Eisenstein integers: 1, -1, omega, -omega, omega^2, -omega^2
+// omega = -1+... In terms of (a,b) coordinates:
+// 1        => (1,0)
+// -1       => (-1,0)
+// omega    => (0,1)
+// -omega   => (0,-1)
+// omega^2  => (-1,1)... wait: omega^2 = -(1+omega), so in coords: (-1-0, 0-1)... let me recalc.
+// omega in coords is (0,1): 0 + 1*omega = omega. Check.
+// omega^2 = -(1+omega) = -1 - omega, in coords: (-1, -1). Check: norm(-1,-1) = 1+1+1=3? No: (-1)^2 - (-1)(-1) + (-1)^2 = 1-1+1=1. Good, unit.
+// Multiplication by omega: (a+b*omega)*omega = a*omega + b*omega^2 = a*omega + b*(-1-omega) = -b + (a-b)*omega
+// So multiply by omega: (a,b) -> (-b, a-b)
+// Multiply by omega^2: apply twice: (-b, a-b) -> (-(a-b), -b-(a-b)) = (b-a, -a)
+// So the 6 associates:
+// *1:       (a, b)
+// *omega:   (-b, a-b)
+// *omega^2: (b-a, -a)
+// *(-1):    (-a, -b)
+// *(-omega): (b, b-a)
+// *(-omega^2): (a-b, a)
+function getAssociates(a, b) {
+  return [
+    [a, b],
+    [-b, a - b],
+    [b - a, -a],
+    [-a, -b],
+    [b, b - a],
+    [a - b, a]
+  ];
+}
+
+// Format Eisenstein integer for display
+function fmtEis(a, b) {
+  if (b === 0) return '' + a;
+  if (a === 0) {
+    if (b === 1) return '\u03C9';
+    if (b === -1) return '-\u03C9';
+    return b + '\u03C9';
+  }
+  if (b === 1) return a + '+\u03C9';
+  if (b === -1) return a + '-\u03C9';
+  return b > 0 ? a + '+' + b + '\u03C9' : a + '' + b + '\u03C9';
+}
+
+// Factor description
+function eisFactorDesc(a, b) {
+  if (a === 0 && b === 0) return '0';
+  const n = eisNorm(a, b);
+  if (n === 1) return 'Unit';
+  if (isEisensteinPrime(a, b)) return 'Eisenstein prime (irreducible)';
+  return 'Composite, norm = ' + n;
+}
+
+// Factorize integer for display
+function factorize(n) {
+  if (n <= 1) return '' + n;
+  const factors = [];
+  let d = 2, tmp = n;
+  while (d * d <= tmp) {
+    let count = 0;
+    while (tmp % d === 0) { count++; tmp /= d; }
+    if (count > 0) factors.push(count > 1 ? d + '^' + count : '' + d);
+    d++;
+  }
+  if (tmp > 1) factors.push('' + tmp);
+  return factors.join(' \u00d7 ');
+}
+
+// World to screen
+function w2sX(wx) { return W / 2 + (wx - viewX) * zoom; }
+function w2sY(wy) { return H / 2 - (wy - viewY) * zoom; }
+function s2wX(sx) { return (sx - W / 2) / zoom + viewX; }
+function s2wY(sy) { return viewY - (sy - H / 2) / zoom; }
+
+// Color by norm
+function primeColor(norm, pulse) {
+  // Map norm to hue: small norms cyan/green, larger norms shift to blue/purple
+  const maxNorm = RANGE * RANGE;
+  const t = Math.min(norm / maxNorm, 1);
+  const hue = 140 - t * 120; // 140 (green-cyan) -> 20 (orange) as norm grows
+  const lightness = 52 + pulse * 8;
+  const sat = 80 + pulse * 15;
+  return `hsl(${hue}, ${Math.min(sat, 95)}%, ${Math.min(lightness, 68)}%)`;
+}
+
+function draw() {
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  time++;
+  pulsePhase = Math.sin(time * 0.02) * 0.5 + 0.5;
+
+  // Draw 6-fold symmetry lines through origin
+  const originSX = w2sX(0);
+  const originSY = w2sY(0);
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 6; k++) {
+    const angle = k * Math.PI / 3;
+    const len = Math.max(W, H);
+    const dx = Math.cos(angle) * len;
+    const dy = Math.sin(angle) * len;
+    ctx.strokeStyle = k % 3 === 0 ? 'rgba(0,170,255,.12)' : 'rgba(0,170,255,.06)';
+    ctx.beginPath();
+    ctx.moveTo(originSX - dx, originSY + dy);
+    ctx.lineTo(originSX + dx, originSY - dy);
+    ctx.stroke();
+  }
+
+  // Draw hexagonal grid lines if zoomed in enough
+  if (zoom > 14) {
+    ctx.strokeStyle = 'rgba(0,170,255,.025)';
+    ctx.lineWidth = 0.5;
+    // Draw lines along the three lattice directions:
+    // Direction 1: along (1, 0) in Eisenstein coords => (1, 0) in xy
+    // Direction 2: along (0, 1) in Eisenstein coords => (-0.5, sqrt3/2) in xy
+    // Direction 3: along (1, 1) in Eisenstein coords => (0.5, sqrt3/2) in xy
+    for (let i = -RANGE; i <= RANGE; i++) {
+      // Lines of constant b (horizontal-ish)
+      const [x0, y0] = eisToXY(-RANGE, i);
+      const [x1, y1] = eisToXY(RANGE, i);
+      ctx.beginPath();
+      ctx.moveTo(w2sX(x0), w2sY(y0));
+      ctx.lineTo(w2sX(x1), w2sY(y1));
+      ctx.stroke();
+      // Lines of constant a (diagonal)
+      const [x2, y2] = eisToXY(i, -RANGE);
+      const [x3, y3] = eisToXY(i, RANGE);
+      ctx.beginPath();
+      ctx.moveTo(w2sX(x2), w2sY(y2));
+      ctx.lineTo(w2sX(x3), w2sY(y3));
+      ctx.stroke();
+      // Lines of constant a-b
+      const [x4, y4] = eisToXY(i, i - RANGE);
+      const [x5, y5] = eisToXY(i + RANGE, i);
+      ctx.beginPath();
+      ctx.moveTo(w2sX(x4), w2sY(y4));
+      ctx.lineTo(w2sX(x5), w2sY(y5));
+      ctx.stroke();
+    }
+  }
+
+  // Rotating symmetry indicator
+  const rotPulse = Math.sin(time * ROTATION_SPEED * 20) * 0.3 + 0.7;
+  const symRadius = Math.min(W, H) * 0.38;
+  ctx.strokeStyle = `rgba(0,255,170,${0.03 * rotPulse})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const angle = k * Math.PI / 3 + time * ROTATION_SPEED;
+    const ex = originSX + Math.cos(angle) * symRadius;
+    const ey = originSY - Math.sin(angle) * symRadius;
+    if (k === 0) ctx.moveTo(ex, ey);
+    else ctx.lineTo(ex, ey);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Draw points
+  const dotRadius = Math.max(1.5, Math.min(zoom * 0.22, 7));
+
+  // Selected associates set
+  const assocSet = new Set();
+  if (selectedAssociates) {
+    for (const [sa, sb] of selectedAssociates) {
+      assocSet.add(sa + ',' + sb);
+    }
+  }
+
+  let visiblePrimes = 0;
+  let totalVisible = 0;
+
+  for (const pt of gridData) {
+    const dist = Math.max(Math.abs(pt.a), Math.abs(pt.b));
+    if (dist > animRadius) continue;
+
+    const sx = w2sX(pt.x);
+    const sy = w2sY(pt.y);
+    if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+
+    totalVisible++;
+    const isAssoc = assocSet.has(pt.a + ',' + pt.b);
+
+    if (pt.prime) {
+      visiblePrimes++;
+      const pulse = isAssoc ? 1 : pulsePhase * 0.4;
+      const col = primeColor(pt.norm, pulse);
+      ctx.fillStyle = col;
+      ctx.globalAlpha = isAssoc ? 1.0 : 0.85;
+      const r = isAssoc ? dotRadius * 1.7 : dotRadius;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glow
+      if (zoom > 5 || isAssoc) {
+        ctx.globalAlpha = isAssoc ? 0.35 : 0.1 + pulsePhase * 0.06;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r * (isAssoc ? 3 : 2.2), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Associate highlight ring
+      if (isAssoc) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, dotRadius * 2.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else {
+      // Composite: dim dot
+      ctx.fillStyle = isAssoc ? 'rgba(150,150,200,.5)' : 'rgba(50,50,80,.25)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, isAssoc ? dotRadius * 0.9 : dotRadius * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Draw lines connecting selected associates
+  if (selectedAssociates) {
+    ctx.strokeStyle = 'rgba(0,255,170,.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let k = 0; k < selectedAssociates.length; k++) {
+      const [sa, sb] = selectedAssociates[k];
+      const [sx, sy] = [eisToXY(sa, sb)].map(p => [w2sX(p[0]), w2sY(p[1])])[0];
+      if (k === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Draw labels at high zoom
+  if (zoom > 24) {
+    ctx.font = Math.max(7, zoom * 0.2) + 'px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const pt of gridData) {
+      const dist = Math.max(Math.abs(pt.a), Math.abs(pt.b));
+      if (dist > animRadius) continue;
+      if (!pt.prime) continue;
+      const sx = w2sX(pt.x);
+      const sy = w2sY(pt.y);
+      if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+      ctx.fillStyle = 'rgba(170,200,255,.5)';
+      ctx.fillText(fmtEis(pt.a, pt.b), sx, sy + dotRadius + 3);
+    }
+  }
+
+  // Title
+  ctx.font = '14px Courier New';
+  ctx.fillStyle = '#0af';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.globalAlpha = 0.8;
+  ctx.fillText('SHIELD-EISENSTEIN', 16, 48);
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#446';
+  ctx.fillText('Eisenstein Primes in \u2124[\u03C9]', 16, 68);
+  ctx.fillText('\u03C9 = e^(2\u03C0i/3) = (-1+\u221A3\u00B7i)/2', 16, 82);
+  ctx.fillText('Range: |a|,|b| \u2264 ' + RANGE, 16, 96);
+  ctx.globalAlpha = 1;
+
+  // Stats panel
+  const density = totalVisible > 0 ? (visiblePrimes / totalVisible * 100).toFixed(1) : '0.0';
+  // Count distinct norms among visible primes
+  const normKeys = Object.keys(normDist).sort((a, b) => +a - +b);
+  const topNorms = normKeys.slice(0, 6).map(n => n + '\u00d7' + normDist[n]).join(', ');
+
+  statsEl.innerHTML =
+    '<div class="title">STATISTICS</div>' +
+    '<span class="label">Eisenstein primes:</span> <span class="val">' + visiblePrimes + '</span><br>' +
+    '<span class="label">Total points:</span> <span class="val">' + totalVisible + '</span><br>' +
+    '<span class="label">Density:</span> <span class="val">' + density + '%</span><br>' +
+    '<span class="label">Symmetry:</span> <span class="val">D\u2086 (6-fold)</span><br>' +
+    '<span class="label">Zoom:</span> <span class="val">' + zoom.toFixed(1) + 'x</span><br>' +
+    '<span class="label">Anim radius:</span> <span class="val">' + Math.floor(animRadius) + '</span><br>' +
+    '<div class="unit-list" style="margin-top:6px;border-top:1px solid rgba(0,170,255,.1);padding-top:6px">' +
+    '<span class="label">6 units:</span> <span class="val">\u00B11, \u00B1\u03C9, \u00B1\u03C9\u00B2</span><br>' +
+    '<span class="label">Norm dist (top):</span><br>' +
+    '<span class="val" style="font-size:9px">' + topNorms + '</span>' +
+    '</div>';
+}
+
+// Hover: find nearest Eisenstein integer to mouse
+function findPoint(mx, my) {
+  const wx = s2wX(mx);
+  const wy = s2wY(my);
+  // Invert eisToXY: x = a - b/2, y = b*sqrt3/2 => b = 2y/sqrt3, a = x + b/2
+  const bFloat = wy / (SQRT3 / 2);
+  const aFloat = wx - bFloat * OMEGA_RE;
+  const b = Math.round(bFloat);
+  const a = Math.round(aFloat);
+  if (Math.abs(a) > RANGE || Math.abs(b) > RANGE) return null;
+  const dist = Math.max(Math.abs(a), Math.abs(b));
+  if (dist > animRadius) return null;
+  // Check screen distance
+  const [px, py] = eisToXY(a, b);
+  const sx = w2sX(px);
+  const sy = w2sY(py);
+  const dx = mx - sx, dy = my - sy;
+  if (dx * dx + dy * dy > 400) return null;
+  return { a, b };
+}
+
+canvas.addEventListener('mousemove', function(e) {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+
+  if (dragging) {
+    viewX = dragViewX - (e.clientX - dragStartX) / zoom;
+    viewY = dragViewY + (e.clientY - dragStartY) / zoom;
+    tooltipEl.style.display = 'none';
+    return;
+  }
+
+  const pt = findPoint(e.clientX, e.clientY);
+  if (pt) {
+    const ep = isEisensteinPrime(pt.a, pt.b);
+    const n = eisNorm(pt.a, pt.b);
+    const zStr = fmtEis(pt.a, pt.b);
+    const [rx, ry] = eisToXY(pt.a, pt.b);
+    const primeClass = ep ? 'prime-yes' : 'prime-no';
+    const primeText = ep ? 'YES (Eisenstein prime)' : 'NO (composite)';
+    const factDesc = eisFactorDesc(pt.a, pt.b);
+
+    let extra = '';
+    if (n === 1) {
+      extra = '<br>This is a unit in \u2124[\u03C9]';
+    } else if (ep) {
+      if (pt.b === 0 || pt.a === 0 || pt.a === pt.b) {
+        const v = pt.b === 0 ? Math.abs(pt.a) : (pt.a === 0 ? Math.abs(pt.b) : Math.abs(pt.a));
+        extra = '<br>Inert prime: ' + v + ' \u2261 2 (mod 3)';
+      } else {
+        extra = '<br>Norm = ' + n + ' is prime';
+        if (n === 3) extra += ' (ramified: 3 = -\u03C9\u00B2(1-\u03C9)\u00B2)';
+        else if (n % 3 === 1) extra += ' (p \u2261 1 mod 3, splits)';
+      }
+    }
+
+    tooltipEl.innerHTML =
+      '<b>z = ' + zStr + '</b><br>' +
+      'Position: (' + rx.toFixed(2) + ', ' + ry.toFixed(2) + ')<br>' +
+      'Norm: a\u00B2-ab+b\u00B2 = ' + n + '<br>' +
+      'Prime: <span class="' + primeClass + '">' + primeText + '</span><br>' +
+      factDesc + extra;
+    tooltipEl.style.display = 'block';
+    const tx = e.clientX + 18;
+    const ty = e.clientY - 10;
+    tooltipEl.style.left = Math.min(tx, W - 330) + 'px';
+    tooltipEl.style.top = Math.max(ty, 10) + 'px';
+  } else {
+    tooltipEl.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mousedown', function(e) {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragViewX = viewX;
+  dragViewY = viewY;
+});
+
+canvas.addEventListener('mouseup', function(e) {
+  const dx = e.clientX - dragStartX;
+  const dy = e.clientY - dragStartY;
+  dragging = false;
+  // Click (not drag): select associates
+  if (dx * dx + dy * dy < 9) {
+    const pt = findPoint(e.clientX, e.clientY);
+    if (pt) {
+      selectedAssociates = getAssociates(pt.a, pt.b);
+    } else {
+      selectedAssociates = null;
+    }
+  }
+});
+
+canvas.addEventListener('mouseleave', function() {
+  tooltipEl.style.display = 'none';
+});
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  const wx = s2wX(e.clientX);
+  const wy = s2wY(e.clientY);
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  zoom = Math.max(2, Math.min(200, zoom * factor));
+  viewX = wx - (e.clientX - W / 2) / zoom;
+  viewY = wy + (e.clientY - H / 2) / zoom;
+}, { passive: false });
+
+// Initial zoom to fit range
+function fitView() {
+  zoom = Math.min(W, H) / (RANGE * 2 + 4);
+  viewX = 0; viewY = 0;
+}
+fitView();
+window.addEventListener('resize', function() { resize(); fitView(); });
+
+// Animation loop
+function animate() {
+  if (animRadius < RANGE + 2) {
+    animRadius += ANIM_SPEED + animRadius * 0.02;
+    if (animRadius > RANGE + 1) animRadius = RANGE + 1;
+  }
+  draw();
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+<div style="position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-family:'Courier New',monospace;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08)">
+  <span>&#x2124;[&#x03C9;] &#x2245; &#x2124;[x]/(x&#xB2;+x+1)</span><span style="color:#223">|</span>
+  <span>&#x03C9; = e^(2&#x03C0;i/3)</span><span style="color:#223">|</span>
+  <span>HEXAGONAL SYMMETRY</span><span style="color:#223">|</span>
+  <span>LIGHT TO LIGHT</span>
+</div>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
