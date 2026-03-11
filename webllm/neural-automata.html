@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Automata — Continuous Cellular Automata</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #c0d8ff;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  user-select: none;
+}
+
+/* --- Stars background --- */
+#stars-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* --- Main simulation canvas --- */
+#sim-canvas {
+  position: absolute;
+  z-index: 1;
+  image-rendering: pixelated;
+}
+
+/* --- Bloom overlay --- */
+#bloom-canvas {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.35;
+  filter: blur(8px);
+  image-rendering: pixelated;
+}
+
+/* --- CRT Scanline overlay --- */
+#crt-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+
+/* --- HUD corners --- */
+.hud-corner {
+  position: absolute;
+  z-index: 5;
+  width: 20px; height: 20px;
+  pointer-events: none;
+}
+.hud-corner.tl { border-top: 2px solid rgba(0,229,255,0.5); border-left: 2px solid rgba(0,229,255,0.5); }
+.hud-corner.tr { border-top: 2px solid rgba(0,229,255,0.5); border-right: 2px solid rgba(0,229,255,0.5); }
+.hud-corner.bl { border-bottom: 2px solid rgba(0,229,255,0.5); border-left: 2px solid rgba(0,229,255,0.5); }
+.hud-corner.br { border-bottom: 2px solid rgba(0,229,255,0.5); border-right: 2px solid rgba(0,229,255,0.5); }
+
+/* --- Header bar --- */
+#header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  background: rgba(10,10,25,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(100,200,255,0.15);
+  gap: 20px;
+}
+#header h1 {
+  font-size: 13px;
+  font-weight: normal;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #00e5ff, #ffd700, #ff00ff, #00ff88);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: hdr-grad 6s linear infinite;
+}
+@keyframes hdr-grad {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #8899aa;
+}
+.status-pill .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #00ff88;
+  box-shadow: 0 0 6px #00ff88;
+}
+.status-pill.voice .dot {
+  background: #555;
+  box-shadow: none;
+}
+.status-pill.voice.active .dot {
+  background: #00ff88;
+  box-shadow: 0 0 6px #00ff88;
+}
+
+/* --- Bottom bar --- */
+#bottom-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(10,10,25,0.85);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(100,200,255,0.15);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  color: #667788;
+}
+#bottom-bar span { margin: 0 8px; }
+.bb-cyan { color: #00e5ff; }
+.bb-gold { color: #ffd700; }
+
+/* --- Panels --- */
+.panel {
+  position: fixed;
+  z-index: 100;
+  background: rgba(10,10,25,0.85);
+  border: 1px solid rgba(100,200,255,0.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  backdrop-filter: blur(12px);
+  pointer-events: all;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,229,255,0.3) transparent;
+}
+.panel::-webkit-scrollbar { width: 4px; }
+.panel::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.3); border-radius: 2px; }
+.panel h3 {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #00e5ff;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-weight: normal;
+  border-bottom: 1px solid rgba(0,229,255,0.15);
+  padding-bottom: 4px;
+}
+.panel-label {
+  color: #556677;
+  font-size: 8px;
+  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.panel-value {
+  color: #c0d8ff;
+  font-size: 11px;
+}
+
+/* Left panel */
+#left-panel {
+  left: 10px;
+  top: 54px;
+  bottom: 42px;
+  width: 220px;
+}
+
+/* Right panel */
+#right-panel {
+  right: 10px;
+  top: 54px;
+  bottom: 42px;
+  width: 200px;
+}
+
+/* --- Buttons --- */
+.btn {
+  display: inline-block;
+  padding: 4px 8px;
+  margin: 2px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #c0d8ff;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+.btn:hover {
+  background: rgba(0,229,255,0.18);
+  border-color: rgba(0,229,255,0.5);
+}
+.btn.active {
+  background: rgba(0,229,255,0.25);
+  border-color: #00e5ff;
+  color: #00e5ff;
+  box-shadow: 0 0 8px rgba(0,229,255,0.3);
+}
+.btn.gold { border-color: rgba(255,215,0,0.3); color: #ffd700; }
+.btn.gold:hover { background: rgba(255,215,0,0.15); }
+.btn.gold.active { background: rgba(255,215,0,0.25); border-color: #ffd700; box-shadow: 0 0 8px rgba(255,215,0,0.3); }
+.btn.magenta { border-color: rgba(255,0,255,0.3); color: #ff00ff; }
+.btn.magenta:hover { background: rgba(255,0,255,0.15); }
+.btn.green { border-color: rgba(0,255,136,0.3); color: #00ff88; }
+.btn.green:hover { background: rgba(0,255,136,0.15); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 2px; margin: 4px 0; }
+
+/* --- Sliders --- */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+.slider-row label {
+  font-size: 8px;
+  color: #667;
+  letter-spacing: 1px;
+  min-width: 28px;
+  text-transform: uppercase;
+}
+.slider-row input[type=range] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  background: rgba(0,229,255,0.15);
+  border-radius: 2px;
+  outline: none;
+}
+.slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #00e5ff;
+  cursor: pointer;
+  box-shadow: 0 0 4px rgba(0,229,255,0.5);
+}
+.slider-row .s-val {
+  font-size: 9px;
+  color: #00e5ff;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* --- Voice toggle --- */
+#voice-toggle {
+  padding: 5px 12px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+/* --- Sparkline --- */
+#pop-sparkline {
+  width: 100%;
+  height: 40px;
+  margin-top: 6px;
+}
+
+/* --- Mic bar --- */
+#mic-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+#mic-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+#mic-dot.active {
+  background: #00e5ff;
+  box-shadow: 0 0 6px #00e5ff;
+}
+#mic-bar {
+  flex: 1; height: 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+#mic-bar-fill {
+  height: 100%; width: 0%;
+  background: #00e5ff;
+  border-radius: 3px;
+  transition: width 0.05s;
+}
+
+/* --- Detected vowel --- */
+#vowel-display {
+  font-size: 16px;
+  color: #ffd700;
+  margin: 4px 0;
+  min-height: 20px;
+}
+
+/* --- Section separator --- */
+.sep {
+  border: none;
+  border-top: 1px solid rgba(100,200,255,0.1);
+  margin: 8px 0;
+}
+</style>
+</head>
+<body>
+
+<!-- Stars background -->
+<canvas id="stars-canvas"></canvas>
+
+<!-- Simulation canvas -->
+<canvas id="sim-canvas"></canvas>
+<canvas id="bloom-canvas"></canvas>
+
+<!-- CRT overlay -->
+<div id="crt-overlay"></div>
+
+<!-- HUD corners (positioned by JS) -->
+<div class="hud-corner tl" id="hud-tl"></div>
+<div class="hud-corner tr" id="hud-tr"></div>
+<div class="hud-corner bl" id="hud-bl"></div>
+<div class="hud-corner br" id="hud-br"></div>
+
+<!-- Header -->
+<div id="header">
+  <div class="status-pill"><div class="dot"></div>LIVE</div>
+  <h1>Neural Automata</h1>
+  <div class="status-pill voice" id="voice-pill"><div class="dot"></div>VOICE</div>
+</div>
+
+<!-- Bottom bar -->
+<div id="bottom-bar">
+  <div>GEN <span class="bb-cyan" id="bb-gen">0</span> | FPS <span class="bb-cyan" id="bb-fps">0</span></div>
+  <div>RULE <span class="bb-gold" id="bb-rule">LENIA</span> | PRESET <span class="bb-gold" id="bb-preset">ORBIUM</span></div>
+  <div>POP <span class="bb-cyan" id="bb-pop">0.00</span> | BRUSH <span class="bb-cyan" id="bb-brush">5</span></div>
+</div>
+
+<!-- Left Panel -->
+<div class="panel" id="left-panel">
+  <h3>Rule Engine</h3>
+
+  <div class="panel-label">Rule Type</div>
+  <div class="btn-row" id="rule-btns">
+    <button class="btn active" data-rule="lenia">Lenia</button>
+    <button class="btn" data-rule="smoothlife">Smooth Life</button>
+    <button class="btn" data-rule="multiscale">Multi-Scale</button>
+    <button class="btn" data-rule="grayscott">Gray-Scott</button>
+    <button class="btn" data-rule="wave">Wave</button>
+    <button class="btn" data-rule="primordial">Primordial</button>
+  </div>
+
+  <hr class="sep">
+  <div class="panel-label">Presets</div>
+  <div class="btn-row" id="preset-btns">
+    <button class="btn gold" data-preset="orbium">Orbium</button>
+    <button class="btn gold" data-preset="mitosis">Mitosis</button>
+    <button class="btn gold" data-preset="coral">Coral</button>
+    <button class="btn gold" data-preset="spirals">Spirals</button>
+    <button class="btn gold" data-preset="pulse">Pulse</button>
+    <button class="btn gold" data-preset="spots">Spots</button>
+    <button class="btn gold" data-preset="stripes">Stripes</button>
+    <button class="btn gold" data-preset="worms">Worms</button>
+  </div>
+
+  <hr class="sep">
+  <div class="panel-label" id="params-label">Lenia Parameters</div>
+  <div id="lenia-params">
+    <div class="slider-row"><label>mu</label><input type="range" id="sl-mu" min="0" max="0.5" step="0.001" value="0.15"><span class="s-val" id="sv-mu">0.15</span></div>
+    <div class="slider-row"><label>sig</label><input type="range" id="sl-sigma" min="0.001" max="0.2" step="0.001" value="0.017"><span class="s-val" id="sv-sigma">0.017</span></div>
+    <div class="slider-row"><label>dt</label><input type="range" id="sl-dt" min="0.01" max="0.5" step="0.01" value="0.1"><span class="s-val" id="sv-dt">0.10</span></div>
+    <div class="slider-row"><label>R</label><input type="range" id="sl-R" min="3" max="20" step="1" value="10"><span class="s-val" id="sv-R">10</span></div>
+  </div>
+  <div id="gs-params" style="display:none">
+    <div class="slider-row"><label>f</label><input type="range" id="sl-f" min="0.01" max="0.1" step="0.001" value="0.035"><span class="s-val" id="sv-f">0.035</span></div>
+    <div class="slider-row"><label>k</label><input type="range" id="sl-k" min="0.03" max="0.07" step="0.001" value="0.065"><span class="s-val" id="sv-k">0.065</span></div>
+    <div class="slider-row"><label>Du</label><input type="range" id="sl-Du" min="0.05" max="0.5" step="0.01" value="0.21"><span class="s-val" id="sv-Du">0.21</span></div>
+    <div class="slider-row"><label>Dv</label><input type="range" id="sl-Dv" min="0.01" max="0.2" step="0.01" value="0.105"><span class="s-val" id="sv-Dv">0.105</span></div>
+  </div>
+
+  <hr class="sep">
+  <div class="panel-label">Color Palette</div>
+  <div class="btn-row" id="palette-btns">
+    <button class="btn magenta active" data-pal="bioluminescent">Bio</button>
+    <button class="btn magenta" data-pal="thermal">Thermal</button>
+    <button class="btn magenta" data-pal="neon">Neon</button>
+    <button class="btn magenta" data-pal="forest">Forest</button>
+    <button class="btn magenta" data-pal="cosmic">Cosmic</button>
+  </div>
+
+  <hr class="sep">
+  <div class="panel-label">Brush Size</div>
+  <div class="slider-row"><label>SZ</label><input type="range" id="sl-brush" min="1" max="30" step="1" value="5"><span class="s-val" id="sv-brush">5</span></div>
+
+  <div class="panel-label">Symmetry</div>
+  <div class="btn-row">
+    <button class="btn green" id="sym-btn" data-sym="none">None</button>
+  </div>
+
+  <hr class="sep">
+  <div class="btn-row">
+    <button class="btn green" id="btn-clear">Clear [C]</button>
+    <button class="btn green" id="btn-seed">Seed [R]</button>
+    <button class="btn green" id="btn-pause">Pause [P]</button>
+  </div>
+</div>
+
+<!-- Right Panel -->
+<div class="panel" id="right-panel">
+  <h3>Voice Analysis</h3>
+  <button class="btn" id="voice-toggle">Voice Drive [Space]</button>
+  <div id="mic-bar-wrap">
+    <div id="mic-dot"></div>
+    <div id="mic-bar"><div id="mic-bar-fill"></div></div>
+  </div>
+  <div class="panel-label">Pitch</div>
+  <div class="panel-value" id="v-pitch">—</div>
+  <div class="panel-label">Volume</div>
+  <div class="panel-value" id="v-volume">—</div>
+  <div class="panel-label">Detected Vowel</div>
+  <div id="vowel-display">—</div>
+
+  <hr class="sep">
+  <h3>Grid Statistics</h3>
+  <div class="panel-label">Population</div>
+  <div class="panel-value" id="s-pop">0.00</div>
+  <div class="panel-label">Avg State</div>
+  <div class="panel-value" id="s-avg">0.000</div>
+  <div class="panel-label">Max State</div>
+  <div class="panel-value" id="s-max">0.000</div>
+
+  <div class="panel-label">Population History</div>
+  <canvas id="pop-sparkline"></canvas>
+
+  <hr class="sep">
+  <h3>Active Rule</h3>
+  <div class="panel-value" id="rule-display" style="font-size:9px; line-height:1.6; color:#00e5ff;"></div>
+
+  <hr class="sep">
+  <div class="panel-label">Generation</div>
+  <div class="panel-value" id="s-gen">0</div>
+  <div class="panel-label">FPS</div>
+  <div class="panel-value" id="s-fps">0</div>
+</div>
+
+<script>
+// ====================== CONSTANTS ======================
+const GRID_W = 256, GRID_H = 256;
+const LEFT_PANEL_W = 240, RIGHT_PANEL_W = 220;
+const HEADER_H = 44, BOTTOM_H = 32;
+const TWO_PI = Math.PI * 2;
+
+// ====================== STATE ======================
+let generation = 0;
+let paused = false;
+let voiceActive = false;
+let brushSize = 5;
+let symmetryMode = 'none'; // none, 4fold, 8fold
+let currentRule = 'lenia';
+let currentPreset = 'orbium';
+let currentPalette = 'bioluminescent';
+
+// Smooth parameter targets (for lerping)
+let params = { mu: 0.15, sigma: 0.017, dt: 0.1, R: 10, f: 0.035, k: 0.065, Du: 0.21, Dv: 0.105 };
+let targetParams = { ...params };
+const LERP_SPEED = 0.05;
+
+// Voice analysis state
+let voicePitch = 0, voiceVolume = 0, detectedVowel = '—';
+let prevRMS = 0;
+
+// Population history for sparkline
+const popHistory = new Array(200).fill(0);
+
+// FPS tracking
+let frameCount = 0, lastFPSTime = performance.now(), currentFPS = 0;
+
+// ====================== GRIDS (double-buffered) ======================
+// For Lenia/SmoothLife/Wave/Primordial: single channel state[0,1]
+// For Gray-Scott: U and V channels
+let gridA = new Float32Array(GRID_W * GRID_H);
+let gridB = new Float32Array(GRID_W * GRID_H);
+let gridU = new Float32Array(GRID_W * GRID_H); // Gray-Scott U
+let gridV = new Float32Array(GRID_W * GRID_H); // Gray-Scott V
+let gridU2 = new Float32Array(GRID_W * GRID_H);
+let gridV2 = new Float32Array(GRID_W * GRID_H);
+// Wave needs velocity
+let gridVel = new Float32Array(GRID_W * GRID_H);
+
+// Pre-computed kernel
+let kernelWeights = [];
+let kernelOffsets = [];
+let kernelSum = 0;
+
+// ====================== CANVAS SETUP ======================
+const simCanvas = document.getElementById('sim-canvas');
+const simCtx = simCanvas.getContext('2d');
+const bloomCanvas = document.getElementById('bloom-canvas');
+const bloomCtx = bloomCanvas.getContext('2d');
+const starsCanvas = document.getElementById('stars-canvas');
+const starsCtx = starsCanvas.getContext('2d');
+const sparkCanvas = document.getElementById('pop-sparkline');
+const sparkCtx = sparkCanvas.getContext('2d');
+
+let simImageData;
+let canvasX, canvasY, canvasW, canvasH, cellSize;
+
+function layoutCanvases() {
+  const availW = window.innerWidth - LEFT_PANEL_W - RIGHT_PANEL_W;
+  const availH = window.innerHeight - HEADER_H - BOTTOM_H;
+  cellSize = Math.max(1, Math.min(Math.floor(availW / GRID_W), Math.floor(availH / GRID_H)));
+  canvasW = GRID_W * cellSize;
+  canvasH = GRID_H * cellSize;
+  canvasX = LEFT_PANEL_W + (availW - canvasW) / 2;
+  canvasY = HEADER_H + (availH - canvasH) / 2;
+
+  simCanvas.width = GRID_W;
+  simCanvas.height = GRID_H;
+  simCanvas.style.width = canvasW + 'px';
+  simCanvas.style.height = canvasH + 'px';
+  simCanvas.style.left = canvasX + 'px';
+  simCanvas.style.top = canvasY + 'px';
+
+  bloomCanvas.width = GRID_W;
+  bloomCanvas.height = GRID_H;
+  bloomCanvas.style.width = canvasW + 'px';
+  bloomCanvas.style.height = canvasH + 'px';
+  bloomCanvas.style.left = canvasX + 'px';
+  bloomCanvas.style.top = canvasY + 'px';
+
+  simImageData = simCtx.createImageData(GRID_W, GRID_H);
+
+  starsCanvas.width = window.innerWidth;
+  starsCanvas.height = window.innerHeight;
+
+  sparkCanvas.width = sparkCanvas.offsetWidth * 2 || 340;
+  sparkCanvas.height = 80;
+
+  // HUD corners
+  const pad = 4;
+  const hudTL = document.getElementById('hud-tl');
+  const hudTR = document.getElementById('hud-tr');
+  const hudBL = document.getElementById('hud-bl');
+  const hudBR = document.getElementById('hud-br');
+  hudTL.style.left = (canvasX - pad) + 'px'; hudTL.style.top = (canvasY - pad) + 'px';
+  hudTR.style.left = (canvasX + canvasW - 20 + pad) + 'px'; hudTR.style.top = (canvasY - pad) + 'px';
+  hudBL.style.left = (canvasX - pad) + 'px'; hudBL.style.top = (canvasY + canvasH - 20 + pad) + 'px';
+  hudBR.style.left = (canvasX + canvasW - 20 + pad) + 'px'; hudBR.style.top = (canvasY + canvasH - 20 + pad) + 'px';
+
+  drawStars();
+}
+
+// ====================== STARS ======================
+function drawStars() {
+  const ctx = starsCtx;
+  const w = starsCanvas.width, h = starsCanvas.height;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, w, h);
+  // 127 Fibonacci-distributed stars
+  const golden = (1 + Math.sqrt(5)) / 2;
+  for (let i = 0; i < 127; i++) {
+    const t = i / 127;
+    const r = Math.sqrt(t) * Math.min(w, h) * 0.5;
+    const theta = i * golden * TWO_PI;
+    const x = w / 2 + r * Math.cos(theta);
+    const y = h / 2 + r * Math.sin(theta);
+    const brightness = 0.15 + Math.random() * 0.35;
+    const size = 0.5 + Math.random() * 1.2;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, TWO_PI);
+    ctx.fillStyle = `rgba(180,200,255,${brightness})`;
+    ctx.fill();
+  }
+}
+
+// ====================== COLOR PALETTES ======================
+const palettes = {
+  bioluminescent: [
+    [0, 0.01, 0.05, 0.15],  // dark blue
+    [0.25, 0.0, 0.3, 0.6],  // blue
+    [0.5, 0.0, 0.8, 0.7],   // cyan
+    [0.75, 0.2, 0.9, 0.3],  // green
+    [1.0, 0.9, 0.95, 0.2]   // yellow
+  ],
+  thermal: [
+    [0, 0.0, 0.0, 0.0],
+    [0.2, 0.3, 0.0, 0.4],
+    [0.4, 0.8, 0.1, 0.1],
+    [0.6, 1.0, 0.4, 0.0],
+    [0.8, 1.0, 0.85, 0.0],
+    [1.0, 1.0, 1.0, 0.9]
+  ],
+  neon: [
+    [0, 0.0, 0.0, 0.05],
+    [0.3, 0.7, 0.0, 0.7],
+    [0.6, 0.0, 0.8, 0.9],
+    [1.0, 1.0, 1.0, 1.0]
+  ],
+  forest: [
+    [0, 0.0, 0.02, 0.0],
+    [0.3, 0.0, 0.2, 0.05],
+    [0.6, 0.1, 0.65, 0.15],
+    [0.85, 0.4, 0.9, 0.2],
+    [1.0, 0.7, 1.0, 0.3]
+  ],
+  cosmic: [
+    [0, 0.05, 0.0, 0.1],
+    [0.25, 0.15, 0.05, 0.4],
+    [0.5, 0.1, 0.2, 0.8],
+    [0.75, 0.0, 0.7, 0.9],
+    [1.0, 0.95, 0.8, 0.2]
+  ]
+};
+
+function samplePalette(t, palName) {
+  const pal = palettes[palName] || palettes.bioluminescent;
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < pal.length - 1; i++) {
+    if (t >= pal[i][0] && t <= pal[i + 1][0]) {
+      const f = (t - pal[i][0]) / (pal[i + 1][0] - pal[i][0]);
+      return [
+        pal[i][1] + f * (pal[i + 1][1] - pal[i][1]),
+        pal[i][2] + f * (pal[i + 1][2] - pal[i][2]),
+        pal[i][3] + f * (pal[i + 1][3] - pal[i][3])
+      ];
+    }
+  }
+  const last = pal[pal.length - 1];
+  return [last[1], last[2], last[3]];
+}
+
+// ====================== PRESETS ======================
+const presets = {
+  orbium:  { rule: 'lenia',     mu: 0.15, sigma: 0.017, dt: 0.1, R: 13 },
+  mitosis: { rule: 'lenia',     mu: 0.22, sigma: 0.035, dt: 0.12, R: 10 },
+  coral:   { rule: 'lenia',     mu: 0.12, sigma: 0.01,  dt: 0.08, R: 15 },
+  spirals: { rule: 'smoothlife', mu: 0.3, sigma: 0.05, dt: 0.15, R: 8 },
+  pulse:   { rule: 'lenia',     mu: 0.19, sigma: 0.025, dt: 0.2, R: 10 },
+  spots:   { rule: 'grayscott', f: 0.035, k: 0.065, Du: 0.21, Dv: 0.105 },
+  stripes: { rule: 'grayscott', f: 0.04,  k: 0.06,  Du: 0.21, Dv: 0.105 },
+  worms:   { rule: 'grayscott', f: 0.078, k: 0.061, Du: 0.21, Dv: 0.105 }
+};
+
+function applyPreset(name) {
+  const p = presets[name];
+  if (!p) return;
+  currentPreset = name;
+  setRule(p.rule);
+  if (p.mu !== undefined) { targetParams.mu = p.mu; document.getElementById('sl-mu').value = p.mu; document.getElementById('sv-mu').textContent = p.mu.toFixed(3); }
+  if (p.sigma !== undefined) { targetParams.sigma = p.sigma; document.getElementById('sl-sigma').value = p.sigma; document.getElementById('sv-sigma').textContent = p.sigma.toFixed(3); }
+  if (p.dt !== undefined) { targetParams.dt = p.dt; document.getElementById('sl-dt').value = p.dt; document.getElementById('sv-dt').textContent = p.dt.toFixed(2); }
+  if (p.R !== undefined) { targetParams.R = p.R; document.getElementById('sl-R').value = p.R; document.getElementById('sv-R').textContent = p.R; }
+  if (p.f !== undefined) { targetParams.f = p.f; document.getElementById('sl-f').value = p.f; document.getElementById('sv-f').textContent = p.f.toFixed(3); }
+  if (p.k !== undefined) { targetParams.k = p.k; document.getElementById('sl-k').value = p.k; document.getElementById('sv-k').textContent = p.k.toFixed(3); }
+  if (p.Du !== undefined) { targetParams.Du = p.Du; document.getElementById('sl-Du').value = p.Du; document.getElementById('sv-Du').textContent = p.Du.toFixed(2); }
+  if (p.Dv !== undefined) { targetParams.Dv = p.Dv; document.getElementById('sl-Dv').value = p.Dv; document.getElementById('sv-Dv').textContent = p.Dv.toFixed(3); }
+  document.getElementById('bb-preset').textContent = name.toUpperCase();
+  updatePresetButtons();
+  seedGrid();
+}
+
+function setRule(rule) {
+  currentRule = rule;
+  document.getElementById('bb-rule').textContent = rule.toUpperCase();
+  document.getElementById('lenia-params').style.display = (rule === 'grayscott') ? 'none' : 'block';
+  document.getElementById('gs-params').style.display = (rule === 'grayscott') ? 'block' : 'none';
+  const labels = {
+    lenia: 'Lenia Parameters', smoothlife: 'Smooth Life Parameters',
+    multiscale: 'Multi-Scale Parameters', grayscott: 'Gray-Scott Parameters',
+    wave: 'Wave Parameters', primordial: 'Primordial Parameters'
+  };
+  document.getElementById('params-label').textContent = labels[rule] || 'Parameters';
+  updateRuleButtons();
+  buildKernel();
+}
+
+// ====================== KERNEL COMPUTATION ======================
+function buildKernel() {
+  kernelWeights = [];
+  kernelOffsets = [];
+  kernelSum = 0;
+  const R = Math.round(params.R);
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > R + 0.5) continue;
+      let w;
+      if (currentRule === 'smoothlife') {
+        // Ring kernel: peak at dist ~ R*0.5
+        const normDist = dist / R;
+        w = Math.exp(-((normDist - 0.5) * (normDist - 0.5)) / (2 * 0.15 * 0.15));
+      } else {
+        // Lenia-style: exponential shell
+        const normDist = dist / R;
+        w = Math.exp(-((normDist - 0.5) * (normDist - 0.5)) / (2 * 0.15 * 0.15));
+      }
+      if (w > 0.001) {
+        kernelWeights.push(w);
+        kernelOffsets.push(dx);
+        kernelOffsets.push(dy);
+        kernelSum += w;
+      }
+    }
+  }
+  // Normalize
+  if (kernelSum > 0) {
+    for (let i = 0; i < kernelWeights.length; i++) {
+      kernelWeights[i] /= kernelSum;
+    }
+  }
+}
+
+// ====================== GROWTH FUNCTION ======================
+function growth(x) {
+  // Gaussian bell: 2 * exp(-((x - mu)^2) / (2*sigma^2)) - 1
+  const diff = x - params.mu;
+  return 2.0 * Math.exp(-(diff * diff) / (2.0 * params.sigma * params.sigma)) - 1.0;
+}
+
+// ====================== GRID OPERATIONS ======================
+function clearGrid() {
+  gridA.fill(0);
+  gridB.fill(0);
+  gridU.fill(1);
+  gridV.fill(0);
+  gridU2.fill(1);
+  gridV2.fill(0);
+  gridVel.fill(0);
+  generation = 0;
+  popHistory.fill(0);
+}
+
+function seedGrid() {
+  clearGrid();
+  if (currentRule === 'grayscott') {
+    // Fill U=1, V=0, then seed some V spots
+    gridU.fill(1);
+    gridV.fill(0);
+    const numSeeds = 12 + Math.floor(Math.random() * 8);
+    for (let s = 0; s < numSeeds; s++) {
+      const cx = 30 + Math.floor(Math.random() * (GRID_W - 60));
+      const cy = 30 + Math.floor(Math.random() * (GRID_H - 60));
+      const r = 3 + Math.floor(Math.random() * 5);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy <= r * r) {
+            const gx = (cx + dx + GRID_W) % GRID_W;
+            const gy = (cy + dy + GRID_H) % GRID_H;
+            const idx = gy * GRID_W + gx;
+            gridU[idx] = 0.5 + Math.random() * 0.1;
+            gridV[idx] = 0.25 + Math.random() * 0.1;
+          }
+        }
+      }
+    }
+  } else {
+    // Seed with random blobs
+    const numBlobs = 5 + Math.floor(Math.random() * 10);
+    for (let b = 0; b < numBlobs; b++) {
+      const cx = 20 + Math.floor(Math.random() * (GRID_W - 40));
+      const cy = 20 + Math.floor(Math.random() * (GRID_H - 40));
+      const r = 5 + Math.floor(Math.random() * 15);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < r) {
+            const gx = (cx + dx + GRID_W) % GRID_W;
+            const gy = (cy + dy + GRID_H) % GRID_H;
+            const falloff = Math.exp(-(dist * dist) / (r * r * 0.3));
+            gridA[gy * GRID_W + gx] = Math.min(1, falloff * (0.5 + Math.random() * 0.5));
+          }
+        }
+      }
+    }
+  }
+}
+
+function seedBlob(cx, cy, r) {
+  if (currentRule === 'grayscott') {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < r) {
+          const gx = (cx + dx + GRID_W) % GRID_W;
+          const gy = (cy + dy + GRID_H) % GRID_H;
+          const idx = gy * GRID_W + gx;
+          gridU[idx] = 0.5;
+          gridV[idx] = 0.25;
+        }
+      }
+    }
+  } else {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < r) {
+          const gx = (cx + dx + GRID_W) % GRID_W;
+          const gy = (cy + dy + GRID_H) % GRID_H;
+          const falloff = Math.exp(-(dist * dist) / (r * r * 0.3));
+          gridA[gy * GRID_W + gx] = Math.min(1, gridA[gy * GRID_W + gx] + falloff * 0.8);
+        }
+      }
+    }
+  }
+}
+
+// ====================== SIMULATION STEP ======================
+function stepLenia() {
+  const n = kernelWeights.length;
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const ox = kernelOffsets[i * 2];
+        const oy = kernelOffsets[i * 2 + 1];
+        const nx = (x + ox + GRID_W) % GRID_W;
+        const ny = (y + oy + GRID_H) % GRID_H;
+        sum += gridA[ny * GRID_W + nx] * kernelWeights[i];
+      }
+      const g = growth(sum);
+      const idx = y * GRID_W + x;
+      gridB[idx] = Math.max(0, Math.min(1, gridA[idx] + params.dt * g));
+    }
+  }
+  // Swap
+  const tmp = gridA;
+  gridA = gridB;
+  gridB = tmp;
+}
+
+function stepSmoothLife() {
+  // Similar to Lenia but with different growth function (step-like)
+  const n = kernelWeights.length;
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      let outerSum = 0;
+      let innerSum = 0;
+      let innerCount = 0;
+      const R = Math.round(params.R);
+      const innerR = R * 0.33;
+      for (let i = 0; i < n; i++) {
+        const ox = kernelOffsets[i * 2];
+        const oy = kernelOffsets[i * 2 + 1];
+        const dist = Math.sqrt(ox * ox + oy * oy);
+        const nx = (x + ox + GRID_W) % GRID_W;
+        const ny = (y + oy + GRID_H) % GRID_H;
+        const val = gridA[ny * GRID_W + nx];
+        if (dist <= innerR) {
+          innerSum += val;
+          innerCount++;
+        }
+        outerSum += val * kernelWeights[i];
+      }
+      const m = innerCount > 0 ? innerSum / innerCount : gridA[y * GRID_W + x];
+      // Smooth transition function
+      const s1 = 1.0 / (1.0 + Math.exp(-(m - 0.5) * 20));
+      const g = 2.0 * Math.exp(-((outerSum - params.mu) * (outerSum - params.mu)) / (2.0 * params.sigma * params.sigma)) - 1.0;
+      const blend = s1 * g + (1 - s1) * (g * 0.5);
+      const idx = y * GRID_W + x;
+      gridB[idx] = Math.max(0, Math.min(1, gridA[idx] + params.dt * blend));
+    }
+  }
+  const tmp = gridA; gridA = gridB; gridB = tmp;
+}
+
+function stepMultiScale() {
+  // Two kernels at different radii combined
+  const R = Math.round(params.R);
+  const R2 = Math.max(2, Math.round(R * 0.4));
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      // Large-scale kernel
+      let sum1 = 0, w1 = 0;
+      for (let dy = -R; dy <= R; dy++) {
+        for (let dx = -R; dx <= R; dx++) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > 0.5 && dist <= R) {
+            const nd = dist / R;
+            const wt = Math.exp(-((nd - 0.5) * (nd - 0.5)) / 0.045);
+            const nx = (x + dx + GRID_W) % GRID_W;
+            const ny = (y + dy + GRID_H) % GRID_H;
+            sum1 += gridA[ny * GRID_W + nx] * wt;
+            w1 += wt;
+          }
+        }
+      }
+      if (w1 > 0) sum1 /= w1;
+      // Small-scale kernel
+      let sum2 = 0, w2 = 0;
+      for (let dy = -R2; dy <= R2; dy++) {
+        for (let dx = -R2; dx <= R2; dx++) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > 0.5 && dist <= R2) {
+            const nd = dist / R2;
+            const wt = Math.exp(-((nd - 0.5) * (nd - 0.5)) / 0.045);
+            const nx = (x + dx + GRID_W) % GRID_W;
+            const ny = (y + dy + GRID_H) % GRID_H;
+            sum2 += gridA[ny * GRID_W + nx] * wt;
+            w2 += wt;
+          }
+        }
+      }
+      if (w2 > 0) sum2 /= w2;
+      const g1 = growth(sum1);
+      const g2 = 2.0 * Math.exp(-((sum2 - params.mu * 1.5) * (sum2 - params.mu * 1.5)) / (2.0 * params.sigma * params.sigma * 4)) - 1.0;
+      const idx = y * GRID_W + x;
+      gridB[idx] = Math.max(0, Math.min(1, gridA[idx] + params.dt * (g1 * 0.6 + g2 * 0.4)));
+    }
+  }
+  const tmp = gridA; gridA = gridB; gridB = tmp;
+}
+
+function stepGrayScott() {
+  const f = params.f, k = params.k, Du = params.Du, Dv = params.Dv;
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const idx = y * GRID_W + x;
+      const u = gridU[idx], v = gridV[idx];
+      // Laplacian (5-point stencil)
+      const xp = (x + 1) % GRID_W, xm = (x - 1 + GRID_W) % GRID_W;
+      const yp = (y + 1) % GRID_H, ym = (y - 1 + GRID_H) % GRID_H;
+      const lapU = gridU[y * GRID_W + xp] + gridU[y * GRID_W + xm]
+                 + gridU[yp * GRID_W + x] + gridU[ym * GRID_W + x] - 4 * u;
+      const lapV = gridV[y * GRID_W + xp] + gridV[y * GRID_W + xm]
+                 + gridV[yp * GRID_W + x] + gridV[ym * GRID_W + x] - 4 * v;
+      const uvv = u * v * v;
+      gridU2[idx] = Math.max(0, Math.min(1, u + Du * lapU - uvv + f * (1 - u)));
+      gridV2[idx] = Math.max(0, Math.min(1, v + Dv * lapV + uvv - (f + k) * v));
+    }
+  }
+  // Swap
+  let tmp = gridU; gridU = gridU2; gridU2 = tmp;
+  tmp = gridV; gridV = gridV2; gridV2 = tmp;
+}
+
+function stepWave() {
+  const damping = 0.998;
+  const speed = params.dt * 2;
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const idx = y * GRID_W + x;
+      const xp = (x + 1) % GRID_W, xm = (x - 1 + GRID_W) % GRID_W;
+      const yp = (y + 1) % GRID_H, ym = (y - 1 + GRID_H) % GRID_H;
+      const lap = gridA[y * GRID_W + xp] + gridA[y * GRID_W + xm]
+                + gridA[yp * GRID_W + x] + gridA[ym * GRID_W + x] - 4 * gridA[idx];
+      gridVel[idx] = (gridVel[idx] + speed * lap) * damping;
+    }
+  }
+  for (let i = 0; i < GRID_W * GRID_H; i++) {
+    gridA[i] = Math.max(0, Math.min(1, gridA[i] + gridVel[i]));
+  }
+}
+
+function stepPrimordial() {
+  // Multiple interacting Lenia channels — simplified as Lenia with
+  // state-dependent parameters
+  const n = kernelWeights.length;
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const ox = kernelOffsets[i * 2];
+        const oy = kernelOffsets[i * 2 + 1];
+        const nx = (x + ox + GRID_W) % GRID_W;
+        const ny = (y + oy + GRID_H) % GRID_H;
+        sum += gridA[ny * GRID_W + nx] * kernelWeights[i];
+      }
+      const idx = y * GRID_W + x;
+      const localMu = params.mu + gridA[idx] * 0.08;
+      const localSigma = params.sigma * (1 + gridA[idx] * 0.5);
+      const diff = sum - localMu;
+      const g = 2.0 * Math.exp(-(diff * diff) / (2.0 * localSigma * localSigma)) - 1.0;
+      gridB[idx] = Math.max(0, Math.min(1, gridA[idx] + params.dt * g));
+    }
+  }
+  const tmp = gridA; gridA = gridB; gridB = tmp;
+}
+
+function simulationStep() {
+  // Lerp parameters toward targets
+  for (const key of Object.keys(params)) {
+    params[key] += (targetParams[key] - params[key]) * LERP_SPEED;
+  }
+  // Rebuild kernel if R changed significantly
+  if (Math.abs(Math.round(params.R) - Math.round(targetParams.R)) >= 1 || kernelWeights.length === 0) {
+    buildKernel();
+  }
+
+  switch (currentRule) {
+    case 'lenia': stepLenia(); break;
+    case 'smoothlife': stepSmoothLife(); break;
+    case 'multiscale': stepMultiScale(); break;
+    case 'grayscott': stepGrayScott(); break;
+    case 'wave': stepWave(); break;
+    case 'primordial': stepPrimordial(); break;
+  }
+  generation++;
+}
+
+// ====================== RENDERING ======================
+function renderGrid() {
+  const data = simImageData.data;
+  const isGS = currentRule === 'grayscott';
+
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const idx = y * GRID_W + x;
+      const pix = idx * 4;
+      let r, g, b;
+
+      if (isGS) {
+        // Map U and V to color
+        const u = gridU[idx], v = gridV[idx];
+        const t = Math.max(0, Math.min(1, v * 3));
+        const col = samplePalette(t, currentPalette);
+        const brightness = 1 - u * 0.5;
+        r = col[0] * brightness;
+        g = col[1] * brightness;
+        b = col[2] * brightness;
+      } else {
+        const state = gridA[idx];
+        const col = samplePalette(state, currentPalette);
+        r = col[0];
+        g = col[1];
+        b = col[2];
+      }
+
+      data[pix]     = Math.floor(r * 255);
+      data[pix + 1] = Math.floor(g * 255);
+      data[pix + 2] = Math.floor(b * 255);
+      data[pix + 3] = 255;
+    }
+  }
+
+  simCtx.putImageData(simImageData, 0, 0);
+  // Copy to bloom canvas
+  bloomCtx.drawImage(simCanvas, 0, 0);
+}
+
+// ====================== STATISTICS ======================
+function computeStats() {
+  let sum = 0, maxV = 0;
+  const isGS = currentRule === 'grayscott';
+  const grid = isGS ? gridV : gridA;
+  const len = GRID_W * GRID_H;
+  for (let i = 0; i < len; i++) {
+    const v = grid[i];
+    sum += v;
+    if (v > maxV) maxV = v;
+  }
+  const avg = sum / len;
+  const pop = sum;
+
+  popHistory.shift();
+  popHistory.push(pop);
+
+  document.getElementById('s-pop').textContent = pop.toFixed(1);
+  document.getElementById('s-avg').textContent = avg.toFixed(4);
+  document.getElementById('s-max').textContent = maxV.toFixed(4);
+  document.getElementById('s-gen').textContent = generation;
+  document.getElementById('bb-gen').textContent = generation;
+  document.getElementById('bb-pop').textContent = pop.toFixed(1);
+}
+
+function drawSparkline() {
+  const c = sparkCtx;
+  const w = sparkCanvas.width, h = sparkCanvas.height;
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = 'rgba(0,0,0,0.3)';
+  c.fillRect(0, 0, w, h);
+
+  let maxP = 1;
+  for (let i = 0; i < popHistory.length; i++) {
+    if (popHistory[i] > maxP) maxP = popHistory[i];
+  }
+
+  c.beginPath();
+  c.strokeStyle = '#00e5ff';
+  c.lineWidth = 1.5;
+  for (let i = 0; i < popHistory.length; i++) {
+    const x = (i / (popHistory.length - 1)) * w;
+    const y = h - (popHistory[i] / maxP) * (h - 4) - 2;
+    if (i === 0) c.moveTo(x, y);
+    else c.lineTo(x, y);
+  }
+  c.stroke();
+
+  // Fill under
+  c.lineTo(w, h);
+  c.lineTo(0, h);
+  c.closePath();
+  c.fillStyle = 'rgba(0,229,255,0.08)';
+  c.fill();
+}
+
+function updateRuleDisplay() {
+  const el = document.getElementById('rule-display');
+  if (currentRule === 'grayscott') {
+    el.innerHTML = `RULE: GRAY-SCOTT<br>f: ${params.f.toFixed(4)}<br>k: ${params.k.toFixed(4)}<br>Du: ${params.Du.toFixed(3)}<br>Dv: ${params.Dv.toFixed(3)}`;
+  } else {
+    el.innerHTML = `RULE: ${currentRule.toUpperCase()}<br>&mu;: ${params.mu.toFixed(4)}<br>&sigma;: ${params.sigma.toFixed(4)}<br>dt: ${params.dt.toFixed(3)}<br>R: ${Math.round(params.R)}`;
+  }
+}
+
+// ====================== WEB AUDIO / VOICE DRIVE ======================
+let audioCtx, analyser, micStream, freqData, timeData;
+const BAND_COUNT = 4;
+let bandValues = [0, 0, 0, 0]; // sub-bass, low-mid, high-mid, treble
+
+async function startVoice() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const source = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.7;
+    source.connect(analyser);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    timeData = new Float32Array(analyser.fftSize);
+    voiceActive = true;
+    document.getElementById('voice-pill').classList.add('active');
+    document.getElementById('voice-toggle').classList.add('active');
+    document.getElementById('mic-dot').classList.add('active');
+  } catch (e) {
+    console.warn('Mic not available:', e);
+  }
+}
+
+function stopVoice() {
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
+  if (audioCtx) {
+    audioCtx.close();
+    audioCtx = null;
+  }
+  voiceActive = false;
+  document.getElementById('voice-pill').classList.remove('active');
+  document.getElementById('voice-toggle').classList.remove('active');
+  document.getElementById('mic-dot').classList.remove('active');
+  document.getElementById('mic-bar-fill').style.width = '0%';
+  document.getElementById('v-pitch').textContent = '—';
+  document.getElementById('v-volume').textContent = '—';
+  document.getElementById('vowel-display').textContent = '—';
+}
+
+function analyzeVoice() {
+  if (!voiceActive || !analyser) return;
+
+  analyser.getByteFrequencyData(freqData);
+  analyser.getFloatTimeDomainData(timeData);
+
+  // RMS volume
+  let rms = 0;
+  for (let i = 0; i < timeData.length; i++) {
+    rms += timeData[i] * timeData[i];
+  }
+  rms = Math.sqrt(rms / timeData.length);
+  voiceVolume = Math.min(1, rms * 5);
+
+  document.getElementById('mic-bar-fill').style.width = (voiceVolume * 100) + '%';
+  document.getElementById('v-volume').textContent = voiceVolume.toFixed(3);
+
+  // Pitch detection (autocorrelation)
+  voicePitch = detectPitch(timeData, audioCtx.sampleRate);
+  document.getElementById('v-pitch').textContent = voicePitch > 0 ? voicePitch.toFixed(0) + ' Hz' : '—';
+
+  // Band analysis
+  const binCount = freqData.length;
+  const nyquist = audioCtx.sampleRate / 2;
+  const bandEdges = [0, 150, 600, 2400, nyquist]; // sub-bass, low-mid, high-mid, treble
+  for (let b = 0; b < BAND_COUNT; b++) {
+    const startBin = Math.floor(bandEdges[b] / nyquist * binCount);
+    const endBin = Math.floor(bandEdges[b + 1] / nyquist * binCount);
+    let sum = 0;
+    for (let i = startBin; i < endBin && i < binCount; i++) {
+      sum += freqData[i];
+    }
+    bandValues[b] = sum / ((endBin - startBin) * 255);
+  }
+
+  // Vowel detection based on formant-like frequency ratios
+  detectedVowel = detectVowel(freqData, binCount, audioCtx.sampleRate);
+  document.getElementById('vowel-display').textContent = detectedVowel;
+
+  // Apply voice to parameters
+  if (voiceVolume > 0.02) {
+    // 1. Volume → dt
+    targetParams.dt = 0.02 + voiceVolume * 0.4;
+    document.getElementById('sl-dt').value = targetParams.dt;
+    document.getElementById('sv-dt').textContent = targetParams.dt.toFixed(2);
+
+    // 2. Pitch → mu
+    if (voicePitch > 50) {
+      const pitchNorm = Math.max(0, Math.min(1, (voicePitch - 80) / 500));
+      targetParams.mu = 0.05 + pitchNorm * 0.35;
+      document.getElementById('sl-mu').value = targetParams.mu;
+      document.getElementById('sv-mu').textContent = targetParams.mu.toFixed(3);
+    }
+
+    // 3. Sub-bass → kernel radius R
+    targetParams.R = 5 + bandValues[0] * 15;
+    document.getElementById('sl-R').value = targetParams.R;
+    document.getElementById('sv-R').textContent = Math.round(targetParams.R);
+
+    // 4. Low-mid → sigma
+    targetParams.sigma = 0.005 + bandValues[1] * 0.15;
+    document.getElementById('sl-sigma').value = targetParams.sigma;
+    document.getElementById('sv-sigma').textContent = targetParams.sigma.toFixed(3);
+
+    // 5. High-mid → f
+    targetParams.f = 0.02 + bandValues[2] * 0.06;
+    document.getElementById('sl-f').value = targetParams.f;
+    document.getElementById('sv-f').textContent = targetParams.f.toFixed(3);
+
+    // 6. Treble → k
+    targetParams.k = 0.04 + bandValues[3] * 0.03;
+    document.getElementById('sl-k').value = targetParams.k;
+    document.getElementById('sv-k').textContent = targetParams.k.toFixed(3);
+
+    // 7. Vowel → rule switch
+    const vowelRules = { 'OO': 'smoothlife', 'AH': 'lenia', 'EE': 'grayscott', 'OH': 'wave', 'EH': 'multiscale' };
+    if (detectedVowel !== '—' && vowelRules[detectedVowel] && vowelRules[detectedVowel] !== currentRule) {
+      if (voiceVolume > 0.15) {
+        setRule(vowelRules[detectedVowel]);
+      }
+    }
+
+    // 8. Onset detection — sudden volume spike
+    if (voiceVolume > 0.3 && prevRMS < 0.1) {
+      const rx = Math.floor(Math.random() * GRID_W);
+      const ry = Math.floor(Math.random() * GRID_H);
+      seedBlob(rx, ry, 5 + Math.floor(Math.random() * 8));
+    }
+
+    // 9. Sustained loud = rain mode
+    if (voiceVolume > 0.5) {
+      for (let i = 0; i < 3; i++) {
+        const rx = Math.floor(Math.random() * GRID_W);
+        const ry = Math.floor(Math.random() * GRID_H);
+        seedBlob(rx, ry, 2 + Math.floor(Math.random() * 4));
+      }
+    }
+  }
+
+  prevRMS = voiceVolume;
+}
+
+function detectPitch(buffer, sampleRate) {
+  // Simple autocorrelation pitch detection
+  const size = buffer.length;
+  let bestCorr = 0, bestLag = -1;
+  // Check for silence
+  let rms = 0;
+  for (let i = 0; i < size; i++) rms += buffer[i] * buffer[i];
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.01) return 0;
+
+  const minLag = Math.floor(sampleRate / 800); // 800 Hz max
+  const maxLag = Math.floor(sampleRate / 60);  // 60 Hz min
+  for (let lag = minLag; lag < maxLag && lag < size / 2; lag++) {
+    let corr = 0;
+    for (let i = 0; i < size - lag; i++) {
+      corr += buffer[i] * buffer[i + lag];
+    }
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestLag = lag;
+    }
+  }
+  if (bestLag > 0 && bestCorr > 0) {
+    return sampleRate / bestLag;
+  }
+  return 0;
+}
+
+function detectVowel(freqData, binCount, sampleRate) {
+  // Simple formant-based vowel detection
+  const nyquist = sampleRate / 2;
+  function bandEnergy(f1, f2) {
+    const b1 = Math.floor(f1 / nyquist * binCount);
+    const b2 = Math.floor(f2 / nyquist * binCount);
+    let sum = 0;
+    for (let i = b1; i < b2 && i < binCount; i++) sum += freqData[i];
+    return sum / Math.max(1, b2 - b1);
+  }
+
+  const e1 = bandEnergy(200, 500);   // F1 region
+  const e2 = bandEnergy(700, 1200);  // F2 low
+  const e3 = bandEnergy(1500, 2800); // F2 high
+  const total = e1 + e2 + e3;
+
+  if (total < 30) return '—';
+
+  const r1 = e1 / total;
+  const r2 = e2 / total;
+  const r3 = e3 / total;
+
+  if (r1 > 0.45 && r3 < 0.25) return 'OO';
+  if (r2 > 0.42) return 'AH';
+  if (r3 > 0.45) return 'EE';
+  if (r1 > 0.35 && r2 > 0.3) return 'OH';
+  if (r2 > 0.3 && r3 > 0.3) return 'EH';
+
+  return '—';
+}
+
+// ====================== MOUSE INTERACTION ======================
+let mouseDown = false;
+let mouseButton = 0;
+
+simCanvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  mouseButton = e.button;
+  paintAt(e);
+  e.preventDefault();
+});
+
+simCanvas.addEventListener('mousemove', (e) => {
+  if (mouseDown) paintAt(e);
+});
+
+window.addEventListener('mouseup', () => { mouseDown = false; });
+
+simCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+simCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  brushSize = Math.max(1, Math.min(30, brushSize + (e.deltaY > 0 ? -1 : 1)));
+  document.getElementById('sl-brush').value = brushSize;
+  document.getElementById('sv-brush').textContent = brushSize;
+  document.getElementById('bb-brush').textContent = brushSize;
+});
+
+simCanvas.addEventListener('dblclick', (e) => {
+  const rect = simCanvas.getBoundingClientRect();
+  const gx = Math.floor((e.clientX - rect.left) / rect.width * GRID_W);
+  const gy = Math.floor((e.clientY - rect.top) / rect.height * GRID_H);
+  // Drop a creature
+  seedBlob(gx, gy, 8 + Math.floor(Math.random() * 6));
+});
+
+function paintAt(e) {
+  const rect = simCanvas.getBoundingClientRect();
+  const gx = Math.floor((e.clientX - rect.left) / rect.width * GRID_W);
+  const gy = Math.floor((e.clientY - rect.top) / rect.height * GRID_H);
+  const erase = mouseButton === 2;
+
+  const positions = [[gx, gy]];
+  if (symmetryMode === '4fold') {
+    positions.push([GRID_W - 1 - gx, gy], [gx, GRID_H - 1 - gy], [GRID_W - 1 - gx, GRID_H - 1 - gy]);
+  } else if (symmetryMode === '8fold') {
+    const cx = GRID_W / 2, cy = GRID_H / 2;
+    const dx = gx - cx, dy = gy - cy;
+    positions.length = 0;
+    positions.push(
+      [cx + dx, cy + dy], [cx - dx, cy + dy], [cx + dx, cy - dy], [cx - dx, cy - dy],
+      [cx + dy, cy + dx], [cx - dy, cy + dx], [cx + dy, cy - dx], [cx - dy, cy - dx]
+    );
+  }
+
+  for (const [px, py] of positions) {
+    for (let dy = -brushSize; dy <= brushSize; dy++) {
+      for (let dx = -brushSize; dx <= brushSize; dx++) {
+        if (dx * dx + dy * dy > brushSize * brushSize) continue;
+        const x = (Math.round(px) + dx + GRID_W) % GRID_W;
+        const y = (Math.round(py) + dy + GRID_H) % GRID_H;
+        const idx = y * GRID_W + x;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const falloff = 1 - dist / brushSize;
+        if (currentRule === 'grayscott') {
+          if (erase) {
+            gridU[idx] = 1;
+            gridV[idx] = 0;
+          } else {
+            gridU[idx] = Math.max(0, gridU[idx] - falloff * 0.3);
+            gridV[idx] = Math.min(1, gridV[idx] + falloff * 0.3);
+          }
+        } else {
+          if (erase) {
+            gridA[idx] = Math.max(0, gridA[idx] - falloff * 0.5);
+          } else {
+            gridA[idx] = Math.min(1, gridA[idx] + falloff * 0.5);
+          }
+        }
+      }
+    }
+  }
+}
+
+// ====================== UI EVENT WIRING ======================
+function updateRuleButtons() {
+  document.querySelectorAll('#rule-btns .btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.rule === currentRule);
+  });
+}
+
+function updatePresetButtons() {
+  document.querySelectorAll('#preset-btns .btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === currentPreset);
+  });
+}
+
+document.querySelectorAll('#rule-btns .btn').forEach(b => {
+  b.addEventListener('click', () => {
+    setRule(b.dataset.rule);
+    seedGrid();
+  });
+});
+
+document.querySelectorAll('#preset-btns .btn').forEach(b => {
+  b.addEventListener('click', () => applyPreset(b.dataset.preset));
+});
+
+document.querySelectorAll('#palette-btns .btn').forEach(b => {
+  b.addEventListener('click', () => {
+    currentPalette = b.dataset.pal;
+    document.querySelectorAll('#palette-btns .btn').forEach(bb => bb.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+
+// Sliders
+function wireSlider(id, param, valId, fmt) {
+  const sl = document.getElementById(id);
+  sl.addEventListener('input', () => {
+    const v = parseFloat(sl.value);
+    targetParams[param] = v;
+    document.getElementById(valId).textContent = fmt(v);
+  });
+}
+wireSlider('sl-mu', 'mu', 'sv-mu', v => v.toFixed(3));
+wireSlider('sl-sigma', 'sigma', 'sv-sigma', v => v.toFixed(3));
+wireSlider('sl-dt', 'dt', 'sv-dt', v => v.toFixed(2));
+wireSlider('sl-R', 'R', 'sv-R', v => Math.round(v).toString());
+wireSlider('sl-f', 'f', 'sv-f', v => v.toFixed(3));
+wireSlider('sl-k', 'k', 'sv-k', v => v.toFixed(3));
+wireSlider('sl-Du', 'Du', 'sv-Du', v => v.toFixed(2));
+wireSlider('sl-Dv', 'Dv', 'sv-Dv', v => v.toFixed(3));
+
+document.getElementById('sl-brush').addEventListener('input', function() {
+  brushSize = parseInt(this.value);
+  document.getElementById('sv-brush').textContent = brushSize;
+  document.getElementById('bb-brush').textContent = brushSize;
+});
+
+document.getElementById('btn-clear').addEventListener('click', clearGrid);
+document.getElementById('btn-seed').addEventListener('click', seedGrid);
+document.getElementById('btn-pause').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('btn-pause').textContent = paused ? 'Resume [P]' : 'Pause [P]';
+});
+
+document.getElementById('sym-btn').addEventListener('click', function() {
+  if (symmetryMode === 'none') { symmetryMode = '4fold'; this.textContent = '4-Fold'; }
+  else if (symmetryMode === '4fold') { symmetryMode = '8fold'; this.textContent = '8-Fold'; }
+  else { symmetryMode = 'none'; this.textContent = 'None'; }
+});
+
+document.getElementById('voice-toggle').addEventListener('click', () => {
+  if (voiceActive) stopVoice();
+  else startVoice();
+});
+
+// ====================== KEYBOARD SHORTCUTS ======================
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case '1': applyPreset('orbium'); break;
+    case '2': applyPreset('mitosis'); break;
+    case '3': applyPreset('coral'); break;
+    case '4': applyPreset('spirals'); break;
+    case '5': applyPreset('spots'); break;
+    case '6': applyPreset('worms'); break;
+    case ' ':
+      e.preventDefault();
+      if (voiceActive) stopVoice();
+      else startVoice();
+      break;
+    case 'r': case 'R': seedGrid(); break;
+    case 'c': case 'C': clearGrid(); break;
+    case 'p': case 'P':
+      paused = !paused;
+      document.getElementById('btn-pause').textContent = paused ? 'Resume [P]' : 'Pause [P]';
+      break;
+    case '[':
+      brushSize = Math.max(1, brushSize - 1);
+      document.getElementById('sl-brush').value = brushSize;
+      document.getElementById('sv-brush').textContent = brushSize;
+      document.getElementById('bb-brush').textContent = brushSize;
+      break;
+    case ']':
+      brushSize = Math.min(30, brushSize + 1);
+      document.getElementById('sl-brush').value = brushSize;
+      document.getElementById('sv-brush').textContent = brushSize;
+      document.getElementById('bb-brush').textContent = brushSize;
+      break;
+    case 'Tab':
+      e.preventDefault();
+      const palNames = Object.keys(palettes);
+      const ci = palNames.indexOf(currentPalette);
+      currentPalette = palNames[(ci + 1) % palNames.length];
+      document.querySelectorAll('#palette-btns .btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.pal === currentPalette);
+      });
+      break;
+  }
+});
+
+// ====================== MAIN LOOP ======================
+function mainLoop(timestamp) {
+  // FPS
+  frameCount++;
+  if (timestamp - lastFPSTime >= 1000) {
+    currentFPS = frameCount;
+    frameCount = 0;
+    lastFPSTime = timestamp;
+    document.getElementById('s-fps').textContent = currentFPS;
+    document.getElementById('bb-fps').textContent = currentFPS;
+  }
+
+  // Voice analysis
+  if (voiceActive) analyzeVoice();
+
+  // Simulation step(s)
+  if (!paused) {
+    // For Gray-Scott, do multiple steps per frame for faster evolution
+    const steps = currentRule === 'grayscott' ? 4 : 1;
+    for (let s = 0; s < steps; s++) {
+      simulationStep();
+    }
+  }
+
+  // Render
+  renderGrid();
+
+  // Stats (every 5 frames)
+  if (generation % 5 === 0) {
+    computeStats();
+    drawSparkline();
+    updateRuleDisplay();
+  }
+
+  requestAnimationFrame(mainLoop);
+}
+
+// ====================== INIT ======================
+function init() {
+  layoutCanvases();
+  buildKernel();
+  seedGrid();
+  requestAnimationFrame(mainLoop);
+}
+
+window.addEventListener('resize', layoutCanvases);
+init();
+</script>
+</body>
+</html>
