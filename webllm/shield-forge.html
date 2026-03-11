@@ -567,11 +567,9 @@ document.getElementById('btn-load-model').addEventListener('click', async () => 
   addChatMsg('Loading ' + modelId + '...', 'system');
 
   try {
-    const webllm = await import('https://esm.run/@anthropic-ai/sdk');
-  } catch(e) { /* fallback */ }
-
-  try {
-    const webllmModule = await import('https://esm.run/@mlc-ai/web-llm');
+    const webllmModule = await import('https://esm.run/@mlc-ai/web-llm').catch(async () => {
+      return await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
+    });
     modelStatus.textContent = 'MODEL: initializing...';
 
     engine = await webllmModule.CreateMLCEngine(modelId, {

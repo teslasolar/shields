@@ -957,7 +957,9 @@ async function loadModel() {
   llmStatus.textContent = 'LOADING ' + modelId.split('-').slice(0, 2).join('-') + '...';
   llmStatus.style.color = CYAN;
   try {
-    const webllm = await import('https://esm.run/@anthropic-ai/web-llm');
+    const webllm = await import('https://esm.run/@mlc-ai/web-llm').catch(async () => {
+      return await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
+    });
     engine = await webllm.CreateMLCEngine(modelId, {
       initProgressCallback: (progress) => {
         llmStatus.textContent = progress.text || ('LOADING ' + Math.round((progress.progress || 0) * 100) + '%');
@@ -969,24 +971,9 @@ async function loadModel() {
     llmStatus.style.color = GREEN;
     document.getElementById('load-overlay').style.display = 'none';
   } catch (e) {
-    // Try alternate CDN
-    try {
-      const webllm = await import('https://esm.run/@mlc-ai/web-llm');
-      engine = await webllm.CreateMLCEngine(modelId, {
-        initProgressCallback: (progress) => {
-          llmStatus.textContent = progress.text || ('LOADING ' + Math.round((progress.progress || 0) * 100) + '%');
-        }
-      });
-      llmLoaded = true;
-      llmLoading = false;
-      llmStatus.textContent = 'LOADED - READY';
-      llmStatus.style.color = GREEN;
-      document.getElementById('load-overlay').style.display = 'none';
-    } catch (e2) {
-      llmLoading = false;
-      llmStatus.textContent = 'LOAD FAILED: ' + e2.message;
-      llmStatus.style.color = '#f44';
-    }
+    llmLoading = false;
+    llmStatus.textContent = 'LOAD FAILED: ' + e.message;
+    llmStatus.style.color = '#f44';
   }
 }
 

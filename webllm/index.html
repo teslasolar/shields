@@ -516,10 +516,10 @@ async function loadModel() {
   status.textContent = 'Importing WebLLM...';
 
   try {
-    const mlc = await import('https://esm.run/@anthropic-ai/sdk').catch(() => null);
-    const { CreateMLCEngine } = await import('https://esm.run/@anthropic-ai/sdk').catch(async () => {
-      return await import('https://esm.run/@mlc-ai/web-llm');
+    const webllm = await import('https://esm.run/@mlc-ai/web-llm').catch(async () => {
+      return await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
     });
+    const { CreateMLCEngine } = webllm;
 
     status.textContent = 'Loading ' + modelId + '...';
     engine = await CreateMLCEngine(modelId, {
@@ -762,8 +762,8 @@ document.getElementById('skip-btn').onclick = () => {
 };
 
 // ===== INIT =====
-checkWebGPU();
-initVoice();
+checkWebGPU().catch(() => {});
+initVoice().catch(() => {});
 addSystemMsg('SHIELD LLM SANDBOX initialized. M₇ = 2¹²⁷ − 1. Primes: [2, 3, 5, 7, 11, 13, 17].');
 </script>
 <script src="../shared/nav.js"></script>
