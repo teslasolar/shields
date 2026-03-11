@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-BALANCED — Balanced Prime Visualization</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas { display: block; cursor: grab; }
+canvas:active { cursor: grabbing; }
+
+#statsPanel {
+  position: fixed; top: 16px; right: 16px; z-index: 90;
+  background: rgba(6,6,16,0.92); border: 1px solid rgba(0,170,255,0.15);
+  border-radius: 4px; padding: 14px 18px; font-size: 11px;
+  min-width: 250px; backdrop-filter: blur(6px);
+  line-height: 1.8; pointer-events: none;
+}
+#statsPanel .title {
+  font-size: 13px; color: #ffd700; letter-spacing: 3px; margin-bottom: 8px;
+  border-bottom: 1px solid rgba(0,170,255,0.15); padding-bottom: 6px;
+}
+#statsPanel .label { color: #556; }
+#statsPanel .value { color: #a0c0e0; }
+#statsPanel .gold { color: #ffd700; }
+#statsPanel .cyan { color: #00e5ff; }
+
+#tooltip {
+  position: fixed; display: none;
+  background: rgba(6,6,16,0.95); border: 1px solid rgba(0,170,255,0.25);
+  padding: 10px 14px; font-size: 11px; line-height: 1.7;
+  pointer-events: none; z-index: 100; max-width: 340px;
+  border-radius: 3px; backdrop-filter: blur(6px);
+}
+#tooltip .tp { color: #ffd700; font-size: 13px; font-weight: bold; }
+#tooltip .tc { color: #556; }
+#tooltip .tv { color: #a0c0e0; }
+#tooltip .balanced { color: #ffd700; }
+#tooltip .unbalanced { color: #4488aa; }
+
+#detail {
+  position: fixed; display: none;
+  background: rgba(6,6,16,0.95); border: 1px solid rgba(255,215,0,0.3);
+  padding: 14px 18px; font-size: 11px; line-height: 1.8;
+  z-index: 95; max-width: 380px;
+  border-radius: 4px; backdrop-filter: blur(8px);
+  bottom: 80px; left: 16px;
+}
+#detail .close {
+  position: absolute; top: 6px; right: 10px;
+  color: #556; cursor: pointer; font-size: 14px;
+}
+#detail .close:hover { color: #ffd700; }
+#detail .dt { color: #ffd700; font-size: 13px; letter-spacing: 2px; margin-bottom: 6px; }
+#detail .dl { color: #556; }
+#detail .dv { color: #a0c0e0; }
+#detail .dg { color: #ffd700; }
+
+#hint {
+  position: fixed; bottom: 16px; left: 16px; z-index: 90;
+  background: rgba(6,6,16,0.88); border: 1px solid rgba(0,170,255,0.15);
+  border-radius: 4px; padding: 8px 14px; font-size: 10px;
+  color: #445; backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="statsPanel">
+  <div class="title">SHIELD-BALANCED</div>
+  <div><span class="label">BALANCED PRIMES FOUND: </span><span class="gold" id="statCount">0</span></div>
+  <div><span class="label">TOTAL PRIMES (to 2000): </span><span class="value" id="statTotal">0</span></div>
+  <div><span class="label">SCAN PRIME: </span><span class="cyan" id="statCurrent">--</span></div>
+  <div><span class="label">DEVIATION: </span><span class="value" id="statDeviation">--</span></div>
+  <div><span class="label">VIEW RANGE: </span><span class="value" id="statRange">--</span></div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="detail">
+  <span class="close" onclick="closeDetail()">&times;</span>
+  <div id="detailContent"></div>
+</div>
+
+<div id="hint">
+  Scroll to zoom &middot; Drag to pan &middot; Click a prime for details
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const detailEl = document.getElementById('detail');
+
+// --- Sieve & Prime Data ---
+const MAX_N = 2000;
+
+function sieve(n) {
+  const s = new Uint8Array(n + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= n; i++) {
+    if (!s[i]) for (let j = i * i; j <= n; j += i) s[j] = 1;
+  }
+  const primes = [];
+  for (let i = 2; i <= n; i++) if (!s[i]) primes.push(i);
+  return primes;
+}
+
+const primes = sieve(MAX_N);
+const primeIndex = {};
+primes.forEach((p, i) => primeIndex[p] = i);
+
+// Compute balance info for each prime (except first and last)
+const primeData = primes.map((p, i) => {
+  const prev = i > 0 ? primes[i - 1] : null;
+  const next = i < primes.length - 1 ? primes[i + 1] : null;
+  let deviation = null;
+  let isBalanced = false;
+  let mean = null;
+
+  if (prev !== null && next !== null) {
+    mean = (prev + next) / 2;
+    deviation = p - mean; // 0 = perfectly balanced
+    isBalanced = (deviation === 0);
+  }
+
+  return { prime: p, index: i, prev, next, mean, deviation, isBalanced };
+});
+
+const balancedPrimes = primeData.filter(d => d.isBalanced);
+const balancedSet = new Set(balancedPrimes.map(d => d.prime));
+
+document.getElementById('statTotal').textContent = primes.length;
+
+// --- State ---
+let W, H;
+let offsetX = 0, offsetY = 0;
+let zoom = 1.0;
+let animTime = 0;
+let scanIndex = 0; // current scanning prime index for animation
+let scanSpeed = 12; // primes per second
+let dragging = false, dragStartX = 0, dragStartY = 0, dragOffsetX = 0, dragOffsetY = 0;
+let hoveredPrime = null;
+let selectedPrime = null;
+let mouseX = 0, mouseY = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- Coordinate transforms ---
+function getScale() { return (W / 350) * zoom; }
+function worldToScreenX(n) { return 80 + (n - 1) * getScale() + offsetX; }
+function worldToScreenY(baseY) { return baseY + offsetY; }
+function screenToWorldX(sx) { return (sx - 80 - offsetX) / getScale() + 1; }
+
+// --- Input ---
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const mx = e.clientX;
+  const worldBefore = screenToWorldX(mx);
+  zoom = Math.max(0.08, Math.min(12, zoom * factor));
+  const worldAfter = screenToWorldX(mx);
+  offsetX += (worldAfter - worldBefore) * getScale();
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragOffsetX = offsetX;
+  dragOffsetY = offsetY;
+});
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (dragging) {
+    offsetX = dragOffsetX + (e.clientX - dragStartX);
+    offsetY = dragOffsetY + (e.clientY - dragStartY);
+  } else {
+    updateHover(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (dragging && Math.abs(e.clientX - dragStartX) < 5 && Math.abs(e.clientY - dragStartY) < 5) {
+    handleClick(e.clientX, e.clientY);
+  }
+  dragging = false;
+});
+canvas.addEventListener('mouseleave', () => {
+  dragging = false;
+  hoveredPrime = null;
+  tooltip.style.display = 'none';
+});
+
+function updateHover(mx, my) {
+  const lineY = worldToScreenY(H * 0.45);
+  const nodeY = lineY - 30;
+  let best = null, bestDist = 20;
+
+  for (let i = 0; i < primes.length; i++) {
+    const sx = worldToScreenX(primes[i]);
+    if (sx < -50 || sx > W + 50) continue;
+    const dx = mx - sx;
+    const dy = my - nodeY;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestDist) { bestDist = d; best = primeData[i]; }
+  }
+
+  hoveredPrime = best;
+
+  if (best) {
+    let html = `<div class="tp">Prime: ${best.prime}</div>`;
+    html += `<div><span class="tc">Index: </span><span class="tv">#${best.index + 1} of ${primes.length}</span></div>`;
+    if (best.prev !== null && best.next !== null) {
+      html += `<div><span class="tc">Neighbors: </span><span class="tv">${best.prev}, ${best.next}</span></div>`;
+      html += `<div><span class="tc">Mean of neighbors: </span><span class="tv">${best.mean}</span></div>`;
+      html += `<div><span class="tc">Deviation: </span><span class="${best.isBalanced ? 'balanced' : 'unbalanced'}">${best.deviation > 0 ? '+' : ''}${best.deviation}</span></div>`;
+      if (best.isBalanced) {
+        html += `<div class="balanced">BALANCED PRIME</div>`;
+        html += `<div class="tc">${best.prev} + ${best.next} = ${best.prev + best.next} => ${best.prev + best.next}/2 = ${best.prime}</div>`;
+      }
+    } else {
+      html += `<div class="tc">(edge prime, no balance check)</div>`;
+    }
+    tooltip.innerHTML = html;
+    tooltip.style.display = 'block';
+    tooltip.style.left = Math.min(mx + 14, W - 350) + 'px';
+    tooltip.style.top = (my - 10) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+function handleClick(mx, my) {
+  const lineY = worldToScreenY(H * 0.45);
+  const nodeY = lineY - 30;
+  let best = null, bestDist = 25;
+
+  for (let i = 0; i < primes.length; i++) {
+    const sx = worldToScreenX(primes[i]);
+    if (sx < -50 || sx > W + 50) continue;
+    const dx = mx - sx;
+    const dy = my - nodeY;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestDist) { bestDist = d; best = primeData[i]; }
+  }
+
+  if (best) {
+    selectedPrime = best;
+    showDetail(best);
+  } else {
+    closeDetail();
+  }
+}
+
+function showDetail(d) {
+  let html = `<div class="dt">${d.isBalanced ? 'BALANCED PRIME' : 'PRIME'} ${d.prime}</div>`;
+  html += `<div><span class="dl">Index: </span><span class="dv">#${d.index + 1}</span></div>`;
+
+  if (d.prev !== null && d.next !== null) {
+    html += `<div><span class="dl">Previous prime: </span><span class="dv">${d.prev}</span></div>`;
+    html += `<div><span class="dl">Next prime: </span><span class="dv">${d.next}</span></div>`;
+    html += `<div><span class="dl">Arithmetic mean: </span><span class="dv">(${d.prev} + ${d.next}) / 2 = ${d.mean}</span></div>`;
+    html += `<div><span class="dl">Deviation: </span><span class="${d.isBalanced ? 'dg' : 'dv'}">${d.deviation > 0 ? '+' : ''}${d.deviation}</span></div>`;
+
+    if (d.isBalanced) {
+      html += `<div style="margin-top:6px;border-top:1px solid rgba(0,170,255,0.1);padding-top:6px;">`;
+      html += `<span class="dg">${d.prime} = (${d.prev} + ${d.next}) / 2</span>`;
+      html += `</div>`;
+      html += `<div><span class="dl">Gap to prev: </span><span class="dv">${d.prime - d.prev}</span></div>`;
+      html += `<div><span class="dl">Gap to next: </span><span class="dv">${d.next - d.prime}</span></div>`;
+    } else {
+      const gapPrev = d.prime - d.prev;
+      const gapNext = d.next - d.prime;
+      html += `<div><span class="dl">Gap to prev: </span><span class="dv">${gapPrev}</span></div>`;
+      html += `<div><span class="dl">Gap to next: </span><span class="dv">${gapNext}</span></div>`;
+      html += `<div><span class="dl">Lean: </span><span class="dv">${gapPrev < gapNext ? 'closer to ' + d.prev : gapPrev > gapNext ? 'closer to ' + d.next : 'equidistant'}</span></div>`;
+    }
+  } else {
+    html += `<div class="dl">Edge prime (first or last in range)</div>`;
+  }
+
+  document.getElementById('detailContent').innerHTML = html;
+  detailEl.style.display = 'block';
+}
+
+function closeDetail() {
+  selectedPrime = null;
+  detailEl.style.display = 'none';
+}
+
+// --- Color helpers ---
+function balanceColor(deviation, maxDev) {
+  if (deviation === null) return 'rgba(40,50,80,0.5)';
+  const absDev = Math.abs(deviation);
+  if (absDev === 0) return '#ffd700'; // gold
+  const t = Math.min(absDev / maxDev, 1);
+  if (t < 0.3) {
+    // gold to cyan
+    const u = t / 0.3;
+    const r = Math.round(255 * (1 - u) + 0 * u);
+    const g = Math.round(215 * (1 - u) + 229 * u);
+    const b = Math.round(0 * (1 - u) + 255 * u);
+    return `rgb(${r},${g},${b})`;
+  } else {
+    // cyan to dim blue
+    const u = (t - 0.3) / 0.7;
+    const r = Math.round(0 * (1 - u) + 40 * u);
+    const g = Math.round(229 * (1 - u) + 60 * u);
+    const b = Math.round(255 * (1 - u) + 120 * u);
+    return `rgb(${r},${g},${b})`;
+  }
+}
+
+function balanceAlpha(deviation, maxDev) {
+  if (deviation === null) return 0.3;
+  const absDev = Math.abs(deviation);
+  if (absDev === 0) return 1.0;
+  return Math.max(0.25, 1.0 - (absDev / maxDev) * 0.7);
+}
+
+// --- Drawing ---
+function glow(color, blur) {
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+}
+function noGlow() {
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+}
+
+// Max deviation for color scaling
+const maxDeviation = Math.max(...primeData.filter(d => d.deviation !== null).map(d => Math.abs(d.deviation)));
+
+function drawScene(t) {
+  const scale = getScale();
+  const lineY = worldToScreenY(H * 0.45);
+  const nodeY = lineY - 30;
+  const beamY = lineY + 60;
+
+  const visLeft = screenToWorldX(-50);
+  const visRight = screenToWorldX(W + 50);
+
+  // Update stats
+  const scannedBalanced = balancedPrimes.filter(d => d.index <= scanIndex).length;
+  document.getElementById('statCount').textContent = scannedBalanced;
+
+  const currentScan = scanIndex < primes.length ? primes[Math.floor(scanIndex)] : primes[primes.length - 1];
+  document.getElementById('statCurrent').textContent = currentScan;
+
+  const currentData = primeData[Math.min(Math.floor(scanIndex), primeData.length - 1)];
+  if (currentData && currentData.deviation !== null) {
+    document.getElementById('statDeviation').textContent =
+      (currentData.deviation > 0 ? '+' : '') + currentData.deviation +
+      (currentData.isBalanced ? ' (BALANCED!)' : '');
+  }
+
+  document.getElementById('statRange').textContent =
+    Math.max(1, Math.round(visLeft)) + ' - ' + Math.min(MAX_N, Math.round(visRight));
+
+  // Number line
+  ctx.strokeStyle = 'rgba(60,80,120,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, lineY);
+  ctx.lineTo(W, lineY);
+  ctx.stroke();
+
+  // Tick marks
+  const tickStep = scale > 12 ? 1 : scale > 5 ? 5 : scale > 1.5 ? 10 : scale > 0.5 ? 50 : 100;
+  ctx.fillStyle = 'rgba(60,80,110,0.4)';
+  ctx.font = `${Math.min(10, Math.max(7, scale * 0.7))}px 'Courier New', monospace`;
+  ctx.textAlign = 'center';
+  for (let n = Math.max(0, Math.floor(visLeft / tickStep) * tickStep); n <= visRight; n += tickStep) {
+    const sx = worldToScreenX(n);
+    if (sx < -20 || sx > W + 20) continue;
+    ctx.fillStyle = 'rgba(60,80,110,0.25)';
+    ctx.fillRect(sx, lineY - 3, 1, 6);
+    if (scale > 2 || n % (tickStep * 2) === 0) {
+      ctx.fillStyle = 'rgba(80,100,140,0.4)';
+      ctx.fillText(n, sx, lineY + 14);
+    }
+  }
+
+  // --- Draw balance beams for visible primes ---
+  for (let i = 1; i < primes.length - 1; i++) {
+    const d = primeData[i];
+    if (d.index > scanIndex + 5) continue; // not yet scanned (allow a few ahead for smooth transition)
+
+    const sx = worldToScreenX(d.prime);
+    if (sx < -100 || sx > W + 100) continue;
+
+    const sxPrev = worldToScreenX(d.prev);
+    const sxNext = worldToScreenX(d.next);
+
+    // only draw beams if they fit reasonably
+    if (sxNext - sxPrev < 4) continue;
+
+    const revealFrac = Math.min(1, Math.max(0, scanIndex - d.index + 1));
+    const color = balanceColor(d.deviation, maxDeviation);
+    const alpha = balanceAlpha(d.deviation, maxDeviation) * revealFrac;
+
+    // Beam: a thin line from prev to next, tilted based on deviation
+    // The fulcrum is at the prime's position
+    // For balanced: beam is level. For unbalanced: beam tilts.
+    const fulcrumX = sx;
+    const beamBaseline = beamY;
+    const beamHalfLen = (sxNext - sxPrev) / 2;
+
+    // Tilt angle based on deviation (negative = lean left, positive = lean right)
+    const maxTilt = Math.PI / 12;
+    const tiltNorm = d.deviation / maxDeviation;
+    // Animate tilt: start tilted, settle if balanced
+    let tiltAngle;
+    if (d.isBalanced) {
+      // Animate from tilted to level
+      const settleT = Math.min(1, revealFrac * 2);
+      const wobble = Math.sin(t * 3 + d.prime) * 0.02 * (1 - settleT);
+      tiltAngle = (1 - settleT) * maxTilt * 0.5 + wobble;
+    } else {
+      tiltAngle = tiltNorm * maxTilt * revealFrac;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.7;
+
+    // Fulcrum triangle
+    const fSize = Math.min(6, Math.max(3, scale * 0.5));
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(fulcrumX, beamBaseline + fSize);
+    ctx.lineTo(fulcrumX - fSize * 0.7, beamBaseline + fSize * 2.2);
+    ctx.lineTo(fulcrumX + fSize * 0.7, beamBaseline + fSize * 2.2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Beam line (rotated around fulcrum)
+    const cosA = Math.cos(tiltAngle);
+    const sinA = Math.sin(tiltAngle);
+    const leftDx = -(fulcrumX - sxPrev);
+    const rightDx = sxNext - fulcrumX;
+
+    const x1 = fulcrumX - leftDx * cosA;
+    const y1 = beamBaseline + leftDx * sinA;
+    const x2 = fulcrumX + rightDx * cosA;
+    const y2 = beamBaseline - rightDx * sinA;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, scale * 0.15);
+    if (d.isBalanced) glow(color, 6);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    noGlow();
+
+    // Small dots at beam endpoints (neighbors)
+    const dotR = Math.max(1.5, scale * 0.12);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x1, y1, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x2, y2, dotR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // --- Arcs for balanced primes connecting to neighbors ---
+  for (let bi = 0; bi < balancedPrimes.length; bi++) {
+    const d = balancedPrimes[bi];
+    if (d.index > scanIndex) continue;
+
+    const sx = worldToScreenX(d.prime);
+    const sxPrev = worldToScreenX(d.prev);
+    const sxNext = worldToScreenX(d.next);
+
+    if (sxNext < -50 || sxPrev > W + 50) continue;
+
+    const revealFrac = Math.min(1, Math.max(0, scanIndex - d.index + 1));
+    const arcH = 20 + Math.min(30, (d.next - d.prev) * 0.3);
+
+    ctx.save();
+    ctx.globalAlpha = 0.25 * revealFrac;
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 1.2;
+    glow('#ffd700', 10);
+
+    // Arc from prev through prime to next (above the line)
+    const cx = (sxPrev + sxNext) / 2;
+    const rx = (sxNext - sxPrev) / 2;
+    if (rx > 2) {
+      ctx.beginPath();
+      ctx.ellipse(cx, nodeY, rx, arcH, 0, Math.PI, 0);
+      ctx.stroke();
+    }
+    noGlow();
+    ctx.restore();
+  }
+
+  // --- Draw prime nodes ---
+  for (let i = 0; i < primes.length; i++) {
+    const d = primeData[i];
+    const p = d.prime;
+    const sx = worldToScreenX(p);
+    if (sx < -30 || sx > W + 30) continue;
+
+    const isScanned = d.index <= scanIndex;
+    const revealFrac = isScanned ? Math.min(1, scanIndex - d.index + 1) : 0.2;
+
+    const color = balanceColor(d.deviation, maxDeviation);
+    let radius = 3;
+    let glowAmt = 0;
+
+    if (d.isBalanced && isScanned) {
+      radius = 5.5;
+      glowAmt = 16;
+    } else if (isScanned && d.deviation !== null && Math.abs(d.deviation) <= maxDeviation * 0.3) {
+      radius = 4;
+      glowAmt = 8;
+    }
+
+    const isHovered = hoveredPrime && hoveredPrime.prime === p;
+    const isSelected = selectedPrime && selectedPrime.prime === p;
+    if (isHovered || isSelected) {
+      radius += 2;
+      glowAmt += 8;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = revealFrac;
+
+    // Golden halo for balanced primes
+    if (d.isBalanced && isScanned) {
+      const haloPhase = 0.4 + 0.2 * Math.sin(t * 2 + p * 0.1);
+      ctx.globalAlpha = haloPhase * revealFrac;
+      glow('#ffd700', 20);
+      ctx.beginPath();
+      ctx.arc(sx, nodeY, radius + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      noGlow();
+
+      // Second halo ring
+      ctx.globalAlpha = haloPhase * 0.4 * revealFrac;
+      ctx.beginPath();
+      ctx.arc(sx, nodeY, radius + 11, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,215,0,0.3)';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      ctx.globalAlpha = revealFrac;
+    }
+
+    // Node dot
+    if (glowAmt > 0) glow(color, glowAmt);
+    ctx.beginPath();
+    ctx.arc(sx, nodeY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    noGlow();
+
+    // Label
+    if (scale > 6 || (d.isBalanced && scale > 3) || isHovered || isSelected) {
+      ctx.globalAlpha = (isHovered || isSelected ? 0.95 : 0.65) * revealFrac;
+      ctx.fillStyle = color;
+      ctx.font = `${Math.min(12, Math.max(8, scale * 0.55))}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(p, sx, nodeY - radius - 6);
+
+      // "BALANCED" label for balanced primes at decent zoom
+      if (d.isBalanced && isScanned && scale > 5) {
+        ctx.globalAlpha = 0.5 * revealFrac;
+        ctx.fillStyle = '#ffd700';
+        ctx.font = `${Math.max(7, scale * 0.35)}px 'Courier New', monospace`;
+        ctx.fillText('BAL', sx, nodeY - radius - 16);
+      }
+    }
+
+    // Scanning beam effect
+    if (Math.abs(d.index - scanIndex) < 2 && scanIndex < primes.length) {
+      const scanAlpha = 1 - Math.abs(d.index - scanIndex) / 2;
+      ctx.globalAlpha = scanAlpha * 0.3;
+      ctx.fillStyle = '#00e5ff';
+      ctx.fillRect(sx - 1, nodeY - 50, 2, 100 + (beamY - nodeY));
+    }
+
+    ctx.restore();
+  }
+
+  // --- Scan line ---
+  if (scanIndex < primes.length) {
+    const scanPrime = primes[Math.min(Math.floor(scanIndex), primes.length - 1)];
+    const scanSx = worldToScreenX(scanPrime);
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(scanSx, 0);
+    ctx.lineTo(scanSx, H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+// --- Main Loop ---
+let lastTime = 0;
+
+function animate(ts) {
+  const dt = Math.min(0.05, (ts - lastTime) / 1000);
+  lastTime = ts;
+  animTime += dt;
+
+  // Advance scan
+  if (scanIndex < primes.length) {
+    const accel = 1 + scanIndex * 0.015;
+    scanIndex += dt * scanSpeed * accel;
+    scanIndex = Math.min(scanIndex, primes.length);
+  }
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.7);
+  bgGrad.addColorStop(0, '#0a0a1a');
+  bgGrad.addColorStop(1, '#060610');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = '#4466aa';
+  ctx.lineWidth = 0.5;
+  const gridSize = 80;
+  for (let x = (offsetX % gridSize + gridSize) % gridSize; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = (offsetY % gridSize + gridSize) % gridSize; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  drawScene(animTime);
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

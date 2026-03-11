@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-ISOLATED — Isolated Prime Visualization</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#c0c0d0}
+canvas{display:block;position:absolute;top:0;left:0}
+#title{position:fixed;top:46px;left:14px;z-index:10;pointer-events:none}
+#title h1{font-size:15px;letter-spacing:4px;color:#7060cf;margin-bottom:2px}
+#title p{font-size:9px;color:#556;letter-spacing:2px}
+#stats{position:fixed;top:46px;right:12px;width:250px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:6px;padding:14px;font-size:11px;line-height:1.8;z-index:10;pointer-events:none;backdrop-filter:blur(6px)}
+#stats h3{color:#7060cf;font-size:12px;letter-spacing:3px;margin-bottom:8px;border-bottom:1px solid rgba(112,96,207,.25);padding-bottom:6px}
+#stats .lbl{color:#607090}
+#stats .val{color:#a0c0e0;float:right}
+#stats .iso{color:#7060cf}
+#stats .warm{color:#f84}
+#stats .gold{color:#ffd700}
+#stats .sep{border-top:1px solid rgba(0,170,255,.1);margin:6px 0;padding:0}
+#tooltip{position:fixed;display:none;background:rgba(6,6,16,.95);border:1px solid rgba(112,96,207,.5);border-radius:5px;padding:10px 14px;font-size:11px;line-height:1.6;z-index:20;pointer-events:none;max-width:280px;backdrop-filter:blur(8px)}
+#tooltip .pv{color:#6df;font-size:14px;font-weight:bold}
+#tooltip .iso-tag{color:#7060cf;font-weight:bold}
+#tooltip .cluster-tag{color:#ffd700}
+#legend{position:fixed;bottom:42px;left:14px;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:6px;padding:10px 14px;font-size:10px;line-height:1.8;z-index:10;pointer-events:none;backdrop-filter:blur(6px)}
+#legend h4{color:#aab;font-size:10px;letter-spacing:2px;margin-bottom:4px}
+.leg-row{display:flex;align-items:center;gap:6px}
+.leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+footer{position:fixed;bottom:0;left:0;right:0;height:28px;display:flex;align-items:center;justify-content:center;gap:18px;font-size:7px;letter-spacing:2px;color:#334;background:rgba(6,6,16,.95);border-top:1px solid rgba(0,170,255,.08);z-index:10}
+footer span.g{color:#7060cf}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="title">
+  <h1>SHIELD-ISOLATED</h1>
+  <p>LONELY PRIMES — DESERTS OF COMPOSITES</p>
+</div>
+
+<div id="stats">
+  <h3>STATISTICS</h3>
+  <div><span class="lbl">Primes revealed:</span><span class="val" id="s-total">0</span></div>
+  <div><span class="lbl">Isolated primes:</span><span class="val iso" id="s-iso">0</span></div>
+  <div><span class="lbl">Isolation rate:</span><span class="val iso" id="s-pct">0%</span></div>
+  <div class="sep"></div>
+  <div><span class="lbl">Largest isolation gap:</span><span class="val warm" id="s-maxgap">—</span></div>
+  <div><span class="lbl">Loneliest prime:</span><span class="val warm" id="s-lonely">—</span></div>
+  <div class="sep"></div>
+  <div><span class="lbl">Twin pairs:</span><span class="val gold" id="s-twins">0</span></div>
+  <div><span class="lbl">Clustered primes:</span><span class="val gold" id="s-cluster">0</span></div>
+  <div><span class="lbl">Range:</span><span class="val" id="s-range">2 — 3000</span></div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="legend">
+  <h4>LONELINESS</h4>
+  <div class="leg-row"><span class="leg-dot" style="background:#ffd700"></span> Twin / cousin (gap ≤ 4)</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#40c080"></span> Nearby (gap ≤ 6)</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#4080d0"></span> Moderate (gap ≤ 12)</div>
+  <div class="leg-row"><span class="leg-dot" style="background:#7060cf"></span> Isolated (both gaps ≥ 6)</div>
+  <div style="margin-top:6px;color:#556;font-size:9px">Scroll zoom · Drag pan · Hover info</div>
+</div>
+
+<footer>
+  <span>M₇ = 2⁷ − 1 = 127</span><span style="color:#223">|</span>
+  <span class="g">ISOLATED</span> — primes with no neighbor within 6<span style="color:#223">|</span>
+  <span>510,510 = 2×3×5×7×11×13×17</span>
+</footer>
+
+<script>
+// --- Prime generation via sieve ---
+function sievePrimes(n) {
+  const s = new Uint8Array(n + 1);
+  const primes = [];
+  for (let i = 2; i <= n; i++) {
+    if (!s[i]) {
+      primes.push(i);
+      for (let j = i * i; j <= n; j += i) s[j] = 1;
+    }
+  }
+  return primes;
+}
+
+const LIMIT = 3000;
+const primes = sievePrimes(LIMIT);
+const primeSet = new Set(primes);
+
+// --- Compute gaps and isolation ---
+const primeData = [];
+for (let i = 0; i < primes.length; i++) {
+  const p = primes[i];
+  const gapBefore = i > 0 ? p - primes[i - 1] : Infinity;
+  const gapAfter = i < primes.length - 1 ? primes[i + 1] - p : Infinity;
+  const minGap = Math.min(gapBefore, gapAfter);
+  const isolated = gapBefore >= 6 && gapAfter >= 6;
+  primeData.push({ p, index: i, gapBefore, gapAfter, minGap, isolated, loneliness: Math.min(gapBefore, gapAfter) });
+}
+
+// Find connections: twin (2), cousin (4), sexy (6)
+const connections = [];
+for (let i = 0; i < primes.length - 1; i++) {
+  const gap = primes[i + 1] - primes[i];
+  if (gap <= 6) {
+    connections.push({ a: i, b: i + 1, gap });
+  }
+}
+
+// Stats
+const isolatedPrimes = primeData.filter(d => d.isolated);
+let maxIsoGap = 0, loneliestPrime = null;
+for (const d of isolatedPrimes) {
+  const totalDesert = d.gapBefore + d.gapAfter;
+  if (totalDesert > maxIsoGap) {
+    maxIsoGap = totalDesert;
+    loneliestPrime = d;
+  }
+}
+
+// --- Spiral layout (Archimedean) ---
+// Place primes on a spiral so nearby numbers are roughly near each other
+const positions = [];
+const SPIRAL_A = 0;
+const SPIRAL_B = 5.2;
+for (let i = 0; i < primes.length; i++) {
+  // angle proportional to prime index, radius grows
+  const t = 0.35 + i * 0.22;
+  const r = SPIRAL_A + SPIRAL_B * t;
+  const x = r * Math.cos(t);
+  const y = r * Math.sin(t);
+  positions.push({ x, y });
+}
+
+// --- Canvas ---
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- View (pan/zoom) ---
+let camX = 0, camY = 0, camZoom = 1;
+let targetZoom = 1;
+let dragStart = null, dragCamStart = null;
+let isDragging = false;
+
+// Center camera on spiral center
+function initCamera() {
+  // find bounding box
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const pos of positions) {
+    if (pos.x < minX) minX = pos.x;
+    if (pos.x > maxX) maxX = pos.x;
+    if (pos.y < minY) minY = pos.y;
+    if (pos.y > maxY) maxY = pos.y;
+  }
+  camX = (minX + maxX) / 2;
+  camY = (minY + maxY) / 2;
+  const spanX = (maxX - minX) * 1.15;
+  const spanY = (maxY - minY) * 1.15;
+  camZoom = targetZoom = Math.min(W / spanX, H / spanY);
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - camX) * camZoom + W / 2,
+    y: (wy - camY) * camZoom + H / 2
+  };
+}
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / camZoom + camX,
+    y: (sy - H / 2) / camZoom + camY
+  };
+}
+
+// --- Mouse ---
+let mouseX = 0, mouseY = 0;
+let hoverIndex = -1;
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (isDragging && dragStart) {
+    const dx = (e.clientX - dragStart.x) / camZoom;
+    const dy = (e.clientY - dragStart.y) / camZoom;
+    camX = dragCamStart.x - dx;
+    camY = dragCamStart.y - dy;
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragCamStart = { x: camX, y: camY };
+  canvas.style.cursor = 'grabbing';
+});
+
+canvas.addEventListener('mouseup', () => {
+  isDragging = false;
+  canvas.style.cursor = 'default';
+});
+
+canvas.addEventListener('mouseleave', () => {
+  isDragging = false;
+  hoverIndex = -1;
+  document.getElementById('tooltip').style.display = 'none';
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  targetZoom *= factor;
+  targetZoom = Math.max(0.1, Math.min(20, targetZoom));
+  // Zoom toward mouse
+  const w = screenToWorld(e.clientX, e.clientY);
+  camZoom *= factor;
+  camZoom = Math.max(0.1, Math.min(20, camZoom));
+  camX = w.x - (e.clientX - W / 2) / camZoom;
+  camY = w.y - (e.clientY - H / 2) / camZoom;
+}, { passive: false });
+
+// --- Animation state ---
+let revealCount = 0;
+const REVEAL_RATE = 3; // primes per frame
+let time = 0;
+const starAlpha = new Float32Array(primes.length); // fade in
+
+// Background stars
+const bgStars = [];
+for (let i = 0; i < 300; i++) {
+  bgStars.push({
+    x: (Math.random() - 0.5) * 3000,
+    y: (Math.random() - 0.5) * 3000,
+    r: Math.random() * 1.2 + 0.3,
+    a: Math.random() * 0.3 + 0.05,
+    twinkle: Math.random() * Math.PI * 2
+  });
+}
+
+// --- Color helpers ---
+function lonelinessColor(d) {
+  if (d.isolated) return '#7060cf';
+  if (d.minGap <= 2) return '#ffd700';
+  if (d.minGap <= 4) return '#e0b020';
+  if (d.minGap <= 6) return '#40c080';
+  return '#4080d0';
+}
+
+function connectionColor(gap) {
+  if (gap === 2) return 'rgba(255,215,0,0.35)';
+  if (gap === 4) return 'rgba(200,180,40,0.25)';
+  return 'rgba(64,192,128,0.18)';
+}
+
+// --- Draw ---
+function draw() {
+  time += 0.016;
+
+  // Reveal primes
+  if (revealCount < primes.length) {
+    revealCount = Math.min(primes.length, revealCount + REVEAL_RATE);
+  }
+
+  // Fade in
+  for (let i = 0; i < revealCount; i++) {
+    if (starAlpha[i] < 1) starAlpha[i] = Math.min(1, starAlpha[i] + 0.03);
+  }
+
+  // Smooth zoom
+  camZoom += (targetZoom - camZoom) * 0.1;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background stars
+  for (const s of bgStars) {
+    const sc = worldToScreen(s.x, s.y);
+    if (sc.x < -10 || sc.x > W + 10 || sc.y < -10 || sc.y > H + 10) continue;
+    const twinkle = 0.5 + 0.5 * Math.sin(time * 1.5 + s.twinkle);
+    ctx.globalAlpha = s.a * twinkle;
+    ctx.fillStyle = '#4466aa';
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Connections (lines between close primes)
+  for (const conn of connections) {
+    if (conn.b >= revealCount) continue;
+    const alphaA = starAlpha[conn.a];
+    const alphaB = starAlpha[conn.b];
+    const a = Math.min(alphaA, alphaB);
+    if (a < 0.01) continue;
+    const pA = worldToScreen(positions[conn.a].x, positions[conn.a].y);
+    const pB = worldToScreen(positions[conn.b].x, positions[conn.b].y);
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = connectionColor(conn.gap);
+    ctx.lineWidth = conn.gap === 2 ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(pA.x, pA.y);
+    ctx.lineTo(pB.x, pB.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Hover detection
+  hoverIndex = -1;
+  const hoverWorld = screenToWorld(mouseX, mouseY);
+  let bestDist = Infinity;
+  for (let i = 0; i < revealCount; i++) {
+    const dx = positions[i].x - hoverWorld.x;
+    const dy = positions[i].y - hoverWorld.y;
+    const dist = dx * dx + dy * dy;
+    const threshold = Math.pow(8 / camZoom, 2);
+    if (dist < threshold && dist < bestDist) {
+      bestDist = dist;
+      hoverIndex = i;
+    }
+  }
+
+  // Draw primes
+  for (let i = 0; i < revealCount; i++) {
+    const d = primeData[i];
+    const alpha = starAlpha[i];
+    if (alpha < 0.01) continue;
+    const sc = worldToScreen(positions[i].x, positions[i].y);
+    if (sc.x < -50 || sc.x > W + 50 || sc.y < -50 || sc.y > H + 50) continue;
+
+    const baseColor = lonelinessColor(d);
+    const baseRadius = d.isolated ? 3.5 : (d.minGap <= 2 ? 2.5 : 2);
+
+    // Isolated prime: dark halo (void)
+    if (d.isolated) {
+      const haloRadius = 18 + 5 * Math.sin(time * 0.8 + i);
+      const grad = ctx.createRadialGradient(sc.x, sc.y, baseRadius * 2, sc.x, sc.y, haloRadius);
+      grad.addColorStop(0, 'rgba(20,10,40,0.5)');
+      grad.addColorStop(0.5, 'rgba(10,5,25,0.3)');
+      grad.addColorStop(1, 'rgba(6,6,16,0)');
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sc.x, sc.y, haloRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pulsing lonely glow
+      const pulse = 0.5 + 0.5 * Math.sin(time * 1.2 + i * 0.7);
+      const glowR = 10 + 6 * pulse;
+      const glow = ctx.createRadialGradient(sc.x, sc.y, 0, sc.x, sc.y, glowR);
+      glow.addColorStop(0, `rgba(112,96,207,${0.3 * alpha * pulse})`);
+      glow.addColorStop(0.5, `rgba(90,60,180,${0.12 * alpha * pulse})`);
+      glow.addColorStop(1, 'rgba(60,40,120,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(sc.x, sc.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Clustered primes: warm glow
+    if (!d.isolated && d.minGap <= 4) {
+      const glowR = 6;
+      const glow = ctx.createRadialGradient(sc.x, sc.y, 0, sc.x, sc.y, glowR);
+      glow.addColorStop(0, `rgba(255,215,0,${0.15 * alpha})`);
+      glow.addColorStop(1, 'rgba(255,215,0,0)');
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(sc.x, sc.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // The star itself
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = baseColor;
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, baseRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bright center
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, baseRadius * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hover highlight
+    if (i === hoverIndex) {
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = d.isolated ? '#a090ef' : '#ffd700';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(sc.x, sc.y, baseRadius + 5, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Loneliness ring for isolated
+      if (d.isolated) {
+        ctx.globalAlpha = 0.2 + 0.1 * Math.sin(time * 2);
+        ctx.strokeStyle = '#7060cf';
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.arc(sc.x, sc.y, 25, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Tooltip
+  const tip = document.getElementById('tooltip');
+  if (hoverIndex >= 0 && !isDragging) {
+    const d = primeData[hoverIndex];
+    const sc = worldToScreen(positions[hoverIndex].x, positions[hoverIndex].y);
+
+    let html = `<div class="pv">${d.p}</div>`;
+    html += `<div>Index: #${d.index + 1} of ${primes.length} primes</div>`;
+    html += `<div>Gap before: ${d.gapBefore === Infinity ? '∞' : d.gapBefore}${d.index > 0 ? ' (prev: ' + primes[d.index - 1] + ')' : ''}</div>`;
+    html += `<div>Gap after: ${d.gapAfter === Infinity ? '∞' : d.gapAfter}${d.index < primes.length - 1 ? ' (next: ' + primes[d.index + 1] + ')' : ''}</div>`;
+    html += `<div>Min gap: ${d.minGap === Infinity ? '∞' : d.minGap}</div>`;
+
+    if (d.isolated) {
+      html += `<div class="iso-tag">★ ISOLATED — no prime within 6</div>`;
+      html += `<div style="color:#8070c0">Desert span: ${d.gapBefore + d.gapAfter} composites surround</div>`;
+    } else {
+      if (d.minGap === 2) html += `<div class="cluster-tag">Twin prime</div>`;
+      else if (d.minGap === 4) html += `<div class="cluster-tag">Cousin prime</div>`;
+      else if (d.minGap === 6) html += `<div style="color:#40c080">Sexy prime</div>`;
+      else html += `<div style="color:#4080d0">Moderately spaced</div>`;
+    }
+
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+    let tx = sc.x + 15, ty = sc.y - 10;
+    if (tx + 280 > W) tx = sc.x - 290;
+    if (ty + 150 > H) ty = H - 155;
+    if (ty < 40) ty = 40;
+    tip.style.left = tx + 'px';
+    tip.style.top = ty + 'px';
+  } else {
+    tip.style.display = 'none';
+  }
+
+  // Update stats
+  const revealed = Math.min(revealCount, primes.length);
+  const revealedIso = primeData.slice(0, revealed).filter(d => d.isolated).length;
+  const revealedTwins = primeData.slice(0, revealed).filter(d => d.minGap <= 2).length;
+  const revealedClustered = primeData.slice(0, revealed).filter(d => !d.isolated && d.minGap <= 6).length;
+
+  document.getElementById('s-total').textContent = revealed;
+  document.getElementById('s-iso').textContent = revealedIso;
+  document.getElementById('s-pct').textContent = revealed > 0 ? (100 * revealedIso / revealed).toFixed(1) + '%' : '0%';
+  document.getElementById('s-twins').textContent = Math.floor(revealedTwins / 2);
+  document.getElementById('s-cluster').textContent = revealedClustered;
+
+  // Find max isolation gap among revealed
+  let mxGap = 0, lp = null;
+  for (let i = 0; i < revealed; i++) {
+    const d = primeData[i];
+    if (d.isolated) {
+      const desert = d.gapBefore + d.gapAfter;
+      if (desert > mxGap) { mxGap = desert; lp = d; }
+    }
+  }
+  document.getElementById('s-maxgap').textContent = mxGap > 0 ? mxGap : '—';
+  document.getElementById('s-lonely').textContent = lp ? lp.p : '—';
+
+  requestAnimationFrame(draw);
+}
+
+initCamera();
+requestAnimationFrame(draw);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

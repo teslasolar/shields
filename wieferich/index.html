@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-WIEFERICH</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#c0c0d0}
+canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:1}
+#stats{
+  position:fixed;top:12px;right:12px;z-index:10;background:rgba(6,6,16,.92);
+  border:1px solid rgba(0,170,255,.15);border-radius:6px;padding:14px 18px;
+  font-size:11px;line-height:1.8;color:#99a;min-width:250px;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);pointer-events:none
+}
+#stats .title{color:#ffd700;font-size:13px;letter-spacing:3px;margin-bottom:6px}
+#stats .label{color:#556}
+#stats .val{color:#c0c0d0}
+#stats .gold{color:#ffd700}
+#stats .def{margin-top:8px;font-size:9px;color:#445;line-height:1.5}
+#tooltip{
+  position:fixed;z-index:50;pointer-events:none;display:none;
+  background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.15);
+  border-radius:4px;padding:10px 14px;font-size:11px;line-height:1.7;
+  color:#aab;max-width:360px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)
+}
+#tooltip .tp-prime{color:#0af;font-size:13px;font-weight:bold}
+#tooltip .tp-gold{color:#ffd700;font-size:13px;font-weight:bold}
+#tooltip .tp-val{color:#fc0;font-size:10px;word-break:break-all}
+#tooltip .tp-dim{color:#445}
+#instructions{
+  position:fixed;bottom:38px;left:12px;z-index:10;font-size:10px;color:#445;
+  letter-spacing:1px;line-height:1.6
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">WIEFERICH PRIMES</div>
+  <div><span class="label">Primes checked: </span><span id="st-checked" class="val">0</span><span class="label"> / </span><span id="st-total" class="val">0</span></div>
+  <div><span class="label">Current prime: </span><span id="st-current" class="val">--</span></div>
+  <div><span class="label">Residue: </span><span id="st-residue" class="val">--</span></div>
+  <div><span class="label">Wieferich found: </span><span id="st-found" class="gold">0</span></div>
+  <div class="def">
+    A prime p is <span style="color:#ffd700">Wieferich</span> if<br>
+    2<sup>p-1</sup> &#8801; 1 (mod p&sup2;)<br><br>
+    Only two known: <span style="color:#ffd700">1093</span> and <span style="color:#ffd700">3511</span><br>
+    Searched up to 6.7 &times; 10<sup>15</sup> &mdash; no others found.
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="instructions">
+  SCROLL: zoom &nbsp; DRAG: pan &nbsp; HOVER: info &nbsp; CLICK: details
+</div>
+
+<script>
+// --- Canvas setup ---
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+let W, H, dpr;
+let zoom = 1, panX = 0, panY = 0;
+let isDragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0;
+let mouseX = -1, mouseY = -1;
+let hoveredIndex = -1;
+let animTime = 0;
+
+// --- Sieve primes up to 5000 ---
+function sieve(max) {
+  const s = new Uint8Array(max + 1);
+  s[0] = s[1] = 1;
+  for (let i = 2; i * i <= max; i++) {
+    if (!s[i]) for (let j = i * i; j <= max; j += i) s[j] = 1;
+  }
+  const primes = [];
+  for (let i = 2; i <= max; i++) if (!s[i]) primes.push(i);
+  return primes;
+}
+
+const MAX_N = 5000;
+const primes = sieve(MAX_N);
+const TOTAL = primes.length;
+
+// --- BigInt modular exponentiation ---
+function modpow(base, exp, mod) {
+  let result = 1n;
+  base = base % mod;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % mod;
+    exp >>= 1n;
+    base = (base * base) % mod;
+  }
+  return result;
+}
+
+// --- Compute Wieferich data for all primes ---
+const primeData = [];
+const WIEFERICH = [1093, 3511];
+
+for (let i = 0; i < primes.length; i++) {
+  const p = primes[i];
+  const bp = BigInt(p);
+  const pSq = bp * bp;
+  const residue = modpow(2n, bp - 1n, pSq);
+  const isWieferich = residue === 1n;
+  // Normalized residue: how far from 1 (mod p^2)
+  // R = (residue - 1) / p^2, closer to 0 = closer to Wieferich
+  const diff = residue - 1n;
+  const ratio = Number(diff) / Number(pSq); // 0 for Wieferich, ~uniform(0,1) otherwise
+  primeData.push({
+    p,
+    index: i,
+    residue: Number(residue),
+    residueBig: residue.toString(),
+    isWieferich,
+    ratio,
+    pSq: Number(pSq)
+  });
+}
+
+// --- Layout: position each prime on a grid ---
+function getGridPos(idx) {
+  // Arrange in rows, left to right
+  const cols = Math.ceil(Math.sqrt(TOTAL * 1.5));
+  const row = Math.floor(idx / cols);
+  const col = idx % cols;
+  const spacing = 16;
+  return { x: col * spacing - (cols * spacing) / 2, y: row * spacing - (Math.ceil(TOTAL / cols) * spacing) / 2 };
+}
+
+// Screen transforms
+function toScreen(wx, wy) {
+  return [W / 2 + (wx + panX) * zoom, H / 2 + (wy + panY) * zoom];
+}
+function toWorld(sx, sy) {
+  return [(sx - W / 2) / zoom - panX, (sy - H / 2) / zoom - panY];
+}
+
+// --- Scanning beam state ---
+let scanIndex = 0;
+let scanSpeed = 1.5; // primes per frame
+let scanFrac = 0;
+let wieferichFound = 0;
+let explosions = []; // {x, y, time, prime}
+
+// --- Resize ---
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Mouse/touch ---
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (isDragging) {
+    panX = panStartX + (e.clientX - dragStartX) / zoom;
+    panY = panStartY + (e.clientY - dragStartY) / zoom;
+  }
+});
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  panStartX = panX;
+  panStartY = panY;
+});
+canvas.addEventListener('mouseup', () => { isDragging = false; });
+canvas.addEventListener('mouseleave', () => { mouseX = mouseY = -1; isDragging = false; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  const oldZoom = zoom;
+  zoom *= e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  zoom = Math.max(0.3, Math.min(zoom, 20));
+  panX = (e.clientX - W / 2) / zoom - wx;
+  panY = (e.clientY - H / 2) / zoom - wy;
+}, { passive: false });
+
+// Click for tooltip lock
+let lockedIndex = -1;
+canvas.addEventListener('click', e => {
+  if (Math.abs(e.clientX - dragStartX) > 4 || Math.abs(e.clientY - dragStartY) > 4) return;
+  if (hoveredIndex >= 0) {
+    lockedIndex = lockedIndex === hoveredIndex ? -1 : hoveredIndex;
+  } else {
+    lockedIndex = -1;
+  }
+});
+
+// --- Starfield ---
+const stars = [];
+for (let i = 0; i < 180; i++) {
+  const cols = Math.ceil(Math.sqrt(TOTAL * 1.5));
+  const spread = cols * 16;
+  stars.push({
+    x: (Math.random() - 0.5) * spread * 2.5,
+    y: (Math.random() - 0.5) * spread * 2.5,
+    r: Math.random() * 1.1 + 0.2,
+    a: Math.random() * 0.4 + 0.05
+  });
+}
+
+function drawStars(t) {
+  for (const s of stars) {
+    const [sx, sy] = toScreen(s.x, s.y);
+    if (sx < -10 || sx > W + 10 || sy < -10 || sy > H + 10) continue;
+    const twinkle = s.a + 0.1 * Math.sin(t * 0.002 + s.x * 0.1);
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.r * Math.min(zoom, 2), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(80,90,160,${twinkle})`;
+    ctx.fill();
+  }
+}
+
+// --- Color by residue ratio ---
+function dotColor(d, t) {
+  if (d.isWieferich) {
+    const pulse = 0.7 + 0.3 * Math.sin(t * 0.003 + d.p);
+    return `rgba(255,215,0,${pulse})`;
+  }
+  // Dim color based on ratio proximity — lower ratio = brighter blue
+  const prox = 1 - Math.min(d.ratio, 1);
+  const r = Math.floor(30 + prox * 40);
+  const g = Math.floor(40 + prox * 80);
+  const b = Math.floor(80 + prox * 150);
+  const a = 0.3 + prox * 0.5;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function dotRadius(d, t) {
+  if (d.isWieferich) {
+    return 5 + 2 * Math.sin(t * 0.004 + d.p);
+  }
+  return 2 + Math.min(d.ratio, 1) * 0.5;
+}
+
+// --- Draw explosion ---
+function drawExplosion(exp, t) {
+  const elapsed = t - exp.time;
+  if (elapsed > 4000) return false;
+  const [sx, sy] = toScreen(exp.x, exp.y);
+  const progress = elapsed / 4000;
+
+  // Golden rings
+  for (let ring = 0; ring < 5; ring++) {
+    const rDelay = ring * 0.08;
+    const rProgress = Math.max(0, Math.min(1, (progress - rDelay) / (1 - rDelay)));
+    const radius = rProgress * 120 * zoom;
+    const alpha = (1 - rProgress) * 0.6;
+    if (alpha <= 0) continue;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,215,0,${alpha})`;
+    ctx.lineWidth = (3 - ring * 0.4) * zoom;
+    ctx.stroke();
+  }
+
+  // Particle burst
+  const particleCount = 40;
+  for (let i = 0; i < particleCount; i++) {
+    const angle = (i / particleCount) * Math.PI * 2 + exp.time * 0.001;
+    const speed = 50 + (i % 7) * 20;
+    const dist = progress * speed * zoom;
+    const alpha = (1 - progress) * 0.8;
+    if (alpha <= 0) continue;
+    const px = sx + Math.cos(angle) * dist;
+    const py = sy + Math.sin(angle) * dist;
+    ctx.beginPath();
+    ctx.arc(px, py, (2 + (i % 3)) * Math.min(zoom, 3), 0, Math.PI * 2);
+    ctx.fillStyle = i % 3 === 0
+      ? `rgba(255,215,0,${alpha})`
+      : i % 3 === 1
+        ? `rgba(255,180,60,${alpha * 0.7})`
+        : `rgba(255,255,200,${alpha * 0.5})`;
+    ctx.fill();
+  }
+
+  // Central glow
+  const glowAlpha = (1 - progress) * 0.4;
+  const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, 80 * zoom);
+  grad.addColorStop(0, `rgba(255,215,0,${glowAlpha})`);
+  grad.addColorStop(1, 'rgba(255,215,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 80 * zoom, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Label
+  if (progress < 0.7) {
+    const labelAlpha = Math.min(1, (0.7 - progress) / 0.3);
+    ctx.font = `bold ${Math.floor(14 * Math.min(zoom, 4))}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(255,215,0,${labelAlpha})`;
+    ctx.fillText(`WIEFERICH: ${exp.prime}`, sx, sy - 30 * zoom);
+    ctx.font = `${Math.floor(10 * Math.min(zoom, 4))}px 'Courier New', monospace`;
+    ctx.fillStyle = `rgba(200,200,255,${labelAlpha * 0.7})`;
+    ctx.fillText(`2^${exp.prime - 1} \u2261 1 (mod ${exp.prime}\u00B2)`, sx, sy - 16 * zoom);
+  }
+
+  return true;
+}
+
+// --- Scanning beam ---
+function drawScanBeam(t) {
+  if (scanIndex >= TOTAL) return;
+  const pos = getGridPos(scanIndex);
+  const [sx, sy] = toScreen(pos.x, pos.y);
+
+  // Vertical beam line
+  const beamAlpha = 0.15 + 0.1 * Math.sin(t * 0.005);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(sx, 0);
+  ctx.lineTo(sx, H);
+  ctx.strokeStyle = `rgba(0,170,255,${beamAlpha})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Scanning glow at current prime
+  const glowGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, 40 * zoom);
+  glowGrad.addColorStop(0, 'rgba(0,170,255,0.3)');
+  glowGrad.addColorStop(1, 'rgba(0,170,255,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 40 * zoom, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// --- Tooltip ---
+function updateTooltip() {
+  const idx = lockedIndex >= 0 ? lockedIndex : hoveredIndex;
+  if (idx < 0 || idx >= TOTAL) {
+    tooltip.style.display = 'none';
+    return;
+  }
+  const d = primeData[idx];
+  const wLabel = d.isWieferich
+    ? '<div class="tp-gold">*** WIEFERICH PRIME ***</div>'
+    : '';
+  tooltip.innerHTML = `
+    ${wLabel}
+    <div class="tp-prime" style="color:${d.isWieferich ? '#ffd700' : '#0af'}">p = ${d.p}</div>
+    <div>p&sup2; = ${d.pSq.toLocaleString()}</div>
+    <div>2<sup>${d.p - 1}</sup> mod p&sup2; = <span class="tp-val">${d.residueBig}</span></div>
+    <div>Residue ratio: <span class="tp-val">${d.ratio.toExponential(6)}</span></div>
+    <div class="tp-dim" style="margin-top:4px">
+      ${d.isWieferich ? 'Residue = 1 exactly. Wieferich condition satisfied!' : 'Not Wieferich (residue \u2260 1)'}
+    </div>
+    <div class="tp-dim">Prime index: ${d.index + 1} of ${TOTAL}</div>
+  `;
+  tooltip.style.display = 'block';
+  // Position near mouse but stay in viewport
+  let tx = mouseX + 16, ty = mouseY + 16;
+  if (tx + 360 > W) tx = mouseX - 370;
+  if (ty + 200 > H) ty = mouseY - 210;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+
+// --- Hit testing ---
+function findHovered() {
+  if (mouseX < 0) { hoveredIndex = -1; return; }
+  const [wx, wy] = toWorld(mouseX, mouseY);
+  let best = -1, bestDist = 12 / zoom;
+  for (let i = 0; i < TOTAL; i++) {
+    const pos = getGridPos(i);
+    const dx = pos.x - wx, dy = pos.y - wy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  }
+  hoveredIndex = best;
+}
+
+// --- Stats ---
+function updateStats() {
+  const checked = Math.min(scanIndex, TOTAL);
+  document.getElementById('st-checked').textContent = checked;
+  document.getElementById('st-total').textContent = TOTAL;
+  document.getElementById('st-found').textContent = wieferichFound;
+  if (scanIndex < TOTAL) {
+    const d = primeData[Math.min(scanIndex, TOTAL - 1)];
+    document.getElementById('st-current').textContent = d.p;
+    document.getElementById('st-residue').textContent = d.ratio < 0.001 ? d.ratio.toExponential(4) : d.ratio.toFixed(6);
+  } else {
+    document.getElementById('st-current').textContent = 'COMPLETE';
+    document.getElementById('st-residue').textContent = '--';
+  }
+}
+
+// --- Main draw ---
+function draw(timestamp) {
+  animTime = timestamp || 0;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars(animTime);
+
+  // Draw all primes as dots
+  for (let i = 0; i < TOTAL; i++) {
+    const d = primeData[i];
+    const pos = getGridPos(i);
+    const [sx, sy] = toScreen(pos.x, pos.y);
+
+    // Cull offscreen
+    if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+
+    const revealed = i < scanIndex;
+    const isHovered = i === hoveredIndex || i === lockedIndex;
+
+    // Base dot
+    let r = dotRadius(d, animTime) * zoom;
+    let color = dotColor(d, animTime);
+
+    if (!revealed) {
+      // Not yet scanned: very dim
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.5 * zoom, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(30,30,60,0.3)';
+      ctx.fill();
+      continue;
+    }
+
+    // Wieferich golden glow
+    if (d.isWieferich) {
+      const pulseR = 12 + 6 * Math.sin(animTime * 0.002 + d.p);
+      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, pulseR * zoom);
+      grad.addColorStop(0, 'rgba(255,215,0,0.5)');
+      grad.addColorStop(0.5, 'rgba(255,180,0,0.15)');
+      grad.addColorStop(1, 'rgba(255,215,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, pulseR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // The dot
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    // Hovered highlight
+    if (isHovered) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, r + 4 * zoom, 0, Math.PI * 2);
+      ctx.strokeStyle = d.isWieferich ? 'rgba(255,215,0,0.7)' : 'rgba(0,170,255,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Label for Wieferich primes when zoomed enough
+    if (d.isWieferich && zoom > 1.5) {
+      ctx.font = `bold ${Math.floor(10 * Math.min(zoom, 4))}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,215,0,0.8)';
+      ctx.fillText(d.p.toString(), sx, sy - (r + 6 * zoom));
+    }
+  }
+
+  // Scanning beam
+  drawScanBeam(animTime);
+
+  // Explosions
+  explosions = explosions.filter(exp => drawExplosion(exp, animTime));
+
+  // Advance scan
+  if (scanIndex < TOTAL) {
+    scanFrac += scanSpeed;
+    while (scanFrac >= 1 && scanIndex < TOTAL) {
+      scanFrac -= 1;
+      const d = primeData[scanIndex];
+      if (d.isWieferich) {
+        wieferichFound++;
+        const pos = getGridPos(scanIndex);
+        explosions.push({ x: pos.x, y: pos.y, time: animTime, prime: d.p });
+        // Slow down briefly after finding one
+        scanSpeed = 0.3;
+        setTimeout(() => { scanSpeed = 2; }, 2000);
+      }
+      scanIndex++;
+      // Gradually speed up
+      if (scanIndex > 50 && scanSpeed < 3) scanSpeed += 0.002;
+    }
+  }
+
+  findHovered();
+  updateTooltip();
+  updateStats();
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
