@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-WAVE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+canvas{display:block;cursor:crosshair}
+#wrap{flex:1;position:relative;overflow:hidden;margin-top:36px}
+
+.panel{position:absolute;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+
+#stats{top:10px;right:10px;min-width:200px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#556;margin-bottom:6px;border-bottom:1px solid rgba(0,170,255,.1);padding-bottom:4px}
+#stats .row{display:flex;justify-content:space-between;gap:12px}
+#stats .label{color:#556}
+#stats .val{color:#0af;text-align:right}
+
+#controls{bottom:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;white-space:nowrap}
+#controls label{color:#556;font-size:10px;letter-spacing:1px}
+#controls input[type=range]{width:100px;accent-color:#0af;vertical-align:middle}
+#controls .speed-val{color:#0af;font-size:10px;min-width:30px;display:inline-block}
+
+#tooltip{position:absolute;top:0;left:0;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.25);border-radius:4px;padding:8px 10px;font-size:10px;line-height:1.6;pointer-events:none;display:none;z-index:20;backdrop-filter:blur(8px);max-width:220px}
+#tooltip .tt-head{color:#0af;font-size:9px;letter-spacing:2px;margin-bottom:4px;border-bottom:1px solid rgba(0,170,255,.1);padding-bottom:3px}
+#tooltip .src-row{display:flex;justify-content:space-between;gap:10px}
+#tooltip .src-label{color:#556}
+#tooltip .src-val{color:#8cf}
+#tooltip .total{color:#0af;font-weight:bold;margin-top:3px;border-top:1px solid rgba(0,170,255,.1);padding-top:3px}
+
+.emitter-label{position:absolute;font-size:10px;font-weight:bold;letter-spacing:1px;pointer-events:auto;cursor:pointer;padding:3px 7px;border-radius:10px;border:1px solid rgba(0,170,255,.3);background:rgba(6,6,16,.85);transition:all .2s;user-select:none;z-index:5}
+.emitter-label:hover{border-color:rgba(0,170,255,.6);background:rgba(6,6,16,.95)}
+.emitter-label.off{opacity:.35;border-color:rgba(255,60,60,.3);text-decoration:line-through}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+
+  <div class="panel" id="stats">
+    <h3>INTERFERENCE STATS</h3>
+    <div class="row"><span class="label">Active Emitters</span><span class="val" id="st-active">7 / 7</span></div>
+    <div class="row"><span class="label">Peak Amplitude</span><span class="val" id="st-peak">0.00</span></div>
+    <div class="row"><span class="label">Peak Location</span><span class="val" id="st-loc">(0, 0)</span></div>
+    <div class="row"><span class="label">Interference Order</span><span class="val" id="st-order">0</span></div>
+    <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+  </div>
+
+  <div class="panel" id="controls">
+    <label>SPEED</label>
+    <input type="range" id="speed-slider" min="0.1" max="3" step="0.1" value="1">
+    <span class="speed-val" id="speed-val">1.0x</span>
+    <label style="margin-left:8px">RESOLUTION</label>
+    <input type="range" id="res-slider" min="2" max="6" step="1" value="3">
+    <span class="speed-val" id="res-val">3</span>
+  </div>
+
+  <div id="tooltip">
+    <div class="tt-head">AMPLITUDE DETAIL</div>
+    <div id="tt-body"></div>
+  </div>
+</div>
+
+<script>
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const COLORS = ['#0ff','#4f8','#8f4','#ff4','#f84','#f4a','#84f'];
+const TWO_PI = Math.PI * 2;
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const wrap = document.getElementById('wrap');
+const tooltip = document.getElementById('tooltip');
+const ttBody = document.getElementById('tt-body');
+const speedSlider = document.getElementById('speed-slider');
+const speedVal = document.getElementById('speed-val');
+const resSlider = document.getElementById('res-slider');
+const resVal = document.getElementById('res-val');
+
+let W, H, cx, cy, radius;
+let emitters = [];
+let labels = [];
+let time = 0;
+let speed = 1;
+let resolution = 3;
+let mouseX = -1, mouseY = -1;
+let peakAmp = 0, peakX = 0, peakY = 0;
+let frameCount = 0, lastFpsTime = performance.now(), fps = 60;
+let imgData, buf;
+
+function init() {
+  W = wrap.clientWidth;
+  H = wrap.clientHeight;
+  cv.width = W;
+  cv.height = H;
+  cx = W / 2;
+  cy = H / 2;
+  radius = Math.min(W, H) * 0.22;
+
+  // Remove old labels
+  labels.forEach(l => l.remove());
+  labels = [];
+
+  // Position emitters in heptagon
+  emitters = PRIMES.map((p, i) => {
+    const angle = -Math.PI / 2 + (i / 7) * TWO_PI;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    const existing = emitters[i];
+    return {
+      prime: p,
+      x, y,
+      active: existing ? existing.active : true,
+      color: COLORS[i],
+      freq: p * 0.15,
+      amplitude: 1 / Math.sqrt(p)
+    };
+  });
+
+  // Create clickable labels
+  emitters.forEach((e, i) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'emitter-label' + (e.active ? '' : ' off');
+    lbl.style.color = e.color;
+    lbl.textContent = e.prime;
+    lbl.style.left = (e.x - 14) + 'px';
+    lbl.style.top = (e.y - 12) + 'px';
+    lbl.addEventListener('click', () => {
+      e.active = !e.active;
+      lbl.classList.toggle('off', !e.active);
+    });
+    wrap.appendChild(lbl);
+    labels.push(lbl);
+  });
+
+  imgData = ctx.createImageData(W, H);
+  buf = new Uint32Array(imgData.data.buffer);
+}
+
+function computeAmplitude(px, py, t) {
+  let sum = 0;
+  for (let i = 0; i < 7; i++) {
+    const e = emitters[i];
+    if (!e.active) continue;
+    const dx = px - e.x;
+    const dy = py - e.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const wave = Math.sin(dist * 0.04 * e.freq - t * e.freq) * e.amplitude;
+    // Attenuate with distance
+    const atten = 1 / (1 + dist * 0.003);
+    sum += wave * atten;
+  }
+  return sum;
+}
+
+function getContributions(px, py, t) {
+  const result = [];
+  for (let i = 0; i < 7; i++) {
+    const e = emitters[i];
+    const dx = px - e.x;
+    const dy = py - e.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const wave = Math.sin(dist * 0.04 * e.freq - t * e.freq) * e.amplitude;
+    const atten = 1 / (1 + dist * 0.003);
+    result.push({ prime: e.prime, val: wave * atten, active: e.active, color: COLORS[i] });
+  }
+  return result;
+}
+
+function colorFromAmplitude(amp) {
+  // Normalize amplitude to [0,1] range
+  // amp typically ranges from about -2 to +2
+  const norm = (amp + 2) / 4;
+  const t = Math.max(0, Math.min(1, norm));
+
+  // Dark blue/black for troughs, cyan/white for peaks
+  let r, g, b;
+  if (t < 0.3) {
+    // Deep trough: near black to dark blue
+    const s = t / 0.3;
+    r = Math.floor(s * 0);
+    g = Math.floor(s * 10);
+    b = Math.floor(s * 40);
+  } else if (t < 0.5) {
+    // Moderate destructive: dark blue
+    const s = (t - 0.3) / 0.2;
+    r = 0;
+    g = Math.floor(10 + s * 20);
+    b = Math.floor(40 + s * 60);
+  } else if (t < 0.7) {
+    // Moderate constructive: blue to cyan
+    const s = (t - 0.5) / 0.2;
+    r = 0;
+    g = Math.floor(30 + s * 130);
+    b = Math.floor(100 + s * 100);
+  } else if (t < 0.9) {
+    // Strong constructive: bright cyan
+    const s = (t - 0.7) / 0.2;
+    r = Math.floor(s * 60);
+    g = Math.floor(160 + s * 70);
+    b = Math.floor(200 + s * 55);
+  } else {
+    // Peak: cyan-white
+    const s = (t - 0.9) / 0.1;
+    r = Math.floor(60 + s * 195);
+    g = Math.floor(230 + s * 25);
+    b = 255;
+  }
+
+  return (255 << 24) | (b << 16) | (g << 8) | r;
+}
+
+function render(t) {
+  const step = resolution;
+  let localPeak = 0, localPeakX = 0, localPeakY = 0;
+
+  for (let y = 0; y < H; y += step) {
+    for (let x = 0; x < W; x += step) {
+      const amp = computeAmplitude(x, y, t);
+      const color = colorFromAmplitude(amp);
+
+      if (Math.abs(amp) > localPeak) {
+        localPeak = Math.abs(amp);
+        localPeakX = x;
+        localPeakY = y;
+      }
+
+      // Fill the block
+      for (let dy = 0; dy < step && y + dy < H; dy++) {
+        const rowOff = (y + dy) * W;
+        for (let dx = 0; dx < step && x + dx < W; dx++) {
+          buf[rowOff + x + dx] = color;
+        }
+      }
+    }
+  }
+
+  peakAmp = localPeak;
+  peakX = localPeakX;
+  peakY = localPeakY;
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // Draw emitter dots
+  emitters.forEach((e, i) => {
+    if (!e.active) return;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 4, 0, TWO_PI);
+    ctx.fillStyle = e.color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 8 + 3 * Math.sin(t * e.freq * 2), 0, TWO_PI);
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+}
+
+function updateStats() {
+  const active = emitters.filter(e => e.active).length;
+  document.getElementById('st-active').textContent = active + ' / 7';
+  document.getElementById('st-peak').textContent = peakAmp.toFixed(3);
+  document.getElementById('st-loc').textContent = '(' + Math.round(peakX - cx) + ', ' + Math.round(peakY - cy) + ')';
+
+  // Interference order: approximate from peak amplitude vs number of sources
+  const maxPossible = emitters.filter(e => e.active).reduce((s, e) => s + e.amplitude, 0);
+  const order = maxPossible > 0 ? Math.round((peakAmp / maxPossible) * active) : 0;
+  document.getElementById('st-order').textContent = order;
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime > 1000) {
+    fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+  document.getElementById('st-fps').textContent = fps;
+}
+
+function updateTooltip() {
+  if (mouseX < 0 || mouseY < 0) {
+    tooltip.style.display = 'none';
+    return;
+  }
+
+  const contribs = getContributions(mouseX, mouseY, time);
+  let total = 0;
+  let html = '';
+  contribs.forEach(c => {
+    const v = c.active ? c.val : 0;
+    total += v;
+    const sign = v >= 0 ? '+' : '';
+    html += '<div class="src-row"><span class="src-label" style="color:' + c.color + '">P=' + c.prime + (c.active ? '' : ' [OFF]') + '</span><span class="src-val">' + sign + v.toFixed(4) + '</span></div>';
+  });
+  html += '<div class="total src-row"><span>TOTAL</span><span>' + (total >= 0 ? '+' : '') + total.toFixed(4) + '</span></div>';
+  ttBody.innerHTML = html;
+  tooltip.style.display = 'block';
+
+  let tx = mouseX + 16;
+  let ty = mouseY + 16;
+  if (tx + 220 > W) tx = mouseX - 230;
+  if (ty + 200 > H) ty = mouseY - 200;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+
+function loop() {
+  time += 0.016 * speed;
+  render(time);
+  updateStats();
+  updateTooltip();
+  requestAnimationFrame(loop);
+}
+
+// Events
+speedSlider.addEventListener('input', () => {
+  speed = parseFloat(speedSlider.value);
+  speedVal.textContent = speed.toFixed(1) + 'x';
+});
+
+resSlider.addEventListener('input', () => {
+  resolution = parseInt(resSlider.value);
+  resVal.textContent = resolution;
+});
+
+cv.addEventListener('mousemove', e => {
+  const rect = cv.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+});
+
+cv.addEventListener('mouseleave', () => {
+  mouseX = -1;
+  mouseY = -1;
+});
+
+window.addEventListener('resize', init);
+
+init();
+loop();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voronoi Prime Tessellation</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#060610;
+    color:#c0c8d8;
+    font-family:'Courier New',monospace;
+    overflow:hidden;
+    height:100vh;
+    width:100vw;
+  }
+  canvas {
+    display:block;
+    cursor:crosshair;
+  }
+  #stats {
+    position:fixed;
+    top:48px;
+    right:14px;
+    width:260px;
+    background:rgba(6,6,16,.92);
+    border:1px solid rgba(0,170,255,.15);
+    border-radius:8px;
+    padding:14px 16px;
+    backdrop-filter:blur(12px);
+    z-index:1000;
+    font-size:11px;
+    line-height:1.7;
+    pointer-events:auto;
+  }
+  #stats h2 {
+    font-size:10px;
+    letter-spacing:3px;
+    color:#0af;
+    margin-bottom:8px;
+    border-bottom:1px solid rgba(0,170,255,.15);
+    padding-bottom:6px;
+  }
+  #stats .row { display:flex; justify-content:space-between; }
+  #stats .label { color:#667; }
+  #stats .val { color:#0af; font-weight:bold; }
+  #stats .highlight { color:#f80; }
+  #tooltip {
+    position:fixed;
+    display:none;
+    background:rgba(6,6,16,.95);
+    border:1px solid rgba(0,170,255,.3);
+    border-radius:6px;
+    padding:10px 14px;
+    backdrop-filter:blur(12px);
+    z-index:2000;
+    font-size:11px;
+    line-height:1.6;
+    pointer-events:none;
+    max-width:260px;
+  }
+  #tooltip .prime-num { color:#0af; font-size:16px; font-weight:bold; }
+  #tooltip .twin-badge {
+    display:inline-block;
+    background:rgba(255,136,0,.2);
+    border:1px solid rgba(255,136,0,.4);
+    color:#f80;
+    font-size:9px;
+    letter-spacing:1px;
+    padding:1px 6px;
+    border-radius:3px;
+    margin-left:6px;
+  }
+  #tooltip .detail { color:#667; }
+  #tooltip .detail span { color:#c0c8d8; }
+  #controls {
+    position:fixed;
+    bottom:14px;
+    left:14px;
+    background:rgba(6,6,16,.92);
+    border:1px solid rgba(0,170,255,.15);
+    border-radius:8px;
+    padding:10px 14px;
+    backdrop-filter:blur(12px);
+    z-index:1000;
+    font-size:9px;
+    color:#556;
+    letter-spacing:1px;
+    line-height:1.8;
+  }
+  #controls kbd {
+    display:inline-block;
+    background:rgba(0,170,255,.08);
+    border:1px solid rgba(0,170,255,.2);
+    border-radius:3px;
+    padding:0 5px;
+    color:#0af;
+    font-family:'Courier New',monospace;
+    font-size:9px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="stats">
+  <h2>VORONOI PRIME STATS</h2>
+  <div class="row"><span class="label">TOTAL PRIMES</span><span class="val" id="s-total">—</span></div>
+  <div class="row"><span class="label">AVG CELL AREA</span><span class="val" id="s-avg">—</span></div>
+  <div class="row"><span class="label">LARGEST CELL</span><span class="val" id="s-largest">—</span></div>
+  <div class="row"><span class="label">SMALLEST CELL</span><span class="val" id="s-smallest">—</span></div>
+  <div class="row"><span class="label">TWIN PRIMES</span><span class="val highlight" id="s-twins">—</span></div>
+  <div class="row"><span class="label">DENSITY</span><span class="val" id="s-density">—</span></div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="controls">
+  <kbd>SCROLL</kbd> ZOOM &nbsp; <kbd>DRAG</kbd> PAN &nbsp; <kbd>CLICK</kbd> SELECT CELL<br>
+  <kbd>ESC</kbd> CLEAR SELECTION &nbsp; <kbd>R</kbd> RESET VIEW
+</div>
+
+<script>
+(function() {
+  // --- Constants ---
+  const GRID_W = 100;
+  const N_MAX = 5000;
+  const GRID_H = Math.ceil(N_MAX / GRID_W);
+  const CELL_SIZE = 8; // pixels per grid cell in world space
+
+  const WORLD_W = GRID_W * CELL_SIZE;
+  const WORLD_H = GRID_H * CELL_SIZE;
+
+  // --- Prime sieve ---
+  function sieve(max) {
+    const is = new Uint8Array(max + 1);
+    is[0] = is[1] = 1;
+    for (let i = 2; i * i <= max; i++) {
+      if (!is[i]) for (let j = i * i; j <= max; j += i) is[j] = 1;
+    }
+    const primes = [];
+    for (let i = 2; i <= max; i++) if (!is[i]) primes.push(i);
+    return primes;
+  }
+
+  const primes = sieve(N_MAX);
+  const primeSet = new Set(primes);
+
+  // Build prime data with positions
+  const primeData = primes.map((p, idx) => {
+    const gx = (p - 1) % GRID_W;
+    const gy = Math.floor((p - 1) / GRID_W);
+    const wx = gx * CELL_SIZE + CELL_SIZE / 2;
+    const wy = gy * CELL_SIZE + CELL_SIZE / 2;
+    const gapBefore = idx > 0 ? p - primes[idx - 1] : 0;
+    const gapAfter = idx < primes.length - 1 ? primes[idx + 1] - p : 0;
+    const isTwin = gapBefore === 2 || gapAfter === 2;
+    return { prime: p, index: idx, gx, gy, wx, wy, gapBefore, gapAfter, isTwin };
+  });
+
+  const twinCount = primeData.filter(d => d.isTwin).length;
+
+  // --- Voronoi via brute-force nearest-prime assignment ---
+  // For each pixel in a downsampled grid, find nearest prime seed
+  const VOX = 2; // voronoi resolution: 1 world-pixel = VOX
+  const VW = Math.ceil(WORLD_W / VOX);
+  const VH = Math.ceil(WORLD_H / VOX);
+  const voronoiMap = new Int16Array(VW * VH); // index into primeData
+
+  // Cell area counters
+  const cellArea = new Float64Array(primeData.length);
+
+  // Build KD-ish acceleration: partition primes into grid buckets
+  const BUCKET_SIZE = 64; // pixels
+  const BW = Math.ceil(WORLD_W / BUCKET_SIZE);
+  const BH = Math.ceil(WORLD_H / BUCKET_SIZE);
+  const buckets = new Array(BW * BH);
+  for (let i = 0; i < buckets.length; i++) buckets[i] = [];
+
+  primeData.forEach((pd, idx) => {
+    const bx = Math.floor(pd.wx / BUCKET_SIZE);
+    const by = Math.floor(pd.wy / BUCKET_SIZE);
+    buckets[by * BW + bx].push(idx);
+  });
+
+  function nearestPrime(wx, wy) {
+    const bx = Math.floor(wx / BUCKET_SIZE);
+    const by = Math.floor(wy / BUCKET_SIZE);
+    let bestDist = Infinity, bestIdx = 0;
+    // Search expanding rings of buckets
+    for (let r = 0; r <= Math.max(BW, BH); r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // only border of ring
+          const nbx = bx + dx, nby = by + dy;
+          if (nbx < 0 || nby < 0 || nbx >= BW || nby >= BH) continue;
+          const bucket = buckets[nby * BW + nbx];
+          for (let k = 0; k < bucket.length; k++) {
+            const pd = primeData[bucket[k]];
+            const ddx = pd.wx - wx, ddy = pd.wy - wy;
+            const d = ddx * ddx + ddy * ddy;
+            if (d < bestDist) { bestDist = d; bestIdx = bucket[k]; }
+          }
+        }
+      }
+      // Early termination: if we found something and the closest bucket border is farther
+      if (bestDist < Infinity) {
+        const minPossible = (r) * BUCKET_SIZE - BUCKET_SIZE;
+        if (minPossible * minPossible > bestDist) break;
+      }
+    }
+    return bestIdx;
+  }
+
+  // Compute the voronoi map
+  for (let vy = 0; vy < VH; vy++) {
+    const wy = vy * VOX + VOX / 2;
+    for (let vx = 0; vx < VW; vx++) {
+      const wx = vx * VOX + VOX / 2;
+      const idx = nearestPrime(wx, wy);
+      voronoiMap[vy * VW + vx] = idx;
+      cellArea[idx] += VOX * VOX;
+    }
+  }
+
+  // Detect borders (where neighboring voronoi pixels differ)
+  const borderMap = new Uint8Array(VW * VH);
+  for (let vy = 0; vy < VH; vy++) {
+    for (let vx = 0; vx < VW; vx++) {
+      const c = voronoiMap[vy * VW + vx];
+      if (vx < VW - 1 && voronoiMap[vy * VW + vx + 1] !== c) { borderMap[vy * VW + vx] = 1; borderMap[vy * VW + vx + 1] = 1; }
+      if (vy < VH - 1 && voronoiMap[(vy + 1) * VW + vx] !== c) { borderMap[vy * VW + vx] = 1; borderMap[(vy + 1) * VW + vx] = 1; }
+    }
+  }
+
+  // Find neighbors for each cell
+  const neighborSets = primeData.map(() => new Set());
+  for (let vy = 0; vy < VH; vy++) {
+    for (let vx = 0; vx < VW - 1; vx++) {
+      const a = voronoiMap[vy * VW + vx], b = voronoiMap[vy * VW + vx + 1];
+      if (a !== b) { neighborSets[a].add(b); neighborSets[b].add(a); }
+    }
+    if (vy < VH - 1) {
+      for (let vx = 0; vx < VW; vx++) {
+        const a = voronoiMap[vy * VW + vx], b = voronoiMap[(vy + 1) * VW + vx];
+        if (a !== b) { neighborSets[a].add(b); neighborSets[b].add(a); }
+      }
+    }
+  }
+  const neighbors = neighborSets.map(s => [...s]);
+
+  // Stats
+  const areas = primeData.map((_, i) => cellArea[i]);
+  const avgArea = areas.reduce((a, b) => a + b, 0) / areas.length;
+  let maxArea = 0, minArea = Infinity, maxIdx = 0, minIdx = 0;
+  areas.forEach((a, i) => {
+    if (a > maxArea) { maxArea = a; maxIdx = i; }
+    if (a < minArea && a > 0) { minArea = a; minIdx = i; }
+  });
+
+  document.getElementById('s-total').textContent = primeData.length;
+  document.getElementById('s-avg').textContent = avgArea.toFixed(1) + ' px²';
+  document.getElementById('s-largest').textContent = 'p=' + primeData[maxIdx].prime + ' (' + maxArea.toFixed(0) + 'px²)';
+  document.getElementById('s-smallest').textContent = 'p=' + primeData[minIdx].prime + ' (' + minArea.toFixed(0) + 'px²)';
+  document.getElementById('s-twins').textContent = twinCount;
+  document.getElementById('s-density').textContent = (primeData.length / N_MAX * 100).toFixed(1) + '%';
+
+  // --- Prerender the voronoi to an offscreen canvas ---
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = VW;
+  offCanvas.height = VH;
+  const offCtx = offCanvas.getContext('2d');
+  const imgData = offCtx.createImageData(VW, VH);
+  const pix = imgData.data;
+
+  // Compute max gap for brightness scaling
+  const maxGap = Math.max(...primeData.map(d => d.gapAfter), 1);
+
+  for (let vy = 0; vy < VH; vy++) {
+    for (let vx = 0; vx < VW; vx++) {
+      const off = (vy * VW + vx) * 4;
+      const pidx = voronoiMap[vy * VW + vx];
+      const pd = primeData[pidx];
+
+      if (borderMap[vy * VW + vx]) {
+        // Cyan glowing border
+        pix[off]     = 0;
+        pix[off + 1] = 170;
+        pix[off + 2] = 255;
+        pix[off + 3] = 180;
+      } else {
+        // Hue from prime index, brightness from gap to next prime
+        const hue = (pd.index / primeData.length) * 360;
+        const brightness = 35 + 45 * (1 - pd.gapAfter / maxGap);
+        const saturation = 70 + (pd.isTwin ? 20 : 0);
+        const rgb = hslToRgb(hue / 360, saturation / 100, brightness / 100);
+        pix[off]     = rgb[0];
+        pix[off + 1] = rgb[1];
+        pix[off + 2] = rgb[2];
+        pix[off + 3] = 255;
+      }
+    }
+  }
+  offCtx.putImageData(imgData, 0, 0);
+
+  function hslToRgb(h, s, l) {
+    let r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+  }
+
+  // --- Main canvas ---
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  let W, H;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    render();
+  }
+  window.addEventListener('resize', resize);
+
+  // Camera
+  let camX = WORLD_W / 2;
+  let camY = WORLD_H / 2;
+  let zoom = 1;
+
+  function fitView() {
+    const sx = W / WORLD_W;
+    const sy = H / WORLD_H;
+    zoom = Math.min(sx, sy) * 0.9;
+    camX = WORLD_W / 2;
+    camY = WORLD_H / 2;
+  }
+
+  // Transform helpers
+  function worldToScreen(wx, wy) {
+    return [
+      (wx - camX) * zoom + W / 2,
+      (wy - camY) * zoom + H / 2
+    ];
+  }
+  function screenToWorld(sx, sy) {
+    return [
+      (sx - W / 2) / zoom + camX,
+      (sy - H / 2) / zoom + camY
+    ];
+  }
+
+  // --- Interaction state ---
+  let hoveredCell = -1;
+  let selectedCell = -1;
+  let isDragging = false;
+  let dragStartX, dragStartY, dragCamX, dragCamY;
+
+  // Mouse events
+  canvas.addEventListener('mousedown', e => {
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragCamX = camX;
+    dragCamY = camY;
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (isDragging) {
+      camX = dragCamX - (e.clientX - dragStartX) / zoom;
+      camY = dragCamY - (e.clientY - dragStartY) / zoom;
+      render();
+    }
+    updateHover(e.clientX, e.clientY);
+  });
+
+  window.addEventListener('mouseup', e => {
+    if (isDragging) {
+      const dx = Math.abs(e.clientX - dragStartX);
+      const dy = Math.abs(e.clientY - dragStartY);
+      if (dx < 4 && dy < 4) {
+        // Click — select cell
+        const [wx, wy] = screenToWorld(e.clientX, e.clientY);
+        if (wx >= 0 && wy >= 0 && wx < WORLD_W && wy < WORLD_H) {
+          const vx = Math.floor(wx / VOX);
+          const vy = Math.floor(wy / VOX);
+          if (vx >= 0 && vy >= 0 && vx < VW && vy < VH) {
+            const cidx = voronoiMap[vy * VW + vx];
+            selectedCell = selectedCell === cidx ? -1 : cidx;
+            render();
+          }
+        }
+      }
+    }
+    isDragging = false;
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const [wx, wy] = screenToWorld(e.clientX, e.clientY);
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    zoom *= factor;
+    zoom = Math.max(0.15, Math.min(zoom, 20));
+    // Zoom towards cursor
+    camX = wx - (e.clientX - W / 2) / zoom;
+    camY = wy - (e.clientY - H / 2) / zoom;
+    render();
+    updateHover(e.clientX, e.clientY);
+  }, { passive: false });
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { selectedCell = -1; render(); }
+    if (e.key === 'r' || e.key === 'R') { fitView(); render(); }
+  });
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  function updateHover(mx, my) {
+    const [wx, wy] = screenToWorld(mx, my);
+    if (wx < 0 || wy < 0 || wx >= WORLD_W || wy >= WORLD_H) {
+      if (hoveredCell !== -1) { hoveredCell = -1; tooltip.style.display = 'none'; render(); }
+      return;
+    }
+    const vx = Math.floor(wx / VOX);
+    const vy = Math.floor(wy / VOX);
+    if (vx < 0 || vy < 0 || vx >= VW || vy >= VH) return;
+    const cidx = voronoiMap[vy * VW + vx];
+    if (cidx !== hoveredCell) {
+      hoveredCell = cidx;
+      const pd = primeData[cidx];
+      let html = '<div class="prime-num">' + pd.prime;
+      if (pd.isTwin) html += '<span class="twin-badge">TWIN</span>';
+      html += '</div>';
+      html += '<div class="detail">Index: <span>#' + (pd.index + 1) + ' of ' + primeData.length + '</span></div>';
+      html += '<div class="detail">Gap before: <span>' + pd.gapBefore + '</span></div>';
+      html += '<div class="detail">Gap after: <span>' + pd.gapAfter + '</span></div>';
+      html += '<div class="detail">Cell area: <span>' + cellArea[cidx].toFixed(0) + ' px²</span></div>';
+      html += '<div class="detail">Grid pos: <span>(' + pd.gx + ', ' + pd.gy + ')</span></div>';
+      html += '<div class="detail">Neighbors: <span>' + neighbors[cidx].length + ' cells</span></div>';
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+      render();
+    }
+    // Position tooltip
+    let tx = mx + 16, ty = my - 10;
+    if (tx + 260 > W) tx = mx - 270;
+    if (ty + 200 > H) ty = my - 200;
+    if (ty < 50) ty = 50;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+  }
+
+  // --- Render ---
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#060610';
+    ctx.fillRect(0, 0, W, H);
+
+    // Calculate visible world rect
+    const [wl, wt] = screenToWorld(0, 0);
+    const [wr, wb] = screenToWorld(W, H);
+
+    // Draw offscreen voronoi canvas scaled
+    const sx = Math.max(0, Math.floor(wl / VOX));
+    const sy = Math.max(0, Math.floor(wt / VOX));
+    const ex = Math.min(VW, Math.ceil(wr / VOX));
+    const ey = Math.min(VH, Math.ceil(wb / VOX));
+
+    if (ex > sx && ey > sy) {
+      const [screenX, screenY] = worldToScreen(sx * VOX, sy * VOX);
+      const drawW = (ex - sx) * VOX * zoom;
+      const drawH = (ey - sy) * VOX * zoom;
+      ctx.imageSmoothingEnabled = zoom < 2;
+      ctx.drawImage(offCanvas, sx, sy, ex - sx, ey - sy, screenX, screenY, drawW, drawH);
+    }
+
+    // Draw selection overlay
+    if (selectedCell >= 0) {
+      drawCellHighlight(selectedCell, 'rgba(0,170,255,0.35)', 2);
+      const nb = neighbors[selectedCell];
+      for (let i = 0; i < nb.length; i++) {
+        drawCellHighlight(nb[i], 'rgba(255,136,0,0.25)', 1);
+      }
+    }
+
+    // Draw hover overlay
+    if (hoveredCell >= 0 && hoveredCell !== selectedCell) {
+      drawCellHighlight(hoveredCell, 'rgba(0,170,255,0.2)', 1);
+    }
+
+    // Draw prime seed dots when zoomed in enough
+    if (zoom > 1.5) {
+      ctx.fillStyle = '#fff';
+      for (let i = 0; i < primeData.length; i++) {
+        const pd = primeData[i];
+        if (pd.wx < wl - 10 || pd.wx > wr + 10 || pd.wy < wt - 10 || pd.wy > wb + 10) continue;
+        const [sx2, sy2] = worldToScreen(pd.wx, pd.wy);
+        const r = Math.min(3, 1.5 * zoom / 2);
+        ctx.beginPath();
+        ctx.arc(sx2, sy2, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Prime number labels at high zoom
+    if (zoom > 4) {
+      ctx.font = Math.max(8, Math.min(14, zoom * 2)) + 'px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let i = 0; i < primeData.length; i++) {
+        const pd = primeData[i];
+        if (pd.wx < wl - 20 || pd.wx > wr + 20 || pd.wy < wt - 20 || pd.wy > wb + 20) continue;
+        const [sx2, sy2] = worldToScreen(pd.wx, pd.wy);
+        ctx.fillText(pd.prime, sx2, sy2 + 4 * zoom / 4);
+      }
+    }
+  }
+
+  function drawCellHighlight(cellIdx, color, lineWidth) {
+    // Draw by scanning voronoi map and filling matching pixels
+    // For performance, draw a filled rect overlay using the offscreen approach
+    const pd = primeData[cellIdx];
+    // Find bounding box of this cell in voronoi coords
+    // Quick scan from seed position outward
+    const cx = Math.floor(pd.wx / VOX);
+    const cy = Math.floor(pd.wy / VOX);
+
+    // Use BFS from seed to find all pixels of this cell
+    const visited = new Set();
+    const queue = [[cx, cy]];
+    visited.add(cy * VW + cx);
+    const pixels = [];
+
+    while (queue.length > 0) {
+      const [x, y] = queue.pop();
+      if (x < 0 || y < 0 || x >= VW || y >= VH) continue;
+      if (voronoiMap[y * VW + x] !== cellIdx) continue;
+      pixels.push([x, y]);
+
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        const key = ny * VW + nx;
+        if (!visited.has(key) && nx >= 0 && ny >= 0 && nx < VW && ny < VH) {
+          visited.add(key);
+          if (voronoiMap[ny * VW + nx] === cellIdx) queue.push([nx, ny]);
+        }
+      }
+    }
+
+    // Draw all pixels
+    ctx.fillStyle = color;
+    for (const [px, py] of pixels) {
+      const [sx, sy] = worldToScreen(px * VOX, py * VOX);
+      const size = VOX * zoom;
+      ctx.fillRect(sx, sy, Math.ceil(size), Math.ceil(size));
+    }
+
+    // Draw border of the cell
+    ctx.strokeStyle = color.replace(/[\d.]+\)$/, '0.8)');
+    ctx.lineWidth = lineWidth;
+    for (const [px, py] of pixels) {
+      if (borderMap[py * VW + px]) {
+        const [sx, sy] = worldToScreen(px * VOX, py * VOX);
+        const size = VOX * zoom;
+        ctx.fillStyle = 'rgba(0,170,255,0.6)';
+        ctx.fillRect(sx, sy, Math.ceil(size), Math.ceil(size));
+      }
+    }
+  }
+
+  // --- Init ---
+  resize();
+  fitView();
+  render();
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
