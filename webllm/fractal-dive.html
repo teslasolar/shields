@@ -1,0 +1,1749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fractal Dive Explorer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #c0d8ff;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ─────────────────────────────────── */
+#header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(10,10,25,0.92);
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, #00e5ff, #ffd700, #ff00ff, #00ff88, #00e5ff) 1;
+  z-index: 200;
+  flex-shrink: 0;
+  position: relative;
+}
+#header h1 {
+  font-size: 14px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #00e5ff, #ffd700, #ff00ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: headerShift 6s linear infinite;
+}
+@keyframes headerShift {
+  0%,100% { filter: hue-rotate(0deg); }
+  50% { filter: hue-rotate(40deg); }
+}
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #8899aa;
+}
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #00ff88;
+  box-shadow: 0 0 6px #00ff88;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+.status-dot.inactive { background: #555; box-shadow: none; animation: none; }
+@keyframes dotPulse {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Main Layout ────────────────────────────── */
+#main-wrap {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Panels ─────────────────────────────────── */
+.panel {
+  background: rgba(10,10,25,0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(100,200,255,0.15);
+  font-size: 10px;
+  letter-spacing: 1px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  z-index: 100;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100,200,255,0.2) transparent;
+}
+#left-panel {
+  width: 220px;
+  border-right: 1px solid rgba(100,200,255,0.1);
+  padding: 12px;
+}
+#right-panel {
+  width: 200px;
+  border-left: 1px solid rgba(100,200,255,0.1);
+  padding: 12px;
+}
+.panel-section {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(100,200,255,0.08);
+}
+.panel-section:last-child { border-bottom: none; }
+.panel-title {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #00e5ff;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  font-weight: normal;
+}
+.panel-label {
+  color: #556;
+  font-size: 9px;
+  margin-top: 5px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.panel-value {
+  color: #c0d8ff;
+  font-size: 11px;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+/* ── Buttons ────────────────────────────────── */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 5px;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 6px;
+  color: #c0d8ff;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+.btn:hover {
+  background: rgba(0,229,255,0.18);
+  border-color: rgba(0,229,255,0.5);
+  color: #fff;
+}
+.btn.active {
+  background: rgba(0,229,255,0.2);
+  border-color: #00e5ff;
+  color: #00e5ff;
+  box-shadow: 0 0 8px rgba(0,229,255,0.2);
+}
+.btn-group {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+.btn-group .btn {
+  flex: 1;
+  margin-top: 0;
+  text-align: center;
+  padding: 5px 3px;
+  font-size: 9px;
+}
+
+/* ── Palette swatches ───────────────────────── */
+.palette-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  margin-top: 4px;
+  background: rgba(0,229,255,0.05);
+  border: 1px solid rgba(100,200,255,0.12);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #c0d8ff;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.palette-btn:hover { border-color: rgba(0,229,255,0.4); }
+.palette-btn.active { border-color: #00e5ff; background: rgba(0,229,255,0.12); }
+.palette-swatch {
+  width: 40px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* ── Sliders ────────────────────────────────── */
+.slider-row {
+  margin-top: 6px;
+}
+.slider-row input[type=range] {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(100,200,255,0.15);
+  border-radius: 2px;
+  outline: none;
+  margin-top: 3px;
+}
+.slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #00e5ff;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(0,229,255,0.4);
+}
+.slider-row .slider-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #556;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.slider-row .slider-label span:last-child { color: #00e5ff; }
+
+/* ── Bookmark list ──────────────────────────── */
+.bookmark-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  margin-top: 3px;
+  background: rgba(255,215,0,0.05);
+  border: 1px solid rgba(255,215,0,0.12);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 9px;
+  color: #ffd700;
+  transition: all 0.2s;
+}
+.bookmark-item:hover {
+  background: rgba(255,215,0,0.12);
+  border-color: rgba(255,215,0,0.3);
+}
+.bookmark-item .bk-del {
+  margin-left: auto;
+  color: #ff4444;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+/* ── Canvas Area ────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #0a0a0f;
+}
+#fractal-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+/* ── HUD Corners ────────────────────────────── */
+.hud-corner {
+  position: absolute;
+  width: 20px; height: 20px;
+  z-index: 50;
+  pointer-events: none;
+}
+.hud-corner.tl { top: 6px; left: 6px; border-top: 2px solid rgba(0,229,255,0.4); border-left: 2px solid rgba(0,229,255,0.4); }
+.hud-corner.tr { top: 6px; right: 6px; border-top: 2px solid rgba(0,229,255,0.4); border-right: 2px solid rgba(0,229,255,0.4); }
+.hud-corner.bl { bottom: 6px; left: 6px; border-bottom: 2px solid rgba(0,229,255,0.4); border-left: 2px solid rgba(0,229,255,0.4); }
+.hud-corner.br { bottom: 6px; right: 6px; border-bottom: 2px solid rgba(0,229,255,0.4); border-right: 2px solid rgba(0,229,255,0.4); }
+
+/* ── CRT Scanlines ──────────────────────────── */
+#scanlines {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 40;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+
+/* ── Minimap ────────────────────────────────── */
+#minimap-wrap {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 120px;
+  height: 90px;
+  border: 1px solid rgba(100,200,255,0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 60;
+  background: rgba(10,10,25,0.8);
+  backdrop-filter: blur(6px);
+}
+#minimap-canvas {
+  width: 100%;
+  height: 100%;
+}
+#minimap-rect {
+  position: absolute;
+  border: 1px solid #00e5ff;
+  pointer-events: none;
+  box-shadow: 0 0 4px rgba(0,229,255,0.4);
+}
+
+/* ── Histogram ──────────────────────────────── */
+#histogram {
+  width: 100%;
+  height: 40px;
+  margin-top: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.3);
+}
+
+/* ── Bottom Bar ─────────────────────────────── */
+#bottom-bar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(10,10,25,0.92);
+  border-top: 1px solid rgba(100,200,255,0.1);
+  font-size: 10px;
+  color: #556;
+  letter-spacing: 1px;
+  z-index: 200;
+  flex-shrink: 0;
+}
+#bottom-bar span { margin: 0 8px; }
+#bottom-bar .val { color: #00e5ff; }
+#bottom-bar .gold { color: #ffd700; }
+
+/* ── Voice Button ───────────────────────────── */
+.voice-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(255,0,255,0.08);
+  border: 1px solid rgba(255,0,255,0.3);
+  border-radius: 6px;
+  color: #ff88ff;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  transition: all 0.3s;
+}
+.voice-btn:hover { background: rgba(255,0,255,0.15); }
+.voice-btn.active {
+  background: rgba(255,0,255,0.2);
+  border-color: #ff00ff;
+  color: #ff00ff;
+  box-shadow: 0 0 12px rgba(255,0,255,0.2);
+}
+.voice-btn .v-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #555;
+  transition: all 0.3s;
+}
+.voice-btn.active .v-dot {
+  background: #ff00ff;
+  box-shadow: 0 0 6px #ff00ff;
+  animation: dotPulse 1s ease-in-out infinite;
+}
+
+/* ── Transition overlay ─────────────────────── */
+#transition-overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 45;
+  opacity: 0;
+}
+
+/* ── Keyboard hint ──────────────────────────── */
+#key-hint {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(10,10,25,0.9);
+  border: 1px solid rgba(0,229,255,0.3);
+  border-radius: 8px;
+  padding: 14px 20px;
+  font-size: 10px;
+  color: #c0d8ff;
+  z-index: 300;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ Header ═══ -->
+<div id="header">
+  <h1>Fractal Dive Explorer</h1>
+  <div class="status-pill"><div class="status-dot" id="render-dot"></div><span id="render-status">READY</span></div>
+  <div class="status-pill"><div class="status-dot inactive" id="voice-dot"></div><span id="voice-status">VOICE OFF</span></div>
+  <div class="status-pill"><div class="status-dot inactive" id="dive-dot"></div><span id="dive-status">AUTO-DIVE OFF</span></div>
+</div>
+
+<!-- ═══ Main ═══ -->
+<div id="main-wrap">
+
+  <!-- Left Panel -->
+  <div class="panel" id="left-panel">
+
+    <div class="panel-section">
+      <div class="panel-title">Fractal Type</div>
+      <div class="btn-group" id="type-btns">
+        <button class="btn active" data-type="mandelbrot">Mandel</button>
+        <button class="btn" data-type="julia">Julia</button>
+      </div>
+      <div class="btn-group" style="margin-top:4px">
+        <button class="btn" data-type="burning">Burning</button>
+        <button class="btn" data-type="tricorn">Tricorn</button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Color Palette</div>
+      <div id="palette-list"></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Controls</div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Max Iterations</span><span id="iter-val">300</span></div>
+        <input type="range" id="iter-slider" min="100" max="2000" step="50" value="300">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Color Speed</span><span id="cspeed-val">1.0</span></div>
+        <input type="range" id="cspeed-slider" min="0" max="5" step="0.1" value="1.0">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Zoom Speed</span><span id="zspeed-val">2.0</span></div>
+        <input type="range" id="zspeed-slider" min="1" max="5" step="0.1" value="2.0">
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Actions</div>
+      <button class="btn voice-btn" id="voice-btn"><div class="v-dot"></div>Voice Drive</button>
+      <button class="btn" id="autodive-btn">Auto-Dive</button>
+      <button class="btn" id="reset-btn">Reset View</button>
+      <button class="btn" id="save-btn" style="border-color:rgba(255,215,0,0.3);color:#ffd700">Save Bookmark</button>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Bookmarks</div>
+      <div id="bookmark-list"></div>
+    </div>
+
+    <div class="panel-section" style="border-bottom:none">
+      <div class="panel-title">Shortcuts</div>
+      <div style="font-size:8px;color:#445;line-height:1.8">
+        1-5 Palette &middot; M Mandel &middot; J Julia<br>
+        A Auto-dive &middot; Space Voice<br>
+        R Reset &middot; S Bookmark &middot; +/- Iters
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas Area -->
+  <div id="canvas-wrap">
+    <canvas id="fractal-canvas"></canvas>
+    <div class="hud-corner tl"></div>
+    <div class="hud-corner tr"></div>
+    <div class="hud-corner bl"></div>
+    <div class="hud-corner br"></div>
+    <div id="scanlines"></div>
+    <div id="transition-overlay"></div>
+    <div id="key-hint"></div>
+    <div id="minimap-wrap">
+      <canvas id="minimap-canvas"></canvas>
+      <div id="minimap-rect"></div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="panel" id="right-panel">
+    <div class="panel-section">
+      <div class="panel-title">Voice Analysis</div>
+      <div class="panel-label">Pitch</div>
+      <div class="panel-value" id="v-pitch">--</div>
+      <div class="panel-label">Volume</div>
+      <div class="panel-value" id="v-volume">--</div>
+      <div class="panel-label">Vowel</div>
+      <div class="panel-value" id="v-vowel">--</div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Coordinates</div>
+      <div class="panel-label">Re(c)</div>
+      <div class="panel-value" id="coord-re">-0.5</div>
+      <div class="panel-label">Im(c)</div>
+      <div class="panel-value" id="coord-im">0.0</div>
+      <div class="panel-label">Zoom</div>
+      <div class="panel-value" id="coord-zoom">1.0</div>
+      <div class="panel-label" id="julia-c-label" style="display:none">Julia c</div>
+      <div class="panel-value" id="julia-c-val" style="display:none"></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Iteration Histogram</div>
+      <canvas id="histogram" width="176" height="40"></canvas>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">Render Stats</div>
+      <div class="panel-label">Resolution</div>
+      <div class="panel-value" id="stat-res">--</div>
+      <div class="panel-label">Render Time</div>
+      <div class="panel-value" id="stat-time">--</div>
+      <div class="panel-label">Iterations Used</div>
+      <div class="panel-value" id="stat-iters">--</div>
+    </div>
+
+    <div class="panel-section" style="border-bottom:none">
+      <div class="panel-title">Performance</div>
+      <div class="panel-label">FPS</div>
+      <div class="panel-value" id="stat-fps">--</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ Bottom Bar ═══ -->
+<div id="bottom-bar">
+  <div>
+    <span>Re: <span class="val" id="bb-re">-0.5000</span></span>
+    <span>Im: <span class="val" id="bb-im">0.0000</span></span>
+  </div>
+  <div>
+    <span>Zoom: <span class="gold" id="bb-zoom">1.00e0</span></span>
+    <span>Iters: <span class="val" id="bb-iters">300</span></span>
+    <span>FPS: <span class="val" id="bb-fps">--</span></span>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  Web Worker source (inlined as a Blob)
+// ═══════════════════════════════════════════════════════
+const workerSrc = `
+self.onmessage = function(e) {
+  const { id, width, height, centerRe, centerIm, zoom, maxIter, fractalType, juliaRe, juliaIm, startRow, endRow, colorOffset, paletteId } = e.data;
+
+  const data = new Uint8ClampedArray(width * (endRow - startRow) * 4);
+  const histogram = new Uint32Array(maxIter + 1);
+  const scale = 3.5 / (width * zoom);
+  const offsetRe = centerRe - (width / 2) * scale;
+  const offsetIm = centerIm - (height / 2) * scale;
+
+  const isJulia = fractalType === 'julia';
+  const isBurning = fractalType === 'burning';
+  const isTricorn = fractalType === 'tricorn';
+  const jRe = juliaRe;
+  const jIm = juliaIm;
+
+  for (let py = startRow; py < endRow; py++) {
+    for (let px = 0; px < width; px++) {
+      let cRe, cIm, zRe, zIm;
+
+      if (isJulia) {
+        zRe = offsetRe + px * scale;
+        zIm = offsetIm + py * scale;
+        cRe = jRe;
+        cIm = jIm;
+      } else {
+        cRe = offsetRe + px * scale;
+        cIm = offsetIm + py * scale;
+        zRe = 0;
+        zIm = 0;
+      }
+
+      let n = 0;
+      let zRe2 = 0, zIm2 = 0;
+      for (; n < maxIter; n++) {
+        zRe2 = zRe * zRe;
+        zIm2 = zIm * zIm;
+        if (zRe2 + zIm2 > 256) break;
+
+        let newIm;
+        if (isBurning) {
+          newIm = 2 * Math.abs(zRe) * Math.abs(zIm) + cIm;
+        } else if (isTricorn) {
+          newIm = -2 * zRe * zIm + cIm;
+        } else {
+          newIm = 2 * zRe * zIm + cIm;
+        }
+        zRe = zRe2 - zIm2 + cRe;
+        zIm = newIm;
+      }
+
+      const idx = ((py - startRow) * width + px) * 4;
+      if (n === maxIter) {
+        data[idx] = 0;
+        data[idx + 1] = 0;
+        data[idx + 2] = 0;
+        data[idx + 3] = 255;
+        histogram[maxIter]++;
+      } else {
+        const logZn = Math.log(zRe2 + zIm2) / 2;
+        const mu = n + 1 - Math.log(logZn) / Math.log(2);
+        const t = (mu + colorOffset) % 256;
+        const rgb = getPaletteColor(t, paletteId);
+        data[idx] = rgb[0];
+        data[idx + 1] = rgb[1];
+        data[idx + 2] = rgb[2];
+        data[idx + 3] = 255;
+        const band = Math.min(n, maxIter);
+        histogram[band]++;
+      }
+    }
+  }
+
+  self.postMessage({ id, startRow, endRow, data, histogram }, [data.buffer]);
+};
+
+function getPaletteColor(t, id) {
+  t = ((t % 256) + 256) % 256;
+  const f = t / 256;
+  switch(id) {
+    case 0: return cosmic(f);
+    case 1: return fire(f);
+    case 2: return ocean(f);
+    case 3: return neon(f);
+    case 4: return mono(f);
+    default: return cosmic(f);
+  }
+}
+
+function lerp3(a, b, t) {
+  return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+}
+
+function cosmic(f) {
+  if (f < 0.15) return lerp3([0,0,30], [20,0,100], f/0.15);
+  if (f < 0.35) return lerp3([20,0,100], [80,40,180], (f-0.15)/0.2);
+  if (f < 0.5) return lerp3([80,40,180], [200,160,50], (f-0.35)/0.15);
+  if (f < 0.65) return lerp3([200,160,50], [255,220,100], (f-0.5)/0.15);
+  if (f < 0.8) return lerp3([255,220,100], [60,80,200], (f-0.65)/0.15);
+  return lerp3([60,80,200], [0,0,30], (f-0.8)/0.2);
+}
+
+function fire(f) {
+  if (f < 0.2) return lerp3([10,0,0], [120,0,0], f/0.2);
+  if (f < 0.45) return lerp3([120,0,0], [220,80,0], (f-0.2)/0.25);
+  if (f < 0.65) return lerp3([220,80,0], [255,200,20], (f-0.45)/0.2);
+  if (f < 0.85) return lerp3([255,200,20], [255,255,200], (f-0.65)/0.2);
+  return lerp3([255,255,200], [10,0,0], (f-0.85)/0.15);
+}
+
+function ocean(f) {
+  if (f < 0.2) return lerp3([0,10,30], [0,50,100], f/0.2);
+  if (f < 0.45) return lerp3([0,50,100], [0,150,180], (f-0.2)/0.25);
+  if (f < 0.65) return lerp3([0,150,180], [100,220,240], (f-0.45)/0.2);
+  if (f < 0.85) return lerp3([100,220,240], [220,250,255], (f-0.65)/0.2);
+  return lerp3([220,250,255], [0,10,30], (f-0.85)/0.15);
+}
+
+function neon(f) {
+  if (f < 0.2) return lerp3([20,0,30], [255,0,100], f/0.2);
+  if (f < 0.4) return lerp3([255,0,100], [255,0,255], (f-0.2)/0.2);
+  if (f < 0.6) return lerp3([255,0,255], [0,229,255], (f-0.4)/0.2);
+  if (f < 0.8) return lerp3([0,229,255], [0,255,136], (f-0.6)/0.2);
+  return lerp3([0,255,136], [20,0,30], (f-0.8)/0.2);
+}
+
+function mono(f) {
+  const v = Math.floor(f * 255);
+  const b = Math.min(255, v + 30);
+  return [v, v, b];
+}
+`;
+
+// ═══════════════════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════════════════
+const STATE = {
+  centerRe: -0.5,
+  centerIm: 0.0,
+  zoom: 1.0,
+  maxIter: 300,
+  fractalType: 'mandelbrot',
+  juliaRe: -0.7,
+  juliaIm: 0.27015,
+  paletteId: 0,
+  colorOffset: 0,
+  colorSpeed: 1.0,
+  zoomSpeed: 2.0,
+  voiceActive: false,
+  autoDive: false,
+  renderPending: false,
+  rendering: false,
+  needsRender: true,
+  lowResScale: 0.25,
+  highResRendered: false,
+  lastRenderTime: 0,
+  fps: 0,
+  frameCount: 0,
+  fpsTime: 0,
+  histogram: null,
+  drag: { active: false, startX: 0, startY: 0, startRe: 0, startIm: 0 },
+  workerCount: navigator.hardwareConcurrency || 4,
+  workers: [],
+  pendingChunks: 0,
+  renderStartTime: 0,
+  renderGen: 0,
+  minimapDirty: true,
+  bookmarks: [],
+  transitionProgress: 0,
+  transitioning: false,
+  prevFractalType: null,
+};
+
+// Palette names for UI
+const PALETTES = [
+  { name: 'Cosmic', colors: ['#00001e','#140064','#5028b4','#c8a032','#ffdc64','#3c50c8'] },
+  { name: 'Fire', colors: ['#0a0000','#780000','#dc5000','#ffc814','#ffffc8'] },
+  { name: 'Ocean', colors: ['#000a1e','#003264','#0096b4','#64dcf0','#dcfaff'] },
+  { name: 'Neon', colors: ['#14001e','#ff0064','#ff00ff','#00e5ff','#00ff88'] },
+  { name: 'Mono', colors: ['#000000','#404050','#808090','#c0c0d0','#ffffff'] },
+];
+
+// ═══════════════════════════════════════════════════════
+//  DOM refs
+// ═══════════════════════════════════════════════════════
+const canvas = document.getElementById('fractal-canvas');
+const ctx = canvas.getContext('2d');
+const canvasWrap = document.getElementById('canvas-wrap');
+const minimapCanvas = document.getElementById('minimap-canvas');
+const minimapCtx = minimapCanvas.getContext('2d');
+const minimapRect = document.getElementById('minimap-rect');
+const histCanvas = document.getElementById('histogram');
+const histCtx = histCanvas.getContext('2d');
+const transitionOverlay = document.getElementById('transition-overlay');
+const keyHint = document.getElementById('key-hint');
+
+// ═══════════════════════════════════════════════════════
+//  Workers
+// ═══════════════════════════════════════════════════════
+const blob = new Blob([workerSrc], { type: 'application/javascript' });
+const workerUrl = URL.createObjectURL(blob);
+
+for (let i = 0; i < STATE.workerCount; i++) {
+  const w = new Worker(workerUrl);
+  w.onmessage = handleWorkerResult;
+  STATE.workers.push(w);
+}
+
+// ═══════════════════════════════════════════════════════
+//  Palette UI
+// ═══════════════════════════════════════════════════════
+const paletteList = document.getElementById('palette-list');
+PALETTES.forEach((p, i) => {
+  const btn = document.createElement('div');
+  btn.className = 'palette-btn' + (i === 0 ? ' active' : '');
+  btn.dataset.idx = i;
+  const swatch = document.createElement('div');
+  swatch.className = 'palette-swatch';
+  swatch.style.background = `linear-gradient(90deg, ${p.colors.join(',')})`;
+  btn.appendChild(swatch);
+  btn.appendChild(document.createTextNode(p.name));
+  btn.addEventListener('click', () => selectPalette(i));
+  paletteList.appendChild(btn);
+});
+
+function selectPalette(idx) {
+  STATE.paletteId = idx;
+  document.querySelectorAll('.palette-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+  requestRender();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Fractal type buttons
+// ═══════════════════════════════════════════════════════
+document.querySelectorAll('#type-btns .btn, #type-btns + .btn-group .btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.type;
+    switchFractalType(t);
+  });
+});
+
+function switchFractalType(type) {
+  if (type === STATE.fractalType) return;
+  if (type === 'julia' && STATE.fractalType !== 'julia') {
+    STATE.juliaRe = STATE.centerRe;
+    STATE.juliaIm = STATE.centerIm;
+  }
+  STATE.prevFractalType = STATE.fractalType;
+  STATE.fractalType = type;
+  document.querySelectorAll('#type-btns .btn, #type-btns + .btn-group .btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.type === type);
+  });
+  updateJuliaDisplay();
+  playTransition();
+  requestRender();
+}
+
+function updateJuliaDisplay() {
+  const show = STATE.fractalType === 'julia';
+  document.getElementById('julia-c-label').style.display = show ? '' : 'none';
+  document.getElementById('julia-c-val').style.display = show ? '' : 'none';
+  if (show) {
+    document.getElementById('julia-c-val').textContent = `${STATE.juliaRe.toFixed(6)} + ${STATE.juliaIm.toFixed(6)}i`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Transition effect
+// ═══════════════════════════════════════════════════════
+function playTransition() {
+  STATE.transitioning = true;
+  STATE.transitionProgress = 0;
+  transitionOverlay.style.opacity = '1';
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const maxR = Math.sqrt(cx * cx + cy * cy);
+  const dur = 600;
+  const start = performance.now();
+  function step(t) {
+    const elapsed = t - start;
+    const p = Math.min(1, elapsed / dur);
+    const r = p * maxR;
+    transitionOverlay.style.background = `radial-gradient(circle ${r}px at ${cx}px ${cy}px, transparent ${r - 2}px, rgba(0,229,255,0.15) ${r}px, transparent ${r + 20}px)`;
+    if (p < 1) {
+      requestAnimationFrame(step);
+    } else {
+      transitionOverlay.style.opacity = '0';
+      STATE.transitioning = false;
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// ═══════════════════════════════════════════════════════
+//  Sliders
+// ═══════════════════════════════════════════════════════
+document.getElementById('iter-slider').addEventListener('input', e => {
+  STATE.maxIter = parseInt(e.target.value);
+  document.getElementById('iter-val').textContent = STATE.maxIter;
+  requestRender();
+});
+
+document.getElementById('cspeed-slider').addEventListener('input', e => {
+  STATE.colorSpeed = parseFloat(e.target.value);
+  document.getElementById('cspeed-val').textContent = STATE.colorSpeed.toFixed(1);
+});
+
+document.getElementById('zspeed-slider').addEventListener('input', e => {
+  STATE.zoomSpeed = parseFloat(e.target.value);
+  document.getElementById('zspeed-val').textContent = STATE.zoomSpeed.toFixed(1);
+});
+
+// ═══════════════════════════════════════════════════════
+//  Buttons
+// ═══════════════════════════════════════════════════════
+document.getElementById('reset-btn').addEventListener('click', resetView);
+document.getElementById('save-btn').addEventListener('click', saveBookmark);
+document.getElementById('autodive-btn').addEventListener('click', toggleAutoDive);
+document.getElementById('voice-btn').addEventListener('click', toggleVoice);
+
+function resetView() {
+  STATE.centerRe = -0.5;
+  STATE.centerIm = 0.0;
+  STATE.zoom = 1.0;
+  STATE.maxIter = 300;
+  document.getElementById('iter-slider').value = 300;
+  document.getElementById('iter-val').textContent = '300';
+  STATE.minimapDirty = true;
+  requestRender();
+  showHint('View Reset');
+}
+
+function toggleAutoDive() {
+  STATE.autoDive = !STATE.autoDive;
+  document.getElementById('autodive-btn').classList.toggle('active', STATE.autoDive);
+  const dot = document.getElementById('dive-dot');
+  dot.classList.toggle('inactive', !STATE.autoDive);
+  document.getElementById('dive-status').textContent = STATE.autoDive ? 'AUTO-DIVE ON' : 'AUTO-DIVE OFF';
+  showHint(STATE.autoDive ? 'Auto-Dive Activated' : 'Auto-Dive Off');
+}
+
+// ═══════════════════════════════════════════════════════
+//  Bookmarks
+// ═══════════════════════════════════════════════════════
+function loadBookmarks() {
+  try {
+    const raw = localStorage.getItem('fractal-dive-bookmarks');
+    if (raw) STATE.bookmarks = JSON.parse(raw);
+  } catch(e) {}
+  renderBookmarks();
+}
+
+function saveBookmark() {
+  const bk = {
+    re: STATE.centerRe,
+    im: STATE.centerIm,
+    zoom: STATE.zoom,
+    type: STATE.fractalType,
+    palette: STATE.paletteId,
+    maxIter: STATE.maxIter,
+    juliaRe: STATE.juliaRe,
+    juliaIm: STATE.juliaIm,
+    name: `BK${STATE.bookmarks.length + 1}`
+  };
+  STATE.bookmarks.push(bk);
+  try { localStorage.setItem('fractal-dive-bookmarks', JSON.stringify(STATE.bookmarks)); } catch(e) {}
+  renderBookmarks();
+  showHint('Bookmark Saved');
+}
+
+function renderBookmarks() {
+  const list = document.getElementById('bookmark-list');
+  list.innerHTML = '';
+  STATE.bookmarks.forEach((bk, i) => {
+    const el = document.createElement('div');
+    el.className = 'bookmark-item';
+    el.innerHTML = `<span>${bk.name}</span><span style="font-size:7px;color:#556"> z${bk.zoom.toExponential(1)}</span><span class="bk-del">&times;</span>`;
+    el.querySelector('span').addEventListener('click', () => {
+      STATE.centerRe = bk.re;
+      STATE.centerIm = bk.im;
+      STATE.zoom = bk.zoom;
+      STATE.maxIter = bk.maxIter || 300;
+      STATE.juliaRe = bk.juliaRe || -0.7;
+      STATE.juliaIm = bk.juliaIm || 0.27015;
+      if (bk.type) switchFractalType(bk.type);
+      if (bk.palette !== undefined) selectPalette(bk.palette);
+      document.getElementById('iter-slider').value = STATE.maxIter;
+      document.getElementById('iter-val').textContent = STATE.maxIter;
+      STATE.minimapDirty = true;
+      requestRender();
+    });
+    el.querySelector('.bk-del').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      STATE.bookmarks.splice(i, 1);
+      try { localStorage.setItem('fractal-dive-bookmarks', JSON.stringify(STATE.bookmarks)); } catch(e) {}
+      renderBookmarks();
+    });
+    list.appendChild(el);
+  });
+}
+
+loadBookmarks();
+
+// ═══════════════════════════════════════════════════════
+//  Hint popup
+// ═══════════════════════════════════════════════════════
+let hintTimer = 0;
+function showHint(msg) {
+  keyHint.textContent = msg;
+  keyHint.style.opacity = '1';
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => { keyHint.style.opacity = '0'; }, 1200);
+}
+
+// ═══════════════════════════════════════════════════════
+//  Canvas sizing
+// ═══════════════════════════════════════════════════════
+function resizeCanvas() {
+  const w = canvasWrap.clientWidth;
+  const h = canvasWrap.clientHeight;
+  canvas.width = w;
+  canvas.height = h;
+  minimapCanvas.width = 120;
+  minimapCanvas.height = 90;
+  STATE.minimapDirty = true;
+  requestRender();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ═══════════════════════════════════════════════════════
+//  Rendering engine
+// ═══════════════════════════════════════════════════════
+let renderGeneration = 0;
+
+function requestRender() {
+  STATE.needsRender = true;
+}
+
+function startRender(scale) {
+  const gen = ++renderGeneration;
+  STATE.renderGen = gen;
+  STATE.rendering = true;
+  STATE.renderStartTime = performance.now();
+  const renderDot = document.getElementById('render-dot');
+  renderDot.classList.remove('inactive');
+  document.getElementById('render-status').textContent = scale < 1 ? 'PREVIEW' : 'RENDERING';
+
+  const w = Math.floor(canvas.width * scale);
+  const h = Math.floor(canvas.height * scale);
+  if (w < 1 || h < 1) return;
+
+  const rowsPerWorker = Math.ceil(h / STATE.workerCount);
+  STATE.pendingChunks = 0;
+  STATE.histogram = new Uint32Array(STATE.maxIter + 1);
+  STATE._renderW = w;
+  STATE._renderH = h;
+  STATE._renderScale = scale;
+  STATE._renderGen = gen;
+  STATE._imgData = ctx.createImageData(w, h);
+  STATE._chunkHistograms = [];
+
+  for (let i = 0; i < STATE.workerCount; i++) {
+    const startRow = i * rowsPerWorker;
+    const endRow = Math.min(startRow + rowsPerWorker, h);
+    if (startRow >= endRow) continue;
+    STATE.pendingChunks++;
+    STATE.workers[i].postMessage({
+      id: gen,
+      width: w,
+      height: h,
+      centerRe: STATE.centerRe,
+      centerIm: STATE.centerIm,
+      zoom: STATE.zoom,
+      maxIter: STATE.maxIter,
+      fractalType: STATE.fractalType,
+      juliaRe: STATE.juliaRe,
+      juliaIm: STATE.juliaIm,
+      startRow,
+      endRow,
+      colorOffset: STATE.colorOffset,
+      paletteId: STATE.paletteId,
+    });
+  }
+}
+
+function handleWorkerResult(e) {
+  const { id, startRow, endRow, data, histogram } = e.data;
+  if (id !== STATE._renderGen) return;
+
+  const w = STATE._renderW;
+  for (let y = startRow; y < endRow; y++) {
+    const srcOffset = (y - startRow) * w * 4;
+    const dstOffset = y * w * 4;
+    STATE._imgData.data.set(data.subarray(srcOffset, srcOffset + w * 4), dstOffset);
+  }
+  STATE._chunkHistograms.push(histogram);
+
+  STATE.pendingChunks--;
+  if (STATE.pendingChunks <= 0) {
+    finishRender();
+  }
+}
+
+function finishRender() {
+  const scale = STATE._renderScale;
+  const w = STATE._renderW;
+  const h = STATE._renderH;
+
+  // Draw to canvas (scaled up if low res)
+  if (scale < 1) {
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = w;
+    tmpCanvas.height = h;
+    tmpCanvas.getContext('2d').putImageData(STATE._imgData, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(tmpCanvas, 0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.putImageData(STATE._imgData, 0, 0);
+  }
+
+  // Draw background stars in set interior (very subtle)
+  drawStars();
+
+  // Merge histograms
+  const merged = new Uint32Array(STATE.maxIter + 1);
+  for (const hist of STATE._chunkHistograms) {
+    for (let i = 0; i <= STATE.maxIter; i++) merged[i] += hist[i];
+  }
+  STATE.histogram = merged;
+  drawHistogram();
+
+  STATE.lastRenderTime = performance.now() - STATE.renderStartTime;
+  STATE.rendering = false;
+  document.getElementById('render-status').textContent = 'READY';
+
+  // Stats
+  document.getElementById('stat-res').textContent = `${w} x ${h}`;
+  document.getElementById('stat-time').textContent = `${STATE.lastRenderTime.toFixed(0)}ms`;
+  document.getElementById('stat-iters').textContent = STATE.maxIter;
+
+  // If this was a low-res render, queue the high-res
+  if (scale < 1) {
+    STATE.highResRendered = false;
+    clearTimeout(STATE._hiResTimer);
+    STATE._hiResTimer = setTimeout(() => {
+      if (!STATE.needsRender) startRender(1.0);
+      STATE.highResRendered = true;
+    }, 80);
+  } else {
+    STATE.highResRendered = true;
+  }
+
+  // Update minimap
+  if (STATE.minimapDirty && scale >= 1) {
+    renderMinimap();
+    STATE.minimapDirty = false;
+  }
+  updateMinimapRect();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Background stars (Fibonacci distribution)
+// ═══════════════════════════════════════════════════════
+const STAR_COUNT = 127;
+const starPositions = [];
+const PHI = (1 + Math.sqrt(5)) / 2;
+for (let i = 0; i < STAR_COUNT; i++) {
+  const t = i / STAR_COUNT;
+  const r = Math.sqrt(t);
+  const theta = 2 * Math.PI * i / (PHI * PHI);
+  starPositions.push({
+    x: 0.5 + r * 0.5 * Math.cos(theta),
+    y: 0.5 + r * 0.5 * Math.sin(theta),
+    size: 0.5 + Math.random() * 1.5,
+    brightness: 0.15 + Math.random() * 0.25,
+  });
+}
+
+function drawStars() {
+  ctx.save();
+  for (const s of starPositions) {
+    const sx = s.x * canvas.width;
+    const sy = s.y * canvas.height;
+    ctx.globalAlpha = s.brightness * 0.12;
+    ctx.fillStyle = '#c0d8ff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Histogram
+// ═══════════════════════════════════════════════════════
+function drawHistogram() {
+  if (!STATE.histogram) return;
+  const w = histCanvas.width;
+  const h = histCanvas.height;
+  histCtx.clearRect(0, 0, w, h);
+  histCtx.fillStyle = 'rgba(0,0,0,0.3)';
+  histCtx.fillRect(0, 0, w, h);
+
+  const bands = 32;
+  const bandSize = Math.ceil(STATE.maxIter / bands);
+  const bandCounts = new Float64Array(bands);
+  let maxCount = 0;
+
+  for (let i = 0; i < STATE.maxIter; i++) {
+    const b = Math.min(bands - 1, Math.floor(i / bandSize));
+    bandCounts[b] += STATE.histogram[i];
+    if (bandCounts[b] > maxCount) maxCount = bandCounts[b];
+  }
+
+  if (maxCount === 0) return;
+  const barW = w / bands;
+
+  for (let i = 0; i < bands; i++) {
+    const barH = (Math.log1p(bandCounts[i]) / Math.log1p(maxCount)) * (h - 2);
+    const hue = (i / bands) * 200 + 180;
+    histCtx.fillStyle = `hsla(${hue}, 70%, 50%, 0.6)`;
+    histCtx.fillRect(i * barW, h - barH - 1, barW - 1, barH);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Minimap
+// ═══════════════════════════════════════════════════════
+function renderMinimap() {
+  const w = 120, h = 90;
+  const imgData = minimapCtx.createImageData(w, h);
+  const scale = 3.5 / w;
+  const offRe = -0.5 - (w / 2) * scale;
+  const offIm = 0.0 - (h / 2) * scale;
+  const maxI = 80;
+
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const cRe = offRe + px * scale;
+      const cIm = offIm + py * scale;
+      let zRe = 0, zIm = 0, n = 0;
+      for (; n < maxI; n++) {
+        const zr2 = zRe * zRe, zi2 = zIm * zIm;
+        if (zr2 + zi2 > 4) break;
+        zIm = 2 * zRe * zIm + cIm;
+        zRe = zr2 - zi2 + cRe;
+      }
+      const idx = (py * w + px) * 4;
+      if (n === maxI) {
+        imgData.data[idx] = 5;
+        imgData.data[idx+1] = 5;
+        imgData.data[idx+2] = 15;
+      } else {
+        const t = n / maxI;
+        imgData.data[idx] = Math.floor(t * 40);
+        imgData.data[idx+1] = Math.floor(t * 80);
+        imgData.data[idx+2] = Math.floor(t * 140);
+      }
+      imgData.data[idx+3] = 255;
+    }
+  }
+  minimapCtx.putImageData(imgData, 0, 0);
+}
+
+function updateMinimapRect() {
+  const mmW = 120, mmH = 90;
+  const fullScale = 3.5 / mmW;
+  const viewScale = 3.5 / (canvas.width * STATE.zoom);
+  const viewW = canvas.width * viewScale;
+  const viewH = canvas.height * viewScale;
+  const offRe = -0.5 - (mmW / 2) * fullScale;
+  const offIm = 0.0 - (mmH / 2) * fullScale;
+
+  const rx = (STATE.centerRe - viewW / 2 - offRe) / fullScale;
+  const ry = (STATE.centerIm - viewH / 2 - offIm) / fullScale;
+  const rw = viewW / fullScale;
+  const rh = viewH / fullScale;
+
+  minimapRect.style.left = Math.max(0, rx) + 'px';
+  minimapRect.style.top = Math.max(0, ry) + 'px';
+  minimapRect.style.width = Math.min(mmW, Math.max(2, rw)) + 'px';
+  minimapRect.style.height = Math.min(mmH, Math.max(2, rh)) + 'px';
+}
+
+// ═══════════════════════════════════════════════════════
+//  Mouse navigation
+// ═══════════════════════════════════════════════════════
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    STATE.drag.active = true;
+    STATE.drag.startX = e.clientX;
+    STATE.drag.startY = e.clientY;
+    STATE.drag.startRe = STATE.centerRe;
+    STATE.drag.startIm = STATE.centerIm;
+    STATE.drag.moved = false;
+  }
+});
+
+window.addEventListener('mousemove', e => {
+  if (STATE.drag.active) {
+    const dx = e.clientX - STATE.drag.startX;
+    const dy = e.clientY - STATE.drag.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) STATE.drag.moved = true;
+    const scale = 3.5 / (canvas.width * STATE.zoom);
+    STATE.centerRe = STATE.drag.startRe - dx * scale;
+    STATE.centerIm = STATE.drag.startIm - dy * scale;
+    requestRender();
+  }
+
+  // Julia mode: dynamic c from mouse
+  if (STATE.fractalType === 'julia' && !STATE.drag.active) {
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+      // Only update when holding shift for performance
+    }
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (STATE.drag.active) {
+    STATE.drag.active = false;
+    if (!STATE.drag.moved && e.button === 0) {
+      // Click to zoom in
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const scale = 3.5 / (canvas.width * STATE.zoom);
+      STATE.centerRe += (mx - canvas.width / 2) * scale;
+      STATE.centerIm += (my - canvas.height / 2) * scale;
+      STATE.zoom *= STATE.zoomSpeed;
+      autoAdjustIterations();
+      STATE.minimapDirty = true;
+      requestRender();
+    }
+  }
+});
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const scale = 3.5 / (canvas.width * STATE.zoom);
+  STATE.centerRe += (mx - canvas.width / 2) * scale;
+  STATE.centerIm += (my - canvas.height / 2) * scale;
+  STATE.zoom /= STATE.zoomSpeed;
+  if (STATE.zoom < 0.1) STATE.zoom = 0.1;
+  autoAdjustIterations();
+  STATE.minimapDirty = true;
+  requestRender();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const scale = 3.5 / (canvas.width * STATE.zoom);
+
+  // Zoom toward mouse position
+  const reAtMouse = STATE.centerRe + (mx - canvas.width / 2) * scale;
+  const imAtMouse = STATE.centerIm + (my - canvas.height / 2) * scale;
+
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  STATE.zoom *= factor;
+  if (STATE.zoom < 0.1) STATE.zoom = 0.1;
+
+  const newScale = 3.5 / (canvas.width * STATE.zoom);
+  STATE.centerRe = reAtMouse - (mx - canvas.width / 2) * newScale;
+  STATE.centerIm = imAtMouse - (my - canvas.height / 2) * newScale;
+
+  autoAdjustIterations();
+  STATE.minimapDirty = true;
+  requestRender();
+}, { passive: false });
+
+function autoAdjustIterations() {
+  // Auto-increase max iterations with zoom depth
+  const logZoom = Math.log10(STATE.zoom);
+  const suggestedIter = Math.max(300, Math.min(2000, Math.floor(200 + logZoom * 80)));
+  if (suggestedIter > STATE.maxIter) {
+    STATE.maxIter = suggestedIter;
+    document.getElementById('iter-slider').value = STATE.maxIter;
+    document.getElementById('iter-val').textContent = STATE.maxIter;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Keyboard shortcuts
+// ═══════════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  switch(e.key) {
+    case '1': selectPalette(0); showHint('Cosmic'); break;
+    case '2': selectPalette(1); showHint('Fire'); break;
+    case '3': selectPalette(2); showHint('Ocean'); break;
+    case '4': selectPalette(3); showHint('Neon'); break;
+    case '5': selectPalette(4); showHint('Mono'); break;
+    case 'm': case 'M': switchFractalType('mandelbrot'); showHint('Mandelbrot'); break;
+    case 'j': case 'J': switchFractalType('julia'); showHint('Julia Set'); break;
+    case 'a': case 'A': toggleAutoDive(); break;
+    case ' ':
+      e.preventDefault();
+      toggleVoice();
+      break;
+    case 'r': case 'R': resetView(); break;
+    case 's': case 'S': saveBookmark(); break;
+    case '=': case '+':
+      STATE.maxIter = Math.min(2000, STATE.maxIter + 100);
+      document.getElementById('iter-slider').value = STATE.maxIter;
+      document.getElementById('iter-val').textContent = STATE.maxIter;
+      requestRender();
+      showHint('Iterations: ' + STATE.maxIter);
+      break;
+    case '-': case '_':
+      STATE.maxIter = Math.max(100, STATE.maxIter - 100);
+      document.getElementById('iter-slider').value = STATE.maxIter;
+      document.getElementById('iter-val').textContent = STATE.maxIter;
+      requestRender();
+      showHint('Iterations: ' + STATE.maxIter);
+      break;
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+//  Auto-Dive
+// ═══════════════════════════════════════════════════════
+function autoDiveStep() {
+  if (!STATE.autoDive) return;
+
+  // Find interesting boundary regions by sampling around center
+  const samples = 16;
+  const scale = 3.5 / (canvas.width * STATE.zoom);
+  const radius = canvas.width * 0.3 * scale;
+  let bestRe = STATE.centerRe, bestIm = STATE.centerIm;
+  let bestVariance = 0;
+
+  for (let i = 0; i < samples; i++) {
+    const angle = (i / samples) * Math.PI * 2;
+    const testRe = STATE.centerRe + Math.cos(angle) * radius;
+    const testIm = STATE.centerIm + Math.sin(angle) * radius;
+
+    // Quick iteration count at this point
+    let zRe = 0, zIm = 0, n = 0;
+    for (; n < 100; n++) {
+      const zr2 = zRe * zRe, zi2 = zIm * zIm;
+      if (zr2 + zi2 > 4) break;
+      zIm = 2 * zRe * zIm + testIm;
+      zRe = zr2 - zi2 + testRe;
+    }
+
+    // Points near the boundary (moderate iteration count) are interesting
+    const interest = n > 10 && n < 90 ? (90 - Math.abs(n - 50)) : 0;
+    if (interest > bestVariance) {
+      bestVariance = interest;
+      bestRe = testRe;
+      bestIm = testIm;
+    }
+  }
+
+  // Gently steer toward the interesting point
+  STATE.centerRe += (bestRe - STATE.centerRe) * 0.05;
+  STATE.centerIm += (bestIm - STATE.centerIm) * 0.05;
+  STATE.zoom *= 1.005;
+  autoAdjustIterations();
+  STATE.minimapDirty = true;
+  requestRender();
+}
+
+// ═══════════════════════════════════════════════════════
+//  Voice Drive (Web Audio API)
+// ═══════════════════════════════════════════════════════
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let voiceData = { pitch: 0, volume: 0, vowel: '--', onset: false };
+let prevRMS = 0;
+
+async function toggleVoice() {
+  STATE.voiceActive = !STATE.voiceActive;
+  const btn = document.getElementById('voice-btn');
+  const dot = document.getElementById('voice-dot');
+  btn.classList.toggle('active', STATE.voiceActive);
+  dot.classList.toggle('inactive', !STATE.voiceActive);
+  document.getElementById('voice-status').textContent = STATE.voiceActive ? 'VOICE ON' : 'VOICE OFF';
+  showHint(STATE.voiceActive ? 'Voice Drive Active' : 'Voice Drive Off');
+
+  if (STATE.voiceActive) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = audioCtx.createMediaStreamSource(micStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.85;
+      source.connect(analyser);
+    } catch(err) {
+      console.warn('Mic access denied:', err);
+      STATE.voiceActive = false;
+      btn.classList.remove('active');
+      dot.classList.add('inactive');
+      document.getElementById('voice-status').textContent = 'MIC DENIED';
+      return;
+    }
+  } else {
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+      micStream = null;
+    }
+    if (audioCtx) {
+      audioCtx.close();
+      audioCtx = null;
+    }
+    analyser = null;
+    document.getElementById('v-pitch').textContent = '--';
+    document.getElementById('v-volume').textContent = '--';
+    document.getElementById('v-vowel').textContent = '--';
+  }
+}
+
+function analyzeVoice() {
+  if (!analyser || !STATE.voiceActive) return;
+
+  const bufLen = analyser.frequencyBinCount;
+  const timeDomain = new Float32Array(bufLen);
+  const freqData = new Uint8Array(bufLen);
+  analyser.getFloatTimeDomainData(timeDomain);
+  analyser.getByteFrequencyData(freqData);
+
+  // RMS volume
+  let sum = 0;
+  for (let i = 0; i < bufLen; i++) sum += timeDomain[i] * timeDomain[i];
+  const rms = Math.sqrt(sum / bufLen);
+  voiceData.volume = rms;
+
+  // Onset detection
+  const onsetThreshold = 0.05;
+  voiceData.onset = rms > onsetThreshold && prevRMS < onsetThreshold * 0.5;
+  prevRMS = rms;
+
+  // Pitch detection (autocorrelation)
+  const pitch = detectPitch(timeDomain, audioCtx.sampleRate);
+  voiceData.pitch = pitch;
+
+  // Vowel detection from frequency spectrum
+  voiceData.vowel = detectVowel(freqData, audioCtx.sampleRate, bufLen);
+
+  // Update UI
+  document.getElementById('v-pitch').textContent = pitch > 0 ? pitch.toFixed(0) + ' Hz' : '--';
+  document.getElementById('v-volume').textContent = (rms * 100).toFixed(1) + '%';
+  document.getElementById('v-vowel').textContent = voiceData.vowel;
+
+  // Apply voice to fractal controls
+  applyVoiceControl();
+}
+
+function detectPitch(buf, sampleRate) {
+  // Simple autocorrelation pitch detection
+  const SIZE = buf.length;
+  let bestOffset = -1;
+  let bestCorr = 0;
+  let foundGoodCorr = false;
+
+  // RMS check
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.01) return 0;
+
+  const minPeriod = Math.floor(sampleRate / 800); // Max 800 Hz
+  const maxPeriod = Math.floor(sampleRate / 60);  // Min 60 Hz
+
+  for (let offset = minPeriod; offset < maxPeriod && offset < SIZE; offset++) {
+    let corr = 0;
+    for (let i = 0; i < SIZE - offset; i++) {
+      corr += buf[i] * buf[i + offset];
+    }
+    corr /= (SIZE - offset);
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestOffset = offset;
+      foundGoodCorr = true;
+    }
+  }
+
+  if (foundGoodCorr && bestCorr > 0.01 && bestOffset > 0) {
+    return sampleRate / bestOffset;
+  }
+  return 0;
+}
+
+function detectVowel(freqData, sampleRate, bufLen) {
+  // Look at formant regions to guess vowels
+  const binHz = sampleRate / (bufLen * 2);
+  // F1 region (250-900 Hz), F2 region (900-2500 Hz)
+  const f1Start = Math.floor(250 / binHz);
+  const f1End = Math.floor(900 / binHz);
+  const f2Start = Math.floor(900 / binHz);
+  const f2End = Math.floor(2500 / binHz);
+
+  let f1Peak = 0, f1PeakBin = f1Start;
+  let f2Peak = 0, f2PeakBin = f2Start;
+
+  for (let i = f1Start; i < f1End && i < freqData.length; i++) {
+    if (freqData[i] > f1Peak) { f1Peak = freqData[i]; f1PeakBin = i; }
+  }
+  for (let i = f2Start; i < f2End && i < freqData.length; i++) {
+    if (freqData[i] > f2Peak) { f2Peak = freqData[i]; f2PeakBin = i; }
+  }
+
+  if (f1Peak < 20 || f2Peak < 20) return '--';
+
+  const f1Hz = f1PeakBin * binHz;
+  const f2Hz = f2PeakBin * binHz;
+
+  // Rough vowel classification
+  if (f1Hz < 400 && f2Hz < 1200) return 'OO';      // /u/ - Cosmic
+  if (f1Hz > 600 && f2Hz < 1400) return 'AH';       // /a/ - Fire
+  if (f1Hz < 400 && f2Hz > 2000) return 'EE';       // /i/ - Neon
+  if (f1Hz > 400 && f1Hz < 600 && f2Hz < 1200) return 'OH'; // /o/ - Ocean
+  if (f1Hz > 400 && f2Hz > 1500) return 'EH';       // /e/ - Mono
+  return '--';
+}
+
+function applyVoiceControl() {
+  const { pitch, volume, vowel, onset } = voiceData;
+
+  // Pitch -> zoom speed
+  if (pitch > 0) {
+    const normalizedPitch = Math.max(0, Math.min(1, (pitch - 80) / 400));
+    if (normalizedPitch > 0.5) {
+      STATE.zoom *= 1 + (normalizedPitch - 0.5) * 0.02;
+    } else if (normalizedPitch < 0.3 && volume > 0.02) {
+      STATE.zoom /= 1 + (0.3 - normalizedPitch) * 0.01;
+    }
+    autoAdjustIterations();
+    STATE.minimapDirty = true;
+    requestRender();
+  }
+
+  // Volume -> color cycle speed
+  STATE.colorSpeed = 0.5 + volume * 40;
+  if (STATE.colorSpeed > 5) STATE.colorSpeed = 5;
+
+  // Vowel -> palette
+  if (volume > 0.03) {
+    switch(vowel) {
+      case 'OO': selectPalette(0); break;
+      case 'AH': selectPalette(1); break;
+      case 'OH': selectPalette(2); break;
+      case 'EE': selectPalette(3); break;
+      case 'EH': selectPalette(4); break;
+    }
+  }
+
+  // Onset -> toggle Mandelbrot/Julia
+  if (onset) {
+    if (STATE.fractalType === 'mandelbrot') {
+      switchFractalType('julia');
+    } else if (STATE.fractalType === 'julia') {
+      switchFractalType('mandelbrot');
+    }
+  }
+
+  // Sustained note -> auto-dive
+  if (pitch > 0 && volume > 0.04) {
+    if (!STATE.autoDive) {
+      STATE.autoDive = true;
+      document.getElementById('autodive-btn').classList.add('active');
+      document.getElementById('dive-dot').classList.remove('inactive');
+      document.getElementById('dive-status').textContent = 'AUTO-DIVE ON';
+    }
+  } else if (volume < 0.01 && STATE.autoDive && STATE.voiceActive) {
+    STATE.autoDive = false;
+    document.getElementById('autodive-btn').classList.remove('active');
+    document.getElementById('dive-dot').classList.add('inactive');
+    document.getElementById('dive-status').textContent = 'AUTO-DIVE OFF';
+  }
+
+  // Pan with pitch variation (simple left/right from pitch deviation)
+  if (pitch > 0 && volume > 0.02) {
+    const panAmount = (pitch - 250) / 500;
+    const scale = 3.5 / (canvas.width * STATE.zoom);
+    STATE.centerRe += panAmount * scale * 2;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Update display
+// ═══════════════════════════════════════════════════════
+function updateCoordDisplay() {
+  const re = STATE.centerRe;
+  const im = STATE.centerIm;
+  const z = STATE.zoom;
+
+  document.getElementById('coord-re').textContent = re.toPrecision(10);
+  document.getElementById('coord-im').textContent = im.toPrecision(10);
+
+  if (z > 1e6) {
+    document.getElementById('coord-zoom').textContent = z.toExponential(4);
+  } else {
+    document.getElementById('coord-zoom').textContent = z.toFixed(2);
+  }
+
+  document.getElementById('bb-re').textContent = re.toPrecision(8);
+  document.getElementById('bb-im').textContent = im.toPrecision(8);
+  document.getElementById('bb-zoom').textContent = z > 1e4 ? z.toExponential(2) : z.toFixed(2);
+  document.getElementById('bb-iters').textContent = STATE.maxIter;
+}
+
+// ═══════════════════════════════════════════════════════
+//  FPS counter
+// ═══════════════════════════════════════════════════════
+function updateFPS(now) {
+  STATE.frameCount++;
+  if (now - STATE.fpsTime >= 1000) {
+    STATE.fps = STATE.frameCount;
+    STATE.frameCount = 0;
+    STATE.fpsTime = now;
+    document.getElementById('stat-fps').textContent = STATE.fps;
+    document.getElementById('bb-fps').textContent = STATE.fps;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Main animation loop
+// ═══════════════════════════════════════════════════════
+let lastColorCycleTime = 0;
+
+function mainLoop(now) {
+  requestAnimationFrame(mainLoop);
+  updateFPS(now);
+
+  // Color cycling
+  const dt = (now - lastColorCycleTime) / 1000;
+  lastColorCycleTime = now;
+  if (STATE.colorSpeed > 0 && !isNaN(dt) && dt < 0.5) {
+    const prevOffset = STATE.colorOffset;
+    STATE.colorOffset = (STATE.colorOffset + STATE.colorSpeed * dt * 10) % 256;
+    if (STATE.colorSpeed > 0.1 && !STATE.rendering) {
+      requestRender();
+    }
+  }
+
+  // Voice analysis
+  analyzeVoice();
+
+  // Auto-dive
+  if (STATE.autoDive && !STATE.rendering) {
+    autoDiveStep();
+  }
+
+  // Render if needed
+  if (STATE.needsRender && !STATE.rendering) {
+    STATE.needsRender = false;
+    updateCoordDisplay();
+    startRender(STATE.lowResScale);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Audio pulsing effect on canvas brightness
+// ═══════════════════════════════════════════════════════
+function applyAudioPulse() {
+  if (!STATE.voiceActive || voiceData.volume < 0.01) return;
+  const intensity = Math.min(0.15, voiceData.volume * 2);
+  canvas.style.filter = `brightness(${1 + intensity})`;
+  setTimeout(() => { canvas.style.filter = ''; }, 50);
+}
+
+// ═══════════════════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════════════════
+renderMinimap();
+updateCoordDisplay();
+requestAnimationFrame(mainLoop);
+requestRender();
+</script>
+</body>
+</html>
