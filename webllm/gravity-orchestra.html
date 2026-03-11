@@ -1,0 +1,1812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRAVITY ORCHESTRA — N-Body Musical Simulation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #c0d8ff;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  user-select: none;
+}
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.05) 2px,
+    rgba(0,0,0,0.05) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+canvas#sim {
+  display: block;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Header */
+#header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 40px;
+  background: rgba(10,10,25,0.92);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  border-bottom: 1px solid rgba(100,200,255,0.15);
+  gap: 16px;
+}
+#header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #00e5ff, #ffd700, #ff00ff, #00ff88, #00e5ff);
+  background-size: 300% 100%;
+  animation: headerGrad 8s linear infinite;
+}
+@keyframes headerGrad {
+  0% { background-position: 0% 0; }
+  100% { background-position: 300% 0; }
+}
+#logo {
+  font-size: 14px;
+  letter-spacing: 4px;
+  color: #00e5ff;
+  font-weight: bold;
+  text-shadow: 0 0 12px rgba(0,229,255,0.5);
+  white-space: nowrap;
+}
+.pill {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  padding: 2px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #556;
+  transition: all 0.3s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.pill .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #333;
+  transition: all 0.3s;
+}
+.pill.active { color: #0f8; border-color: rgba(0,255,136,0.4); text-shadow: 0 0 6px rgba(0,255,136,0.3); }
+.pill.active .dot { background: #0f8; box-shadow: 0 0 6px #0f8; }
+.pill.warn { color: #ffd700; border-color: rgba(255,215,0,0.4); }
+.pill.warn .dot { background: #ffd700; box-shadow: 0 0 6px #ffd700; }
+
+/* Panels */
+.panel {
+  position: fixed;
+  z-index: 150;
+  background: rgba(10,10,25,0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(100,200,255,0.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 10px;
+  overflow-y: auto;
+}
+.panel::-webkit-scrollbar { width: 4px; }
+.panel::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.2); border-radius: 2px; }
+#left-panel {
+  left: 8px;
+  top: 50px;
+  width: 220px;
+  bottom: 50px;
+}
+#right-panel {
+  right: 8px;
+  top: 50px;
+  width: 200px;
+  bottom: 50px;
+}
+.panel-title {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #00e5ff;
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0,229,255,0.2);
+  text-transform: uppercase;
+}
+.section {
+  margin-bottom: 12px;
+}
+.section-label {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #667;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.btn {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 9px;
+  font-family: 'Courier New', monospace;
+  color: #c0d8ff;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin: 2px;
+  letter-spacing: 0.5px;
+}
+.btn:hover {
+  background: rgba(0,229,255,0.18);
+  border-color: rgba(0,229,255,0.5);
+  color: #fff;
+}
+.btn.active-btn {
+  background: rgba(0,229,255,0.25);
+  border-color: #00e5ff;
+  color: #00e5ff;
+  text-shadow: 0 0 6px rgba(0,229,255,0.4);
+}
+.btn-danger {
+  border-color: rgba(255,60,60,0.4);
+  background: rgba(255,60,60,0.08);
+}
+.btn-danger:hover {
+  background: rgba(255,60,60,0.2);
+  border-color: rgba(255,60,60,0.6);
+  color: #ff6060;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.slider-row label {
+  font-size: 9px;
+  color: #889;
+  min-width: 60px;
+}
+.slider-row input[type="range"] {
+  flex: 1;
+  margin: 0 6px;
+  -webkit-appearance: none;
+  height: 3px;
+  background: rgba(0,229,255,0.2);
+  border-radius: 2px;
+  outline: none;
+}
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00e5ff;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(0,229,255,0.4);
+}
+.slider-row .val {
+  font-size: 9px;
+  color: #00e5ff;
+  min-width: 32px;
+  text-align: right;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.toggle-row label {
+  font-size: 9px;
+  color: #889;
+}
+.toggle {
+  width: 32px;
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s;
+}
+.toggle.on {
+  background: rgba(0,229,255,0.25);
+  border-color: #00e5ff;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #556;
+  transition: all 0.3s;
+}
+.toggle.on::after {
+  left: 18px;
+  background: #00e5ff;
+  box-shadow: 0 0 6px rgba(0,229,255,0.5);
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 9px;
+}
+.stat-row .stat-label { color: #556; }
+.stat-row .stat-val { color: #c0d8ff; }
+.stat-row .stat-val.cyan { color: #00e5ff; }
+.stat-row .stat-val.gold { color: #ffd700; }
+.stat-row .stat-val.magenta { color: #ff00ff; }
+.stat-row .stat-val.green { color: #00ff88; }
+
+/* Voice section */
+.voice-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+.voice-bar .fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.08s;
+  width: 0%;
+}
+.voice-bar .fill.cyan { background: #00e5ff; }
+.voice-bar .fill.gold { background: #ffd700; }
+
+/* Bottom bar */
+#bottom-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 36px;
+  background: rgba(10,10,25,0.92);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(100,200,255,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  z-index: 200;
+  font-size: 9px;
+}
+.bottom-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #556;
+}
+.bottom-item .bi-label { letter-spacing: 1.5px; text-transform: uppercase; font-size: 8px; }
+.energy-bar {
+  width: 80px;
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.energy-bar .fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.harmony-display {
+  font-size: 11px;
+  letter-spacing: 1px;
+  min-width: 50px;
+  text-align: center;
+}
+
+/* HUD corners */
+.hud-corner {
+  position: fixed;
+  z-index: 180;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+.hud-corner.tl { top: 46px; left: 234px; border-top: 1px solid rgba(0,229,255,0.3); border-left: 1px solid rgba(0,229,255,0.3); }
+.hud-corner.tr { top: 46px; right: 214px; border-top: 1px solid rgba(0,229,255,0.3); border-right: 1px solid rgba(0,229,255,0.3); }
+.hud-corner.bl { bottom: 42px; left: 234px; border-bottom: 1px solid rgba(0,229,255,0.3); border-left: 1px solid rgba(0,229,255,0.3); }
+.hud-corner.br { bottom: 42px; right: 214px; border-bottom: 1px solid rgba(0,229,255,0.3); border-right: 1px solid rgba(0,229,255,0.3); }
+
+/* Scale selector */
+.scale-btns {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.scale-btn {
+  padding: 3px 6px;
+  font-size: 8px;
+  font-family: 'Courier New', monospace;
+  color: #667;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.scale-btn.active {
+  color: #ffd700;
+  border-color: rgba(255,215,0,0.5);
+  background: rgba(255,215,0,0.1);
+}
+
+/* Chord display */
+#chord-display {
+  font-size: 14px;
+  color: #ffd700;
+  text-align: center;
+  letter-spacing: 2px;
+  margin: 6px 0;
+  min-height: 18px;
+  text-shadow: 0 0 8px rgba(255,215,0,0.3);
+}
+
+/* Keyboard shortcuts hint */
+.shortcuts {
+  margin-top: 8px;
+  font-size: 7px;
+  color: #334;
+  line-height: 1.6;
+  letter-spacing: 0.5px;
+}
+.shortcuts kbd {
+  display: inline-block;
+  padding: 0px 4px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 8px;
+  color: #889;
+  margin-right: 2px;
+}
+</style>
+</head>
+<body>
+<canvas id="sim"></canvas>
+
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+
+<div id="header">
+  <span id="logo">GRAVITY ORCHESTRA</span>
+  <div class="pill active" id="pill-physics"><span class="dot"></span>PHYSICS</div>
+  <div class="pill" id="pill-audio"><span class="dot"></span>AUDIO</div>
+  <div class="pill" id="pill-voice"><span class="dot"></span>VOICE DRIVE</div>
+</div>
+
+<div class="panel" id="left-panel">
+  <div class="panel-title">Controls</div>
+
+  <div class="section">
+    <div class="section-label">Presets</div>
+    <button class="btn" onclick="loadPreset('binary')">Binary Star</button>
+    <button class="btn" onclick="loadPreset('solar')">Solar System</button>
+    <button class="btn" onclick="loadPreset('galaxy')">Galaxy</button>
+    <button class="btn" onclick="loadPreset('chaos')">Chaos</button>
+    <button class="btn" onclick="loadPreset('figure8')">Figure Eight</button>
+    <br>
+    <button class="btn btn-danger" onclick="clearAll()" style="margin-top:6px;">Clear All</button>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Spawn Settings</div>
+    <div class="slider-row">
+      <label>Mass</label>
+      <input type="range" id="spawn-mass" min="1" max="200" value="20">
+      <span class="val" id="spawn-mass-val">20</span>
+    </div>
+    <div class="slider-row">
+      <label>Color</label>
+      <input type="color" id="spawn-color" value="#00e5ff" style="width:28px;height:18px;border:none;background:none;cursor:pointer;">
+      <span class="val" style="font-size:8px;">auto</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Physics</div>
+    <div class="slider-row">
+      <label>Gravity G</label>
+      <input type="range" id="slider-g" min="1" max="200" value="50">
+      <span class="val" id="val-g">50</span>
+    </div>
+    <div class="slider-row">
+      <label>Time Step</label>
+      <input type="range" id="slider-dt" min="1" max="100" value="40">
+      <span class="val" id="val-dt">0.40</span>
+    </div>
+    <div class="slider-row">
+      <label>Softening</label>
+      <input type="range" id="slider-soft" min="1" max="100" value="30">
+      <span class="val" id="val-soft">30</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Trails</div>
+    <div class="toggle-row">
+      <label>Show Trails</label>
+      <div class="toggle on" id="toggle-trails" onclick="toggleTrails()"></div>
+    </div>
+    <div class="slider-row">
+      <label>Length</label>
+      <input type="range" id="slider-trail" min="10" max="400" value="200">
+      <span class="val" id="val-trail">200</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Sound</div>
+    <div class="toggle-row">
+      <label>Sound On</label>
+      <div class="toggle" id="toggle-sound" onclick="toggleSound()"></div>
+    </div>
+    <div class="slider-row">
+      <label>Volume</label>
+      <input type="range" id="slider-vol" min="0" max="100" value="40">
+      <span class="val" id="val-vol">40</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Scale Mode</div>
+    <div class="scale-btns">
+      <div class="scale-btn active" onclick="setScale('pentatonic',this)">Pentatonic</div>
+      <div class="scale-btn" onclick="setScale('chromatic',this)">Chromatic</div>
+      <div class="scale-btn" onclick="setScale('prime',this)">Prime Ratios</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Visualization</div>
+    <div class="toggle-row">
+      <label>Field Lines</label>
+      <div class="toggle" id="toggle-field" onclick="toggleField()"></div>
+    </div>
+  </div>
+
+  <div class="shortcuts">
+    <kbd>1</kbd>-<kbd>5</kbd> Presets &nbsp;
+    <kbd>Space</kbd> Voice Drive<br>
+    <kbd>G</kbd> Field Lines &nbsp;
+    <kbd>T</kbd> Trails<br>
+    <kbd>P</kbd> Pause &nbsp;
+    <kbd>C</kbd> Clear &nbsp;
+    <kbd>N</kbd> Sound
+  </div>
+</div>
+
+<div class="panel" id="right-panel">
+  <div class="panel-title">Observatory</div>
+
+  <div class="section" id="voice-section" style="display:none;">
+    <div class="section-label">Voice Analysis</div>
+    <div class="stat-row"><span class="stat-label">Pitch</span><span class="stat-val cyan" id="voice-pitch">--</span></div>
+    <div class="voice-bar"><div class="fill cyan" id="voice-pitch-bar"></div></div>
+    <div class="stat-row"><span class="stat-label">Volume</span><span class="stat-val gold" id="voice-vol">--</span></div>
+    <div class="voice-bar"><div class="fill gold" id="voice-vol-bar"></div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">System Stats</div>
+    <div class="stat-row"><span class="stat-label">Bodies</span><span class="stat-val cyan" id="stat-bodies">0</span></div>
+    <div class="stat-row"><span class="stat-label">Total Mass</span><span class="stat-val" id="stat-mass">0</span></div>
+    <div class="stat-row"><span class="stat-label">Kinetic E</span><span class="stat-val gold" id="stat-ke">0</span></div>
+    <div class="stat-row"><span class="stat-label">Potential E</span><span class="stat-val magenta" id="stat-pe">0</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Musical State</div>
+    <div id="chord-display">--</div>
+    <div class="stat-row"><span class="stat-label">Harmony</span><span class="stat-val green" id="stat-harmony">--</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Largest Body</div>
+    <div class="stat-row"><span class="stat-label">Mass</span><span class="stat-val" id="stat-lg-mass">--</span></div>
+    <div class="stat-row"><span class="stat-label">Velocity</span><span class="stat-val" id="stat-lg-vel">--</span></div>
+    <div class="stat-row"><span class="stat-label">Frequency</span><span class="stat-val cyan" id="stat-lg-freq">--</span></div>
+  </div>
+
+  <div class="section">
+    <div class="stat-row"><span class="stat-label">FPS</span><span class="stat-val green" id="stat-fps">0</span></div>
+  </div>
+</div>
+
+<div id="bottom-bar">
+  <div class="bottom-item">
+    <span class="bi-label">System Energy</span>
+    <div class="energy-bar"><div class="fill" id="energy-fill" style="width:50%;background:linear-gradient(90deg,#00e5ff,#00ff88);"></div></div>
+  </div>
+  <div class="bottom-item">
+    <span class="bi-label">Harmony</span>
+    <div class="harmony-display" id="harmony-bar-display" style="color:#ffd700;">&#9834; --</div>
+  </div>
+  <div class="bottom-item">
+    <span class="bi-label">Bodies</span>
+    <span style="color:#00e5ff;" id="bottom-bodies">0</span>
+  </div>
+  <div class="bottom-item" id="bottom-paused" style="display:none;">
+    <span style="color:#ff4444;letter-spacing:2px;">PAUSED</span>
+  </div>
+</div>
+
+<script>
+// ===== GLOBALS =====
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+let W, H;
+let bodies = [];
+let paused = false;
+let soundOn = false;
+let showTrails = true;
+let showField = false;
+let voiceDriveActive = false;
+let scaleMode = 'pentatonic';
+let trailLength = 200;
+let camera = { x: 0, y: 0, zoom: 1 };
+let dragState = null; // null, 'pan', 'sling'
+let dragStart = null;
+let dragBody = null;
+let slingStart = null;
+let mouseWorld = { x: 0, y: 0 };
+let fpsCounter = 0;
+let fpsTime = 0;
+let fpsDisplay = 0;
+let audioCtx = null;
+let masterGain = null;
+let reverbGain = null;
+let collisionEffects = [];
+let bgStars = [];
+let lastTime = 0;
+
+// Physics params
+let G_FACTOR = 50;
+let DT_FACTOR = 40;
+let SOFT_FACTOR = 30;
+function getG() { return G_FACTOR * 0.02; }
+function getDt() { return DT_FACTOR * 0.01; }
+function getSoft() { return SOFT_FACTOR * 0.5 + 5; }
+
+// ===== RESIZE =====
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ===== BACKGROUND STARS (127 Fibonacci) =====
+function generateStars() {
+  bgStars = [];
+  const PHI = (1 + Math.sqrt(5)) / 2;
+  for (let i = 0; i < 127; i++) {
+    const theta = 2 * Math.PI * i / PHI;
+    const r = Math.sqrt(i / 127) * Math.max(W, H) * 0.7;
+    bgStars.push({
+      x: W / 2 + Math.cos(theta) * r,
+      y: H / 2 + Math.sin(theta) * r,
+      brightness: 0.15 + Math.random() * 0.35,
+      size: 0.5 + Math.random() * 1.2,
+      twinklePhase: Math.random() * Math.PI * 2
+    });
+  }
+}
+generateStars();
+
+// ===== SCALES =====
+const PENTATONIC = [0, 2, 4, 7, 9]; // semitone offsets
+const CHROMATIC = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const PRIME_RATIOS = [1, 2/1, 3/2, 5/3, 7/4, 11/8, 13/8, 17/16, 19/16, 23/16];
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+function massToFreq(mass) {
+  const base = 110; // A2
+  if (scaleMode === 'prime') {
+    const idx = Math.floor(mass / 25) % PRIME_RATIOS.length;
+    const octave = Math.floor(mass / 250) + 1;
+    return base * PRIME_RATIOS[idx] * octave;
+  }
+  const scale = scaleMode === 'pentatonic' ? PENTATONIC : CHROMATIC;
+  // heavier = lower pitch
+  const noteIndex = Math.floor((200 - Math.min(mass, 200)) / 200 * scale.length * 3);
+  const scaleIndex = noteIndex % scale.length;
+  const octave = Math.floor(noteIndex / scale.length);
+  const semitones = scale[scaleIndex] + octave * 12;
+  return base * Math.pow(2, semitones / 12);
+}
+
+function freqToNoteName(freq) {
+  if (freq <= 0) return '--';
+  const semitones = 12 * Math.log2(freq / 440);
+  const noteIdx = Math.round(semitones) % 12;
+  const idx = ((noteIdx % 12) + 12) % 12;
+  const octave = Math.floor(Math.log2(freq / 16.35));
+  return NOTE_NAMES[idx] + octave;
+}
+
+// ===== BODY CLASS =====
+let bodyIdCounter = 0;
+function createBody(x, y, vx, vy, mass, color) {
+  const id = bodyIdCounter++;
+  const freq = massToFreq(mass);
+  return {
+    id, x, y, vx, vy, ax: 0, ay: 0,
+    mass,
+    radius: Math.pow(mass, 1/3) * 2 + 2,
+    color: color || massToColor(mass, 0),
+    freq,
+    trail: [],
+    oscillator: null,
+    gainNode: null,
+    alive: true
+  };
+}
+
+function massToColor(mass, speed) {
+  // cool blue (heavy/slow) to hot white-yellow (light/fast)
+  const t = Math.min(speed / 3, 1);
+  const m = Math.min(mass / 100, 1);
+  const r = Math.floor(100 + (1 - m) * 155 + t * 100);
+  const g = Math.floor(120 + (1 - m) * 100 + t * 135);
+  const b = Math.floor(200 + (1 - m) * 55 - t * 50);
+  return `rgb(${Math.min(r,255)},${Math.min(g,255)},${Math.min(b,255)})`;
+}
+
+// ===== AUDIO ENGINE =====
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.3;
+
+  // Simple delay-based reverb
+  const delay1 = audioCtx.createDelay(1);
+  delay1.delayTime.value = 0.12;
+  const delay2 = audioCtx.createDelay(1);
+  delay2.delayTime.value = 0.24;
+  const fb1 = audioCtx.createGain();
+  fb1.gain.value = 0.3;
+  const fb2 = audioCtx.createGain();
+  fb2.gain.value = 0.2;
+  reverbGain = audioCtx.createGain();
+  reverbGain.gain.value = 0.25;
+
+  masterGain.connect(delay1);
+  delay1.connect(fb1);
+  fb1.connect(delay1);
+  delay1.connect(reverbGain);
+
+  masterGain.connect(delay2);
+  delay2.connect(fb2);
+  fb2.connect(delay2);
+  delay2.connect(reverbGain);
+
+  reverbGain.connect(audioCtx.destination);
+  masterGain.connect(audioCtx.destination);
+}
+
+function getWaveform(mass) {
+  if (mass > 80) return 'sine';
+  if (mass > 30) return 'triangle';
+  return 'square';
+}
+
+function startBodySound(body) {
+  if (!audioCtx || !soundOn) return;
+  if (body.oscillator) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = getWaveform(body.mass);
+  osc.frequency.value = body.freq;
+  gain.gain.value = 0;
+  osc.connect(gain);
+  gain.connect(masterGain);
+  osc.start();
+  body.oscillator = osc;
+  body.gainNode = gain;
+}
+
+function stopBodySound(body) {
+  if (body.oscillator) {
+    try {
+      body.gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+      body.oscillator.stop(audioCtx.currentTime + 0.1);
+    } catch(e) {}
+    body.oscillator = null;
+    body.gainNode = null;
+  }
+}
+
+function updateBodySound(body) {
+  if (!audioCtx || !soundOn || !body.oscillator) return;
+  const speed = Math.sqrt(body.vx * body.vx + body.vy * body.vy);
+  const dopplerShift = 1 + speed * 0.02;
+  body.oscillator.frequency.setTargetAtTime(body.freq * dopplerShift, audioCtx.currentTime, 0.1);
+
+  // Volume based on proximity to screen center
+  const cx = W / 2, cy = H / 2;
+  const sx = worldToScreen(body.x, body.y).x;
+  const sy = worldToScreen(body.x, body.y).y;
+  const dist = Math.sqrt((sx - cx) ** 2 + (sy - cy) ** 2);
+  const maxDist = Math.sqrt(cx * cx + cy * cy);
+  const vol = Math.max(0, 1 - dist / maxDist) * 0.15;
+  body.gainNode.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+}
+
+function playCollisionSound(x, y, mass) {
+  if (!audioCtx || !soundOn) return;
+  // Noise burst + descending tone
+  const duration = 0.4;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  gain.connect(masterGain);
+
+  // Descending tone
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(400 + mass * 2, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+
+  // Noise via buffer
+  const bufLen = audioCtx.sampleRate * 0.15;
+  const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buf;
+  const nGain = audioCtx.createGain();
+  nGain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  nGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+  noise.connect(nGain);
+  nGain.connect(masterGain);
+  noise.start();
+  noise.stop(audioCtx.currentTime + 0.15);
+}
+
+function playGravChord(body1, body2, force) {
+  if (!audioCtx || !soundOn) return;
+  const vol = Math.min(force * 0.001, 0.15);
+  const duration = 0.5;
+  for (const b of [body1, body2]) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = b.freq;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  }
+}
+
+// ===== COORDINATE TRANSFORMS =====
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - camera.x) * camera.zoom + W / 2,
+    y: (wy - camera.y) * camera.zoom + H / 2
+  };
+}
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / camera.zoom + camera.x,
+    y: (sy - H / 2) / camera.zoom + camera.y
+  };
+}
+
+// ===== PHYSICS =====
+function computeForces() {
+  const g = getG();
+  const soft = getSoft();
+  const softSq = soft * soft;
+
+  for (let i = 0; i < bodies.length; i++) {
+    bodies[i].ax = 0;
+    bodies[i].ay = 0;
+  }
+
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      const a = bodies[i], b = bodies[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distSq = dx * dx + dy * dy + softSq;
+      const dist = Math.sqrt(distSq);
+      const F = g * a.mass * b.mass / distSq;
+      const fx = F * dx / dist;
+      const fy = F * dy / dist;
+
+      a.ax += fx / a.mass;
+      a.ay += fy / a.mass;
+      b.ax -= fx / b.mass;
+      b.ay -= fy / b.mass;
+
+      // Close approach effects
+      const touchDist = a.radius + b.radius;
+      if (dist - Math.sqrt(softSq) < touchDist * 3) {
+        const forceStr = F;
+        if (Math.random() < 0.02) {
+          playGravChord(a, b, forceStr);
+        }
+      }
+    }
+  }
+}
+
+function velocityVerletStep() {
+  const dt = getDt();
+
+  // Half-step velocity update
+  for (const b of bodies) {
+    b.vx += b.ax * dt * 0.5;
+    b.vy += b.ay * dt * 0.5;
+  }
+
+  // Full position update
+  for (const b of bodies) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+  }
+
+  // Compute new forces
+  computeForces();
+
+  // Second half-step velocity update
+  for (const b of bodies) {
+    b.vx += b.ax * dt * 0.5;
+    b.vy += b.ay * dt * 0.5;
+  }
+}
+
+function detectCollisions() {
+  const toRemove = new Set();
+  const toAdd = [];
+
+  for (let i = 0; i < bodies.length; i++) {
+    if (toRemove.has(i)) continue;
+    for (let j = i + 1; j < bodies.length; j++) {
+      if (toRemove.has(j)) continue;
+      const a = bodies[i], b = bodies[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const touchDist = a.radius + b.radius;
+
+      if (dist < touchDist) {
+        // Merge: conserve momentum
+        const totalMass = a.mass + b.mass;
+        const nx = (a.x * a.mass + b.x * b.mass) / totalMass;
+        const ny = (a.y * a.mass + b.y * b.mass) / totalMass;
+        const nvx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
+        const nvy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
+
+        const merged = createBody(nx, ny, nvx, nvy, totalMass, null);
+        merged.color = massToColor(totalMass, Math.sqrt(nvx*nvx + nvy*nvy));
+        merged.trail = a.mass > b.mass ? [...a.trail] : [...b.trail];
+        toAdd.push(merged);
+        toRemove.add(i);
+        toRemove.add(j);
+
+        // Effects
+        collisionEffects.push({
+          x: nx, y: ny, radius: 0, maxRadius: touchDist * 4 + totalMass * 0.3,
+          alpha: 1, color: '#ffd700',
+          particles: Array.from({length: 12}, () => ({
+            x: nx, y: ny,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            life: 1,
+            color: Math.random() > 0.5 ? '#ffd700' : '#ff00ff'
+          }))
+        });
+
+        playCollisionSound(nx, ny, totalMass);
+        stopBodySound(a);
+        stopBodySound(b);
+        break;
+      }
+    }
+  }
+
+  if (toRemove.size > 0) {
+    const indices = [...toRemove].sort((a,b) => b - a);
+    for (const idx of indices) {
+      stopBodySound(bodies[idx]);
+      bodies.splice(idx, 1);
+    }
+    for (const b of toAdd) {
+      bodies.push(b);
+      if (soundOn) startBodySound(b);
+    }
+  }
+}
+
+function updateTrails() {
+  for (const b of bodies) {
+    b.trail.push({ x: b.x, y: b.y });
+    if (b.trail.length > trailLength) {
+      b.trail.splice(0, b.trail.length - trailLength);
+    }
+  }
+}
+
+// ===== PRESETS =====
+function loadPreset(name) {
+  clearAll();
+  const cx = camera.x, cy = camera.y;
+
+  if (name === 'binary') {
+    bodies.push(createBody(cx - 60, cy, 0, -1.2, 100, '#00e5ff'));
+    bodies.push(createBody(cx + 60, cy, 0, 1.2, 100, '#ff00ff'));
+    for (let i = 0; i < 15; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 150 + Math.random() * 100;
+      const speed = 0.6 + Math.random() * 0.3;
+      bodies.push(createBody(
+        cx + Math.cos(angle) * r, cy + Math.sin(angle) * r,
+        -Math.sin(angle) * speed, Math.cos(angle) * speed,
+        2 + Math.random() * 5, null
+      ));
+    }
+  } else if (name === 'solar') {
+    bodies.push(createBody(cx, cy, 0, 0, 200, '#ffd700'));
+    const planets = [
+      { r: 50, m: 5, s: 2.0 },
+      { r: 80, m: 8, s: 1.6 },
+      { r: 120, m: 12, s: 1.3 },
+      { r: 170, m: 20, s: 1.0 },
+      { r: 230, m: 35, s: 0.85 },
+      { r: 300, m: 15, s: 0.7 },
+      { r: 380, m: 10, s: 0.6 },
+    ];
+    for (const p of planets) {
+      const angle = Math.random() * Math.PI * 2;
+      bodies.push(createBody(
+        cx + Math.cos(angle) * p.r, cy + Math.sin(angle) * p.r,
+        -Math.sin(angle) * p.s, Math.cos(angle) * p.s,
+        p.m, null
+      ));
+    }
+  } else if (name === 'galaxy') {
+    bodies.push(createBody(cx, cy, 0, 0, 150, '#ffd700'));
+    for (let i = 0; i < 80; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 40 + Math.random() * 350;
+      const orbitalSpeed = Math.sqrt(getG() * 150 / r) * (0.8 + Math.random() * 0.4);
+      const spread = (Math.random() - 0.5) * 30;
+      bodies.push(createBody(
+        cx + Math.cos(angle) * r + (Math.random()-0.5)*10,
+        cy + Math.sin(angle) * r * 0.4 + spread,
+        -Math.sin(angle) * orbitalSpeed,
+        Math.cos(angle) * orbitalSpeed * 0.4,
+        1 + Math.random() * 4, null
+      ));
+    }
+  } else if (name === 'chaos') {
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const r = 80 + Math.random() * 60;
+      bodies.push(createBody(
+        cx + Math.cos(angle) * r,
+        cy + Math.sin(angle) * r,
+        (Math.random() - 0.5) * 1.5,
+        (Math.random() - 0.5) * 1.5,
+        30 + Math.random() * 30, null
+      ));
+    }
+  } else if (name === 'figure8') {
+    // Famous figure-8 three body solution (Chenciner & Montgomery)
+    const scale = 100;
+    const v = 0.93240737;
+    const u = 0.86473146;
+    bodies.push(createBody(cx - scale * 0.97000436, cy + scale * 0.24308753, v * 0.5, u * 0.5, 40, '#00e5ff'));
+    bodies.push(createBody(cx + scale * 0.97000436, cy - scale * 0.24308753, v * 0.5, u * 0.5, 40, '#ffd700'));
+    bodies.push(createBody(cx, cy, -v, -u, 40, '#ff00ff'));
+  }
+
+  // Init sound for all
+  if (soundOn) {
+    for (const b of bodies) startBodySound(b);
+  }
+}
+
+function clearAll() {
+  for (const b of bodies) stopBodySound(b);
+  bodies = [];
+  collisionEffects = [];
+}
+
+// ===== SUPERNOVA =====
+function supernova(bodyIndex) {
+  const b = bodies[bodyIndex];
+  if (!b) return;
+  const fragments = 5 + Math.floor(Math.random() * 4);
+  const fragMass = b.mass / fragments;
+  const newBodies = [];
+  for (let i = 0; i < fragments; i++) {
+    const angle = (i / fragments) * Math.PI * 2 + Math.random() * 0.3;
+    const speed = 2 + Math.random() * 3;
+    const nb = createBody(
+      b.x + Math.cos(angle) * b.radius * 2,
+      b.y + Math.sin(angle) * b.radius * 2,
+      b.vx + Math.cos(angle) * speed,
+      b.vy + Math.sin(angle) * speed,
+      fragMass, null
+    );
+    newBodies.push(nb);
+  }
+
+  // Supernova visual effect
+  collisionEffects.push({
+    x: b.x, y: b.y, radius: 0, maxRadius: b.radius * 15 + 80,
+    alpha: 1.5, color: '#ffffff',
+    particles: Array.from({length: 30}, () => ({
+      x: b.x, y: b.y,
+      vx: (Math.random() - 0.5) * 10,
+      vy: (Math.random() - 0.5) * 10,
+      life: 1,
+      color: ['#ffd700','#ff00ff','#00e5ff','#ffffff'][Math.floor(Math.random()*4)]
+    }))
+  });
+
+  playCollisionSound(b.x, b.y, b.mass * 2);
+  stopBodySound(b);
+  bodies.splice(bodyIndex, 1);
+  for (const nb of newBodies) {
+    bodies.push(nb);
+    if (soundOn) startBodySound(nb);
+  }
+}
+
+// ===== VOICE DRIVE =====
+let voiceAnalyser = null;
+let voiceDataArray = null;
+let voiceStream = null;
+let voicePitch = 0;
+let voiceRMS = 0;
+let prevVoicePitch = 0;
+let voiceSpawnCooldown = 0;
+let voiceOnsetCooldown = 0;
+
+async function startVoice() {
+  try {
+    if (!audioCtx) initAudio();
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const source = audioCtx.createMediaStreamSource(voiceStream);
+    voiceAnalyser = audioCtx.createAnalyser();
+    voiceAnalyser.fftSize = 2048;
+    source.connect(voiceAnalyser);
+    voiceDataArray = new Float32Array(voiceAnalyser.fftSize);
+    voiceDriveActive = true;
+    document.getElementById('pill-voice').classList.add('active');
+    document.getElementById('voice-section').style.display = 'block';
+  } catch(e) {
+    console.warn('Voice access denied:', e);
+    voiceDriveActive = false;
+  }
+}
+
+function stopVoice() {
+  voiceDriveActive = false;
+  if (voiceStream) {
+    voiceStream.getTracks().forEach(t => t.stop());
+    voiceStream = null;
+  }
+  voiceAnalyser = null;
+  document.getElementById('pill-voice').classList.remove('active');
+  document.getElementById('voice-section').style.display = 'none';
+}
+
+function autoCorrelate(buf, sampleRate) {
+  // Simple autocorrelation pitch detection
+  let size = buf.length;
+  let rms = 0;
+  for (let i = 0; i < size; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.01) return { pitch: 0, rms };
+
+  // Find first zero crossing
+  let r1 = 0, r2 = size - 1;
+  const thresh = 0.2;
+  for (let i = 0; i < size / 2; i++) {
+    if (Math.abs(buf[i]) < thresh) { r1 = i; break; }
+  }
+  for (let i = 1; i < size / 2; i++) {
+    if (Math.abs(buf[size - i]) < thresh) { r2 = size - i; break; }
+  }
+  buf = buf.slice(r1, r2);
+  size = buf.length;
+
+  const c = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size - i; j++) {
+      c[i] += buf[j] * buf[j + i];
+    }
+  }
+
+  let d = 0;
+  while (c[d] > c[d+1]) d++;
+  let maxval = -1, maxpos = -1;
+  for (let i = d; i < size; i++) {
+    if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
+  }
+
+  const T0 = maxpos;
+  if (T0 === 0 || T0 === -1) return { pitch: 0, rms };
+  return { pitch: sampleRate / T0, rms };
+}
+
+function processVoice() {
+  if (!voiceDriveActive || !voiceAnalyser) return;
+  voiceAnalyser.getFloatTimeDomainData(voiceDataArray);
+  const result = autoCorrelate(voiceDataArray, audioCtx.sampleRate);
+
+  voiceRMS = result.rms;
+  const newPitch = result.pitch;
+
+  if (voiceSpawnCooldown > 0) voiceSpawnCooldown--;
+  if (voiceOnsetCooldown > 0) voiceOnsetCooldown--;
+
+  // Detect onset/clap: sudden RMS spike
+  if (voiceRMS > 0.15 && voiceOnsetCooldown <= 0) {
+    // Check if it's noise (no clear pitch) = clap
+    if (newPitch < 50 || newPitch > 2000) {
+      // Trigger supernova on largest body
+      if (bodies.length > 0) {
+        let maxIdx = 0;
+        for (let i = 1; i < bodies.length; i++) {
+          if (bodies[i].mass > bodies[maxIdx].mass) maxIdx = i;
+        }
+        supernova(maxIdx);
+        voiceOnsetCooldown = 30;
+      }
+    }
+  }
+
+  if (newPitch > 50 && newPitch < 2000) {
+    // Pitch glide detection
+    if (prevVoicePitch > 50) {
+      const glide = newPitch - prevVoicePitch;
+      if (glide > 20) {
+        // Pitch up: speed up orbits
+        for (const b of bodies) {
+          b.vx *= 1.005;
+          b.vy *= 1.005;
+        }
+      } else if (glide < -20) {
+        // Pitch down: slow down
+        for (const b of bodies) {
+          b.vx *= 0.995;
+          b.vy *= 0.995;
+        }
+      }
+    }
+
+    // Spawn body from voice
+    if (voiceSpawnCooldown <= 0 && voiceRMS > 0.04) {
+      const mass = Math.min(voiceRMS * 500, 150);
+      const angle = Math.random() * Math.PI * 2;
+      const r = 100 + Math.random() * 200;
+      const b = createBody(
+        camera.x + Math.cos(angle) * r,
+        camera.y + Math.sin(angle) * r,
+        (Math.random() - 0.5) * 1.5,
+        (Math.random() - 0.5) * 1.5,
+        Math.max(mass, 3), null
+      );
+      b.freq = newPitch;
+      bodies.push(b);
+      if (soundOn) startBodySound(b);
+      voiceSpawnCooldown = 20;
+    }
+
+    voicePitch = newPitch;
+  }
+  prevVoicePitch = newPitch;
+
+  // Update UI
+  document.getElementById('voice-pitch').textContent = voicePitch > 0 ? freqToNoteName(voicePitch) + ' (' + Math.round(voicePitch) + 'Hz)' : '--';
+  document.getElementById('voice-vol').textContent = (voiceRMS * 100).toFixed(1) + '%';
+  document.getElementById('voice-pitch-bar').style.width = Math.min(voicePitch / 10, 100) + '%';
+  document.getElementById('voice-vol-bar').style.width = Math.min(voiceRMS * 500, 100) + '%';
+}
+
+// ===== RENDERING =====
+function drawStars(time) {
+  for (const s of bgStars) {
+    const twinkle = 0.5 + 0.5 * Math.sin(time * 0.001 + s.twinklePhase);
+    const alpha = s.brightness * twinkle;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+    ctx.fill();
+  }
+}
+
+function drawBody(b, time) {
+  const sp = worldToScreen(b.x, b.y);
+  const r = b.radius * camera.zoom;
+
+  if (sp.x < -r * 3 || sp.x > W + r * 3 || sp.y < -r * 3 || sp.y > H + r * 3) return;
+
+  // Update color based on velocity
+  const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+  b.color = massToColor(b.mass, speed);
+
+  // Glow
+  const gradient = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r * 3);
+  gradient.addColorStop(0, b.color);
+  gradient.addColorStop(0.4, b.color.replace('rgb', 'rgba').replace(')', ',0.4)'));
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.arc(sp.x, sp.y, r * 3, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Core
+  ctx.beginPath();
+  ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = b.color;
+  ctx.fill();
+
+  // Bright center
+  ctx.beginPath();
+  ctx.arc(sp.x, sp.y, r * 0.4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fill();
+}
+
+function drawTrails() {
+  if (!showTrails) return;
+  for (const b of bodies) {
+    if (b.trail.length < 2) continue;
+    ctx.beginPath();
+    for (let i = 0; i < b.trail.length; i++) {
+      const sp = worldToScreen(b.trail[i].x, b.trail[i].y);
+      if (i === 0) ctx.moveTo(sp.x, sp.y);
+      else ctx.lineTo(sp.x, sp.y);
+    }
+    ctx.strokeStyle = b.color.replace('rgb', 'rgba').replace(')', `,${0.03})`);
+    ctx.lineWidth = 1;
+
+    // Draw with fading segments
+    for (let i = 1; i < b.trail.length; i++) {
+      const alpha = (i / b.trail.length) * 0.5;
+      const sp0 = worldToScreen(b.trail[i-1].x, b.trail[i-1].y);
+      const sp1 = worldToScreen(b.trail[i].x, b.trail[i].y);
+      ctx.beginPath();
+      ctx.moveTo(sp0.x, sp0.y);
+      ctx.lineTo(sp1.x, sp1.y);
+      ctx.strokeStyle = b.color.replace('rgb', 'rgba').replace(')', `,${alpha})`);
+      ctx.lineWidth = Math.max(0.5, (i / b.trail.length) * 2 * camera.zoom);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawGravTension() {
+  const g = getG();
+  const soft = getSoft();
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      const a = bodies[i], b = bodies[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distSq = dx * dx + dy * dy;
+      const dist = Math.sqrt(distSq);
+      const F = g * a.mass * b.mass / (distSq + soft * soft);
+      const intensity = Math.min(F * 0.005, 0.4);
+
+      if (intensity > 0.02) {
+        const sp1 = worldToScreen(a.x, a.y);
+        const sp2 = worldToScreen(b.x, b.y);
+        ctx.beginPath();
+        ctx.moveTo(sp1.x, sp1.y);
+        ctx.lineTo(sp2.x, sp2.y);
+        ctx.strokeStyle = `rgba(100,200,255,${intensity})`;
+        ctx.lineWidth = intensity * 3;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawFieldLines() {
+  if (!showField) return;
+  const g = getG();
+  const gridSize = 40;
+  const ox = (camera.x * camera.zoom) % gridSize;
+  const oy = (camera.y * camera.zoom) % gridSize;
+
+  ctx.strokeStyle = 'rgba(0,229,255,0.04)';
+  ctx.lineWidth = 0.5;
+
+  for (let sx = -gridSize; sx < W + gridSize; sx += gridSize) {
+    for (let sy = -gridSize; sy < H + gridSize; sy += gridSize) {
+      const wp = screenToWorld(sx + ox, sy + oy);
+      let fx = 0, fy = 0;
+      for (const b of bodies) {
+        const dx = b.x - wp.x;
+        const dy = b.y - wp.y;
+        const distSq = dx * dx + dy * dy + 500;
+        const dist = Math.sqrt(distSq);
+        const F = g * b.mass / distSq;
+        fx += F * dx / dist;
+        fy += F * dy / dist;
+      }
+      const mag = Math.sqrt(fx * fx + fy * fy);
+      if (mag > 0.001) {
+        const len = Math.min(mag * 500, 15);
+        const nx = fx / mag, ny = fy / mag;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + nx * len, sy + ny * len);
+        const alpha = Math.min(mag * 20, 0.15);
+        ctx.strokeStyle = `rgba(0,229,255,${alpha})`;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawCollisionEffects(dt) {
+  for (let i = collisionEffects.length - 1; i >= 0; i--) {
+    const e = collisionEffects[i];
+    e.radius += (e.maxRadius - e.radius) * 0.08;
+    e.alpha -= 0.02;
+
+    if (e.alpha <= 0) {
+      collisionEffects.splice(i, 1);
+      continue;
+    }
+
+    const sp = worldToScreen(e.x, e.y);
+    const r = e.radius * camera.zoom;
+
+    // Shockwave ring
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = e.color.replace('#', '');
+    const hexToRgb = (hex) => {
+      const v = parseInt(hex, 16);
+      return `${(v >> 16) & 255},${(v >> 8) & 255},${v & 255}`;
+    };
+    let rgb;
+    if (e.color.startsWith('#')) {
+      const hex = e.color.slice(1);
+      const v = parseInt(hex, 16);
+      rgb = `${(v >> 16) & 255},${(v >> 8) & 255},${v & 255}`;
+    } else {
+      rgb = '255,215,0';
+    }
+    ctx.strokeStyle = `rgba(${rgb},${Math.min(e.alpha, 1)})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Glow fill
+    const grd = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r);
+    grd.addColorStop(0, `rgba(${rgb},${Math.min(e.alpha * 0.3, 0.3)})`);
+    grd.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Particles
+    if (e.particles) {
+      for (const p of e.particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.97;
+        p.vy *= 0.97;
+        p.life -= 0.02;
+        if (p.life <= 0) continue;
+        const pp = worldToScreen(p.x, p.y);
+        ctx.beginPath();
+        ctx.arc(pp.x, pp.y, 2 * camera.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = p.color + Math.floor(p.life * 99).toString(16).padStart(2, '0');
+        ctx.fill();
+      }
+    }
+  }
+}
+
+function drawSlingshot() {
+  if (dragState === 'sling' && dragBody !== null && dragStart) {
+    const sp = worldToScreen(bodies[dragBody].x, bodies[dragBody].y);
+    const mx = dragStart.mx;
+    const my = dragStart.my;
+    ctx.beginPath();
+    ctx.moveTo(sp.x, sp.y);
+    ctx.lineTo(mx, my);
+    ctx.strokeStyle = 'rgba(255,215,0,0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrow at body end pointing opposite direction
+    const dx = sp.x - mx;
+    const dy = sp.y - my;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 10) {
+      const ax = sp.x + dx / len * 20;
+      const ay = sp.y + dy / len * 20;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,215,0,0.6)';
+      ctx.fill();
+    }
+  }
+}
+
+// ===== HARMONY CALCULATION =====
+function calcHarmony() {
+  if (bodies.length < 2) return { harmony: 0, chord: '--' };
+
+  const freqs = bodies.slice(0, 10).map(b => b.freq);
+  let consonance = 0;
+  let pairs = 0;
+
+  for (let i = 0; i < freqs.length; i++) {
+    for (let j = i + 1; j < freqs.length; j++) {
+      let ratio = freqs[i] / freqs[j];
+      if (ratio < 1) ratio = 1 / ratio;
+      // Check proximity to simple ratios
+      const simpleRatios = [1, 2, 1.5, 4/3, 5/4, 5/3, 6/5, 3/2];
+      let minDist = Infinity;
+      for (const sr of simpleRatios) {
+        const dist = Math.abs(ratio - sr);
+        if (dist < minDist) minDist = dist;
+      }
+      consonance += Math.max(0, 1 - minDist * 3);
+      pairs++;
+    }
+  }
+
+  const harmony = pairs > 0 ? consonance / pairs : 0;
+
+  // Build chord name
+  const notes = bodies.slice(0, 6).map(b => freqToNoteName(b.freq));
+  const unique = [...new Set(notes)];
+  const chordStr = unique.length > 0 ? unique.slice(0, 4).join(' ') : '--';
+
+  return { harmony: Math.min(harmony, 1), chord: chordStr };
+}
+
+// ===== ENERGY CALCULATION =====
+function calcEnergy() {
+  let ke = 0, pe = 0;
+  const g = getG();
+  const soft = getSoft();
+
+  for (const b of bodies) {
+    ke += 0.5 * b.mass * (b.vx * b.vx + b.vy * b.vy);
+  }
+
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      const dx = bodies[j].x - bodies[i].x;
+      const dy = bodies[j].y - bodies[i].y;
+      const dist = Math.sqrt(dx * dx + dy * dy + soft * soft);
+      pe -= g * bodies[i].mass * bodies[j].mass / dist;
+    }
+  }
+
+  return { ke, pe, total: ke + pe };
+}
+
+// ===== UPDATE UI =====
+function updateUI(time) {
+  const energy = calcEnergy();
+  const harm = calcHarmony();
+
+  document.getElementById('stat-bodies').textContent = bodies.length;
+  document.getElementById('bottom-bodies').textContent = bodies.length;
+  document.getElementById('stat-mass').textContent = bodies.reduce((s, b) => s + b.mass, 0).toFixed(0);
+  document.getElementById('stat-ke').textContent = energy.ke.toFixed(1);
+  document.getElementById('stat-pe').textContent = energy.pe.toFixed(1);
+
+  document.getElementById('chord-display').textContent = harm.chord;
+  const harmPct = (harm.harmony * 100).toFixed(0);
+  document.getElementById('stat-harmony').textContent = harmPct + '%';
+  document.getElementById('harmony-bar-display').textContent = '\u266A ' + harmPct + '%';
+  const harmColor = harm.harmony > 0.6 ? '#00ff88' : harm.harmony > 0.3 ? '#ffd700' : '#ff4444';
+  document.getElementById('harmony-bar-display').style.color = harmColor;
+
+  // Energy bar
+  const maxE = Math.max(Math.abs(energy.total), 1);
+  const eFrac = Math.min(energy.ke / (energy.ke - energy.pe + 1), 1);
+  document.getElementById('energy-fill').style.width = (eFrac * 100) + '%';
+
+  // Largest body
+  if (bodies.length > 0) {
+    let largest = bodies[0];
+    for (const b of bodies) if (b.mass > largest.mass) largest = b;
+    const lSpeed = Math.sqrt(largest.vx * largest.vx + largest.vy * largest.vy);
+    document.getElementById('stat-lg-mass').textContent = largest.mass.toFixed(1);
+    document.getElementById('stat-lg-vel').textContent = lSpeed.toFixed(2);
+    document.getElementById('stat-lg-freq').textContent = freqToNoteName(largest.freq) + ' (' + Math.round(largest.freq) + 'Hz)';
+  } else {
+    document.getElementById('stat-lg-mass').textContent = '--';
+    document.getElementById('stat-lg-vel').textContent = '--';
+    document.getElementById('stat-lg-freq').textContent = '--';
+  }
+
+  // FPS
+  fpsCounter++;
+  if (time - fpsTime > 1000) {
+    fpsDisplay = fpsCounter;
+    fpsCounter = 0;
+    fpsTime = time;
+  }
+  document.getElementById('stat-fps').textContent = fpsDisplay;
+
+  // Audio pill
+  document.getElementById('pill-audio').classList.toggle('active', soundOn);
+  document.getElementById('bottom-paused').style.display = paused ? 'flex' : 'none';
+}
+
+// ===== MAIN LOOP =====
+function mainLoop(time) {
+  requestAnimationFrame(mainLoop);
+
+  const dt = Math.min(time - (lastTime || time), 50);
+  lastTime = time;
+
+  // Clear
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars(time);
+  drawFieldLines();
+
+  if (!paused) {
+    computeForces();
+    velocityVerletStep();
+    detectCollisions();
+    updateTrails();
+    processVoice();
+
+    // Update body sounds
+    for (const b of bodies) {
+      b.freq = massToFreq(b.mass);
+      updateBodySound(b);
+    }
+  }
+
+  drawTrails();
+  drawGravTension();
+
+  for (const b of bodies) {
+    drawBody(b, time);
+  }
+
+  drawCollisionEffects(dt);
+  drawSlingshot();
+  updateUI(time);
+}
+
+// ===== INPUT HANDLING =====
+function findBodyAt(sx, sy) {
+  const wp = screenToWorld(sx, sy);
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    const dx = b.x - wp.x;
+    const dy = b.y - wp.y;
+    if (Math.sqrt(dx * dx + dy * dy) < b.radius + 5 / camera.zoom) return i;
+  }
+  return -1;
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) {
+    // Right click: detonate
+    e.preventDefault();
+    const idx = findBodyAt(e.clientX, e.clientY);
+    if (idx >= 0) {
+      supernova(idx);
+    }
+    return;
+  }
+
+  if (e.button === 0) {
+    const idx = findBodyAt(e.clientX, e.clientY);
+    if (idx >= 0) {
+      // Slingshot
+      dragState = 'sling';
+      dragBody = idx;
+      dragStart = { mx: e.clientX, my: e.clientY };
+    } else {
+      // Pan or spawn
+      dragState = 'pan';
+      dragStart = { mx: e.clientX, my: e.clientY, cx: camera.x, cy: camera.y, moved: false };
+    }
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouseWorld = screenToWorld(e.clientX, e.clientY);
+  if (dragState === 'pan' && dragStart) {
+    const dx = e.clientX - dragStart.mx;
+    const dy = e.clientY - dragStart.my;
+    if (Math.abs(dx) + Math.abs(dy) > 5) dragStart.moved = true;
+    camera.x = dragStart.cx - dx / camera.zoom;
+    camera.y = dragStart.cy - dy / camera.zoom;
+  }
+  if (dragState === 'sling' && dragStart) {
+    dragStart.mx = e.clientX;
+    dragStart.my = e.clientY;
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (dragState === 'sling' && dragBody !== null && dragStart) {
+    const b = bodies[dragBody];
+    if (b) {
+      const sp = worldToScreen(b.x, b.y);
+      const dx = sp.x - dragStart.mx;
+      const dy = sp.y - dragStart.my;
+      b.vx += dx * 0.02 / camera.zoom;
+      b.vy += dy * 0.02 / camera.zoom;
+    }
+  } else if (dragState === 'pan' && dragStart && !dragStart.moved) {
+    // Click to spawn
+    const wp = screenToWorld(e.clientX, e.clientY);
+    const mass = parseInt(document.getElementById('spawn-mass').value);
+    const color = document.getElementById('spawn-color').value;
+    const nb = createBody(wp.x, wp.y, 0, 0, mass, null);
+    bodies.push(nb);
+    if (soundOn) startBodySound(nb);
+  }
+  dragState = null;
+  dragBody = null;
+  dragStart = null;
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+  // Zoom toward mouse position
+  const wp = screenToWorld(e.clientX, e.clientY);
+  camera.zoom *= zoomFactor;
+  camera.zoom = Math.max(0.1, Math.min(camera.zoom, 10));
+  // Adjust camera to keep mouse at same world position
+  const newWp = screenToWorld(e.clientX, e.clientY);
+  camera.x -= newWp.x - wp.x;
+  camera.y -= newWp.y - wp.y;
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ===== KEYBOARD =====
+document.addEventListener('keydown', (e) => {
+  // Ignore if typing in an input
+  if (e.target.tagName === 'INPUT') return;
+
+  switch(e.key) {
+    case '1': loadPreset('binary'); break;
+    case '2': loadPreset('solar'); break;
+    case '3': loadPreset('galaxy'); break;
+    case '4': loadPreset('chaos'); break;
+    case '5': loadPreset('figure8'); break;
+    case ' ':
+      e.preventDefault();
+      if (voiceDriveActive) stopVoice();
+      else startVoice();
+      break;
+    case 'g': case 'G':
+      toggleField();
+      break;
+    case 't': case 'T':
+      toggleTrails();
+      break;
+    case 'p': case 'P':
+      paused = !paused;
+      document.getElementById('pill-physics').classList.toggle('active', !paused);
+      document.getElementById('pill-physics').classList.toggle('warn', paused);
+      break;
+    case 'c': case 'C':
+      clearAll();
+      break;
+    case 'n': case 'N':
+      toggleSound();
+      break;
+  }
+});
+
+// ===== UI TOGGLES =====
+function toggleTrails() {
+  showTrails = !showTrails;
+  document.getElementById('toggle-trails').classList.toggle('on', showTrails);
+}
+
+function toggleSound() {
+  soundOn = !soundOn;
+  if (soundOn) {
+    initAudio();
+    for (const b of bodies) startBodySound(b);
+  } else {
+    for (const b of bodies) stopBodySound(b);
+  }
+  document.getElementById('toggle-sound').classList.toggle('on', soundOn);
+  document.getElementById('pill-audio').classList.toggle('active', soundOn);
+}
+
+function toggleField() {
+  showField = !showField;
+  document.getElementById('toggle-field').classList.toggle('on', showField);
+}
+
+function setScale(mode, el) {
+  scaleMode = mode;
+  document.querySelectorAll('.scale-btn').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  // Update frequencies
+  for (const b of bodies) {
+    b.freq = massToFreq(b.mass);
+    if (b.oscillator) {
+      b.oscillator.frequency.setTargetAtTime(b.freq, audioCtx.currentTime, 0.2);
+    }
+  }
+}
+
+// ===== SLIDER BINDINGS =====
+function bindSlider(id, valId, onChange, format) {
+  const slider = document.getElementById(id);
+  const valEl = document.getElementById(valId);
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value);
+    if (onChange) onChange(v);
+    if (valEl && format) valEl.textContent = format(v);
+    else if (valEl) valEl.textContent = v;
+  });
+}
+
+bindSlider('spawn-mass', 'spawn-mass-val');
+bindSlider('slider-g', 'val-g', v => G_FACTOR = v);
+bindSlider('slider-dt', 'val-dt', v => DT_FACTOR = v, v => (v * 0.01).toFixed(2));
+bindSlider('slider-soft', 'val-soft', v => SOFT_FACTOR = v);
+bindSlider('slider-trail', 'val-trail', v => trailLength = v);
+bindSlider('slider-vol', 'val-vol', v => {
+  if (masterGain) masterGain.gain.setTargetAtTime(v / 100 * 0.5, audioCtx.currentTime, 0.1);
+}, v => v);
+
+// ===== INIT =====
+loadPreset('solar');
+requestAnimationFrame(mainLoop);
+</script>
+</body>
+</html>
