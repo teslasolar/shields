@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Songbird Harmony — Prime Ratio Voice Harmonizer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas#orbits {
+  display: block;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Panels */
+.panel {
+  position: fixed;
+  z-index: 100;
+  background: rgba(6,6,16,.88);
+  border: 1px solid rgba(0,170,255,.18);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  backdrop-filter: blur(10px);
+  pointer-events: all;
+  min-width: 180px;
+}
+.panel h3 {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #0af;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-weight: normal;
+}
+.panel-label { color: #556; font-size: 9px; margin-top: 6px; }
+.panel-value { color: #c0c0d0; font-size: 11px; }
+
+/* Voice panel - bottom left */
+#voice-panel { bottom: 52px; left: 14px; min-width: 220px; }
+#mic-bar-wrap { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+#mic-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #0af; flex-shrink: 0; transition: background .15s;
+}
+#mic-bar {
+  flex: 1; height: 6px;
+  background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden;
+}
+#mic-bar-fill {
+  height: 100%; width: 0%;
+  background: #0af; border-radius: 3px;
+  transition: width .05s, background .2s;
+}
+#detected-pitch { font-size: 14px; color: #fc0; margin-top: 4px; min-height: 18px; }
+#detected-vowel { font-size: 11px; color: #0f8; margin-top: 4px; }
+#onset-rate { font-size: 9px; color: #88a; margin-top: 4px; }
+
+/* Harmony panel - bottom right */
+#harmony-panel { bottom: 52px; right: 14px; min-width: 310px; max-width: 340px; }
+.preset-row { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+.preset-btn {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(0,170,255,.25);
+  color: #8af;
+  font-family: 'Courier New', monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.preset-btn:hover, .preset-btn.active {
+  background: rgba(0,170,255,.2);
+  color: #fff;
+  border-color: #0af;
+}
+.voice-row {
+  display: flex; align-items: center; gap: 5px;
+  margin: 3px 0; font-size: 9px;
+}
+.voice-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0; cursor: pointer;
+  transition: opacity .15s, box-shadow .15s;
+}
+.voice-dot.off { opacity: .25; }
+.voice-label { color: #889; width: 56px; flex-shrink: 0; font-size: 8px; letter-spacing: .5px; }
+.voice-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 70px; height: 3px;
+  background: rgba(255,255,255,.1); border-radius: 2px;
+  outline: none;
+}
+.voice-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 10px; height: 10px;
+  background: #0af; border-radius: 50%;
+  cursor: pointer;
+}
+.voice-hz { color: #556; font-size: 8px; width: 50px; text-align: right; }
+.master-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.master-label { color: #556; font-size: 8px; width: 60px; }
+.master-slider {
+  -webkit-appearance: none; appearance: none;
+  flex: 1; height: 3px;
+  background: rgba(255,255,255,.1); border-radius: 2px;
+  outline: none;
+}
+.master-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px;
+  background: #fc0; border-radius: 50%;
+  cursor: pointer;
+}
+
+/* Resonance panel - top right */
+#resonance-panel { top: 50px; right: 14px; min-width: 180px; }
+#chord-name { font-size: 14px; color: #f4a; margin-top: 2px; }
+#consonance { font-size: 11px; color: #0f8; margin-top: 4px; }
+#harmonic-energy { font-size: 9px; color: #88a; margin-top: 4px; }
+
+/* Pitch display */
+#pitch-display {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  text-align: center;
+  pointer-events: none;
+}
+#pitch-note {
+  font-size: 32px;
+  color: #fc0;
+  letter-spacing: 3px;
+  text-shadow: 0 0 20px rgba(255,204,0,.4);
+}
+#pitch-hz {
+  font-size: 11px;
+  color: #889;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+#pitch-cents {
+  font-size: 9px;
+  color: #556;
+  margin-top: 1px;
+}
+
+/* Footer */
+#footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 2px;
+  padding: 10px;
+  color: #445;
+  background: linear-gradient(transparent, rgba(6,6,16,.95));
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<canvas id="orbits"></canvas>
+
+<div id="pitch-display">
+  <div id="pitch-note">---</div>
+  <div id="pitch-hz">-- Hz</div>
+  <div id="pitch-cents"></div>
+</div>
+
+<div id="voice-panel" class="panel">
+  <h3>VOICE INPUT</h3>
+  <div id="mic-bar-wrap">
+    <div id="mic-dot"></div>
+    <div id="mic-bar"><div id="mic-bar-fill"></div></div>
+  </div>
+  <div class="panel-label">DETECTED PITCH</div>
+  <div id="detected-pitch">---</div>
+  <div class="panel-label">VOWEL / RING</div>
+  <div id="detected-vowel">---</div>
+  <div class="panel-label">ONSET RATE</div>
+  <div id="onset-rate">0 /s</div>
+</div>
+
+<div id="harmony-panel" class="panel">
+  <h3>HARMONY ENGINE</h3>
+  <div class="preset-row" id="preset-row"></div>
+  <div id="voice-rows"></div>
+  <div class="master-row">
+    <span class="master-label">REVERB</span>
+    <input type="range" class="master-slider" id="reverb-slider" min="0" max="100" value="35">
+  </div>
+  <div class="master-row">
+    <span class="master-label">VOLUME</span>
+    <input type="range" class="master-slider" id="volume-slider" min="0" max="100" value="60">
+  </div>
+</div>
+
+<div id="resonance-panel" class="panel">
+  <h3>RESONANCE</h3>
+  <div class="panel-label">CHORD</div>
+  <div id="chord-name">---</div>
+  <div class="panel-label">CONSONANCE</div>
+  <div id="consonance">---</div>
+  <div class="panel-label">HARMONIC ENERGY</div>
+  <div id="harmonic-energy">0.00</div>
+</div>
+
+<div id="footer">
+  <span style="color:#f4a">510,510</span> = 2&times;3&times;5&times;7&times;11&times;13&times;17 &middot; SONGBIRD HARMONY &middot; PRIME RATIO VOICES
+</div>
+
+<script>
+(function() {
+'use strict';
+
+// ════════════════════════════════════════════
+// SHIELD CONSTANTS
+// ════════════════════════════════════════════
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = 2 * Math.PI;
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+const RING_NAMES = ['GROUND','SENSE','GATE','HEART','VOICE','SIGHT','OBSERVER'];
+const RING_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_COLORS = RING_HUES.map(h => `hsl(${h}, 85%, 55%)`);
+
+// Harmony voice definitions: [numerator, denominator, prime, label]
+const HARMONY_DEFS = [
+  { num: 3, den: 2, prime: 3,  label: '3/2 fifth',    name: 'P5'  },
+  { num: 5, den: 4, prime: 5,  label: '5/4 third',    name: 'M3'  },
+  { num: 7, den: 4, prime: 7,  label: '7/4 seventh',  name: 'H7'  },
+  { num: 11, den: 8, prime: 11, label: '11/8 tritone', name: '11'  },
+  { num: 13, den: 8, prime: 13, label: '13/8 sixth',   name: '13'  },
+  { num: 17, den: 16, prime: 17, label: '17/16 second', name: '17' }
+];
+
+// Presets: which voices are active (0-indexed)
+const PRESETS = {
+  TRIAD:    [true, true, false, false, false, false],
+  SEVENTH:  [true, true, true, false, false, false],
+  FULL:     [true, true, true, true, true, true],
+  OVERTONE: [false, false, true, true, true, true],
+  OCTAVES:  'special'
+};
+
+// Note names
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+// Vowel formant ranges [F1 low, F1 high, F2 low, F2 high]
+const VOWEL_FORMANTS = {
+  'oo': [250, 400, 600, 1100],
+  'oh': [400, 600, 700, 1200],
+  'ah': [600, 900, 900, 1500],
+  'eh': [400, 700, 1500, 2300],
+  'ee': [250, 450, 2000, 3000]
+};
+const VOWEL_RINGS = { 'oo': 0, 'oh': 1, 'ah': 2, 'eh': 4, 'ee': 6 };
+
+// ════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════
+let audioCtx = null;
+let micStream = null;
+let analyser = null;
+let analyserBuf = null;
+let timeBuf = null;
+let micGain = null;
+
+// Pitch tracking
+let detectedF0 = 0;
+let smoothF0 = 0;
+let rms = 0;
+let prevRms = 0;
+let vowel = '';
+let vowelRing = -1;
+let onsets = [];
+let onsetRate = 0;
+
+// Harmony voices
+let harmonyVoices = [];
+let voiceActive = [true, true, false, false, false, false]; // TRIAD default
+let voiceGains = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+let harmonyMuted = false;
+let masterGain = null;
+let masterVolume = 0.6;
+let reverbGain = null;
+let dryGain = null;
+let convolver = null;
+let reverbAmount = 0.35;
+let combinedAnalyser = null;
+let combinedTimeBuf = null;
+let octaveMode = false;
+
+// Canvas
+const canvas = document.getElementById('orbits');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+// Stars (127 Fibonacci sphere)
+let stars = [];
+
+// Ripples
+let ripples = [];
+
+// Active preset
+let activePreset = 'TRIAD';
+
+// ════════════════════════════════════════════
+// CANVAS SETUP
+// ════════════════════════════════════════════
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  cx = W / 2;
+  cy = H / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ════════════════════════════════════════════
+// FIBONACCI SPHERE STARS
+// ════════════════════════════════════════════
+function initStars() {
+  stars = [];
+  for (let i = 0; i < M7; i++) {
+    const theta = Math.acos(1 - 2 * (i + 0.5) / M7);
+    const phi = TAU * i / PHI;
+    stars.push({
+      x: Math.sin(theta) * Math.cos(phi),
+      y: Math.sin(theta) * Math.sin(phi),
+      z: Math.cos(theta),
+      brightness: 0.15 + Math.random() * 0.25
+    });
+  }
+}
+
+let starRotation = 0;
+
+function drawStars(t) {
+  starRotation += 0.0002;
+  const cosR = Math.cos(starRotation);
+  const sinR = Math.sin(starRotation);
+
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    // Rotate around Y axis
+    const rx = s.x * cosR - s.z * sinR;
+    const rz = s.x * sinR + s.z * cosR;
+    const ry = s.y;
+
+    // Project
+    const scale = 0.35 * Math.min(W, H);
+    const px = cx + rx * scale;
+    const py = cy + ry * scale * 0.6;
+
+    const depth = (rz + 1) / 2;
+    const alpha = s.brightness * (0.3 + depth * 0.7);
+    const sz = 0.5 + depth * 1.5;
+
+    ctx.fillStyle = `rgba(180,190,220,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(px, py, sz, 0, TAU);
+    ctx.fill();
+  }
+}
+
+// ════════════════════════════════════════════
+// AUDIO INIT
+// ════════════════════════════════════════════
+async function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Mic input
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const micSource = audioCtx.createMediaStreamSource(micStream);
+
+  micGain = audioCtx.createGain();
+  micGain.gain.value = 1.0;
+  micSource.connect(micGain);
+
+  // Analyser for pitch detection
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.8;
+  micGain.connect(analyser);
+
+  analyserBuf = new Float32Array(analyser.fftSize);
+  timeBuf = new Float32Array(analyser.fftSize);
+
+  // Output chain: voices -> dry/wet -> destination
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = masterVolume;
+
+  dryGain = audioCtx.createGain();
+  dryGain.gain.value = 1 - reverbAmount;
+
+  reverbGain = audioCtx.createGain();
+  reverbGain.gain.value = reverbAmount;
+
+  // Create reverb impulse
+  convolver = audioCtx.createConvolver();
+  convolver.buffer = createReverbImpulse(audioCtx, 2.5, 4);
+
+  masterGain.connect(dryGain);
+  masterGain.connect(convolver);
+  convolver.connect(reverbGain);
+  dryGain.connect(audioCtx.destination);
+  reverbGain.connect(audioCtx.destination);
+
+  // Combined analyser for waveform scope
+  combinedAnalyser = audioCtx.createAnalyser();
+  combinedAnalyser.fftSize = 2048;
+  combinedTimeBuf = new Float32Array(combinedAnalyser.fftSize);
+  dryGain.connect(combinedAnalyser);
+  reverbGain.connect(combinedAnalyser);
+
+  // Create harmony voices
+  createHarmonyVoices();
+}
+
+function createReverbImpulse(ctx, duration, decay) {
+  const rate = ctx.sampleRate;
+  const length = rate * duration;
+  const impulse = ctx.createBuffer(2, length, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = impulse.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+  }
+  return impulse;
+}
+
+function createHarmonyVoices() {
+  harmonyVoices = [];
+  for (let i = 0; i < 6; i++) {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 0;
+
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0;
+
+    const voiceGainNode = audioCtx.createGain();
+    voiceGainNode.gain.value = voiceGains[i];
+
+    osc.connect(voiceGainNode);
+    voiceGainNode.connect(gain);
+    gain.connect(masterGain);
+
+    osc.start();
+
+    harmonyVoices.push({
+      osc,
+      gain,         // envelope gain (rms-driven)
+      voiceGain: voiceGainNode, // per-voice level
+      targetFreq: 0,
+      currentFreq: 0
+    });
+  }
+}
+
+// ════════════════════════════════════════════
+// PITCH DETECTION (Autocorrelation)
+// ════════════════════════════════════════════
+function detectPitch() {
+  analyser.getFloatTimeDomainData(analyserBuf);
+
+  // RMS
+  let sum = 0;
+  for (let i = 0; i < analyserBuf.length; i++) {
+    sum += analyserBuf[i] * analyserBuf[i];
+  }
+  prevRms = rms;
+  rms = Math.sqrt(sum / analyserBuf.length);
+
+  // Onset detection
+  if (rms > 0.02 && prevRms < 0.015) {
+    const now = performance.now();
+    onsets.push(now);
+    // Keep only last 3 seconds
+    while (onsets.length > 0 && now - onsets[0] > 3000) onsets.shift();
+    onsetRate = onsets.length / 3;
+  }
+
+  // Skip if too quiet
+  if (rms < 0.01) {
+    detectedF0 = 0;
+    return;
+  }
+
+  const buf = analyserBuf;
+  const n = buf.length;
+  const sampleRate = audioCtx.sampleRate;
+
+  // Autocorrelation
+  const minPeriod = Math.floor(sampleRate / 800); // 800 Hz max
+  const maxPeriod = Math.floor(sampleRate / 60);  // 60 Hz min
+
+  let bestCorr = -1;
+  let bestPeriod = 0;
+
+  // Normalized autocorrelation
+  for (let period = minPeriod; period <= maxPeriod; period++) {
+    let corr = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+    const len = n - period;
+    for (let j = 0; j < len; j++) {
+      corr += buf[j] * buf[j + period];
+      norm1 += buf[j] * buf[j];
+      norm2 += buf[j + period] * buf[j + period];
+    }
+    const normFactor = Math.sqrt(norm1 * norm2);
+    if (normFactor > 0) corr /= normFactor;
+
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestPeriod = period;
+    }
+  }
+
+  if (bestCorr > 0.85 && bestPeriod > 0) {
+    // Parabolic interpolation for sub-sample accuracy
+    const y1 = autocorrAt(buf, bestPeriod - 1);
+    const y2 = autocorrAt(buf, bestPeriod);
+    const y3 = autocorrAt(buf, bestPeriod + 1);
+    const shift = (y3 - y1) / (2 * (2 * y2 - y1 - y3));
+    const refinedPeriod = bestPeriod + (isFinite(shift) ? shift : 0);
+
+    detectedF0 = sampleRate / refinedPeriod;
+  } else {
+    detectedF0 = 0;
+  }
+}
+
+function autocorrAt(buf, period) {
+  let corr = 0;
+  const len = buf.length - period;
+  for (let j = 0; j < len; j++) {
+    corr += buf[j] * buf[j + period];
+  }
+  return corr;
+}
+
+// ════════════════════════════════════════════
+// VOWEL DETECTION
+// ════════════════════════════════════════════
+function detectVowel() {
+  if (rms < 0.01) { vowel = ''; vowelRing = -1; return; }
+
+  const freqData = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(freqData);
+
+  const sampleRate = audioCtx.sampleRate;
+  const binHz = sampleRate / analyser.fftSize;
+
+  // Find formant peaks in F1 (200-1000Hz) and F2 (800-3000Hz)
+  const f1Range = [Math.floor(200 / binHz), Math.ceil(1000 / binHz)];
+  const f2Range = [Math.floor(800 / binHz), Math.ceil(3000 / binHz)];
+
+  let f1Peak = 0, f1Val = -Infinity;
+  for (let i = f1Range[0]; i <= f1Range[1] && i < freqData.length; i++) {
+    if (freqData[i] > f1Val) { f1Val = freqData[i]; f1Peak = i * binHz; }
+  }
+
+  let f2Peak = 0, f2Val = -Infinity;
+  for (let i = f2Range[0]; i <= f2Range[1] && i < freqData.length; i++) {
+    if (freqData[i] > f2Val) { f2Val = freqData[i]; f2Peak = i * binHz; }
+  }
+
+  // Match to vowel formants
+  let bestVowel = '';
+  let bestDist = Infinity;
+  for (const [v, [f1lo, f1hi, f2lo, f2hi]] of Object.entries(VOWEL_FORMANTS)) {
+    const f1mid = (f1lo + f1hi) / 2;
+    const f2mid = (f2lo + f2hi) / 2;
+    const dist = Math.abs(f1Peak - f1mid) + Math.abs(f2Peak - f2mid);
+    if (dist < bestDist) { bestDist = dist; bestVowel = v; }
+  }
+
+  vowel = bestVowel;
+  vowelRing = VOWEL_RINGS[vowel] !== undefined ? VOWEL_RINGS[vowel] : -1;
+}
+
+// ════════════════════════════════════════════
+// NOTE NAME FROM FREQUENCY
+// ════════════════════════════════════════════
+function freqToNote(f) {
+  if (f <= 0) return { name: '---', octave: 0, cents: 0 };
+  const noteNum = 12 * Math.log2(f / 440) + 69;
+  const rounded = Math.round(noteNum);
+  const cents = Math.round((noteNum - rounded) * 100);
+  const name = NOTE_NAMES[((rounded % 12) + 12) % 12];
+  const octave = Math.floor(rounded / 12) - 1;
+  return { name, octave, cents };
+}
+
+// ════════════════════════════════════════════
+// HARMONY UPDATE
+// ════════════════════════════════════════════
+function updateHarmony() {
+  if (!harmonyVoices.length) return;
+
+  // Smooth the F0
+  if (detectedF0 > 0) {
+    smoothF0 = smoothF0 > 0 ? smoothF0 * 0.85 + detectedF0 * 0.15 : detectedF0;
+  } else {
+    smoothF0 *= 0.95;
+    if (smoothF0 < 20) smoothF0 = 0;
+  }
+
+  const f0 = smoothF0;
+  const envelope = Math.min(rms * 8, 1); // scale rms to 0-1 for envelope
+
+  for (let i = 0; i < 6; i++) {
+    const voice = harmonyVoices[i];
+    let targetFreq;
+
+    if (octaveMode) {
+      // OCTAVES preset: f0×2, f0×4, f0/2, f0×3, f0/4, f0×1.5
+      const octaveRatios = [2, 4, 0.5, 3, 0.25, 1.5];
+      targetFreq = f0 * octaveRatios[i];
+    } else {
+      targetFreq = f0 * HARMONY_DEFS[i].num / HARMONY_DEFS[i].den;
+    }
+
+    // Portamento — glide to target (~50ms)
+    if (targetFreq > 20 && targetFreq < 4000) {
+      voice.osc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.05);
+      voice.targetFreq = targetFreq;
+    }
+
+    // Envelope: fade in/out based on RMS and voice active state
+    const active = voiceActive[i] && !harmonyMuted && f0 > 20;
+    const targetGain = active ? envelope * 0.35 : 0;
+    voice.gain.gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.03);
+
+    // Update per-voice gain from sliders
+    voice.voiceGain.gain.setTargetAtTime(voiceGains[i], audioCtx.currentTime, 0.02);
+  }
+
+  // Master volume
+  if (masterGain) {
+    masterGain.gain.setTargetAtTime(masterVolume, audioCtx.currentTime, 0.02);
+  }
+}
+
+// ════════════════════════════════════════════
+// CHORD DETECTION
+// ════════════════════════════════════════════
+function detectChord() {
+  if (smoothF0 < 20) return { name: '---', consonance: 0, energy: 0 };
+
+  const activeIntervals = [];
+  for (let i = 0; i < 6; i++) {
+    if (voiceActive[i] && !harmonyMuted) {
+      activeIntervals.push(HARMONY_DEFS[i]);
+    }
+  }
+
+  if (activeIntervals.length === 0) return { name: '---', consonance: 0, energy: 0 };
+
+  // Chord naming
+  const has = (n, d) => activeIntervals.some(v => v.num === n && v.den === d);
+  let name = freqToNote(smoothF0).name;
+
+  if (has(3, 2) && has(5, 4)) {
+    name += ' maj';
+    if (has(7, 4)) name += '7';
+  } else if (has(3, 2)) {
+    name += ' 5';
+    if (has(7, 4)) name += '+7';
+  } else if (has(5, 4)) {
+    name += ' (3)';
+  }
+
+  if (has(11, 8)) name += ' +11';
+  if (has(13, 8)) name += ' +13';
+  if (has(17, 16)) name += ' +b2';
+
+  if (octaveMode) {
+    name = freqToNote(smoothF0).name + ' oct-stack';
+  }
+
+  // Consonance: average of 1/denominator (lower denominator = more consonant)
+  let consSum = 0;
+  for (const iv of activeIntervals) {
+    consSum += 1 / iv.den;
+  }
+  const consonance = activeIntervals.length > 0 ? consSum / activeIntervals.length : 0;
+
+  // Harmonic energy
+  let energy = 0;
+  for (let i = 0; i < 6; i++) {
+    if (voiceActive[i]) {
+      energy += voiceGains[i] * rms;
+    }
+  }
+
+  return { name, consonance: (consonance * 100).toFixed(1), energy: energy.toFixed(2) };
+}
+
+// ════════════════════════════════════════════
+// UI BUILD
+// ════════════════════════════════════════════
+function buildVoiceRows() {
+  const container = document.getElementById('voice-rows');
+  container.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const def = HARMONY_DEFS[i];
+    const hue = RING_HUES[i + 1]; // use ring hues 1-6
+    const color = `hsl(${hue}, 85%, 55%)`;
+
+    const row = document.createElement('div');
+    row.className = 'voice-row';
+    row.innerHTML = `
+      <div class="voice-dot${voiceActive[i] ? '' : ' off'}" id="vdot-${i}" style="background:${color}" title="Toggle voice ${i+1}"></div>
+      <span class="voice-label">${def.label}</span>
+      <input type="range" class="voice-slider" id="vslider-${i}" min="0" max="100" value="${voiceGains[i]*100}">
+      <span class="voice-hz" id="vhz-${i}">-- Hz</span>
+    `;
+    container.appendChild(row);
+
+    // Toggle
+    row.querySelector(`#vdot-${i}`).addEventListener('click', () => toggleVoice(i));
+
+    // Slider
+    row.querySelector(`#vslider-${i}`).addEventListener('input', (e) => {
+      voiceGains[i] = e.target.value / 100;
+    });
+  }
+}
+
+function buildPresets() {
+  const container = document.getElementById('preset-row');
+  container.innerHTML = '';
+  for (const name of Object.keys(PRESETS)) {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn' + (name === activePreset ? ' active' : '');
+    btn.textContent = name;
+    btn.id = 'preset-' + name;
+    btn.addEventListener('click', () => activatePreset(name));
+    container.appendChild(btn);
+  }
+}
+
+function toggleVoice(i) {
+  voiceActive[i] = !voiceActive[i];
+  const dot = document.getElementById(`vdot-${i}`);
+  if (dot) dot.classList.toggle('off', !voiceActive[i]);
+  activePreset = '';
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+}
+
+function activatePreset(name) {
+  activePreset = name;
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('preset-' + name);
+  if (btn) btn.classList.add('active');
+
+  if (name === 'OCTAVES') {
+    octaveMode = true;
+    voiceActive = [true, true, true, true, true, true];
+  } else {
+    octaveMode = false;
+    const preset = PRESETS[name];
+    voiceActive = [...preset];
+  }
+
+  // Update dots
+  for (let i = 0; i < 6; i++) {
+    const dot = document.getElementById(`vdot-${i}`);
+    if (dot) dot.classList.toggle('off', !voiceActive[i]);
+  }
+}
+
+// ════════════════════════════════════════════
+// SLIDERS
+// ════════════════════════════════════════════
+document.getElementById('reverb-slider').addEventListener('input', (e) => {
+  reverbAmount = e.target.value / 100;
+  if (reverbGain) reverbGain.gain.setTargetAtTime(reverbAmount, audioCtx.currentTime, 0.05);
+  if (dryGain) dryGain.gain.setTargetAtTime(1 - reverbAmount, audioCtx.currentTime, 0.05);
+});
+
+document.getElementById('volume-slider').addEventListener('input', (e) => {
+  masterVolume = e.target.value / 100;
+});
+
+// ════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+
+  const key = e.key;
+
+  // 1-6: toggle voices
+  if (key >= '1' && key <= '6') {
+    toggleVoice(parseInt(key) - 1);
+    return;
+  }
+
+  // Q/W/E/R/T: presets
+  const presetKeys = { q: 'TRIAD', w: 'SEVENTH', e: 'FULL', r: 'OVERTONE', t: 'OCTAVES' };
+  if (presetKeys[key.toLowerCase()]) {
+    activatePreset(presetKeys[key.toLowerCase()]);
+    return;
+  }
+
+  // Space: mute/unmute
+  if (key === ' ') {
+    e.preventDefault();
+    harmonyMuted = !harmonyMuted;
+    return;
+  }
+
+  // +/- master volume
+  if (key === '+' || key === '=') {
+    masterVolume = Math.min(1, masterVolume + 0.05);
+    document.getElementById('volume-slider').value = masterVolume * 100;
+  }
+  if (key === '-') {
+    masterVolume = Math.max(0, masterVolume - 0.05);
+    document.getElementById('volume-slider').value = masterVolume * 100;
+  }
+});
+
+// ════════════════════════════════════════════
+// DRAWING
+// ════════════════════════════════════════════
+let animTime = 0;
+
+function draw() {
+  animTime = performance.now() / 1000;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  drawStars(animTime);
+
+  // Ripples
+  drawRipples();
+
+  // Center voice circle
+  drawCenterVoice();
+
+  // Harmony orbits
+  drawHarmonyOrbits();
+
+  // Waveform scope
+  drawWaveformScope();
+}
+
+function drawCenterVoice() {
+  const baseR = 12 * devicePixelRatio;
+  const r = baseR + rms * 300 * devicePixelRatio;
+
+  // Color from vowel ring hue
+  let hue = 210; // default cyan
+  if (vowelRing >= 0) hue = RING_HUES[vowelRing];
+
+  // Pulsing
+  const pulse = 1 + Math.sin(animTime * 4) * 0.08;
+  const finalR = r * pulse;
+
+  // Glow
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, finalR * 2.5);
+  gradient.addColorStop(0, `hsla(${hue}, 85%, 65%, ${Math.min(rms * 5, 0.6)})`);
+  gradient.addColorStop(0.5, `hsla(${hue}, 85%, 45%, ${Math.min(rms * 3, 0.2)})`);
+  gradient.addColorStop(1, 'transparent');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(cx, cy, finalR * 2.5, 0, TAU);
+  ctx.fill();
+
+  // Core
+  ctx.fillStyle = `hsl(${hue}, 85%, 55%)`;
+  ctx.beginPath();
+  ctx.arc(cx, cy, finalR, 0, TAU);
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = `hsla(${hue}, 85%, 75%, 0.6)`;
+  ctx.lineWidth = 1.5 * devicePixelRatio;
+  ctx.stroke();
+
+  // Add ripple when voice is detected
+  if (detectedF0 > 0 && Math.random() < 0.05) {
+    ripples.push({
+      x: cx, y: cy, r: finalR,
+      maxR: finalR + 200 * devicePixelRatio,
+      hue, alpha: 0.4, speed: detectedF0 / 200
+    });
+  }
+}
+
+function drawRipples() {
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const rip = ripples[i];
+    rip.r += rip.speed * devicePixelRatio;
+    rip.alpha *= 0.985;
+
+    if (rip.alpha < 0.01 || rip.r > rip.maxR) {
+      ripples.splice(i, 1);
+      continue;
+    }
+
+    ctx.strokeStyle = `hsla(${rip.hue}, 80%, 60%, ${rip.alpha})`;
+    ctx.lineWidth = 1 * devicePixelRatio;
+    ctx.beginPath();
+    ctx.arc(rip.x, rip.y, rip.r, 0, TAU);
+    ctx.stroke();
+  }
+}
+
+function drawHarmonyOrbits() {
+  const minOrbitR = 80 * devicePixelRatio;
+  const maxOrbitR = 250 * devicePixelRatio;
+
+  for (let i = 0; i < 6; i++) {
+    const def = HARMONY_DEFS[i];
+    const hue = RING_HUES[i + 1];
+    const active = voiceActive[i] && !harmonyMuted && smoothF0 > 20;
+    const ratio = def.num / def.den;
+
+    // Orbit radius: closer = more consonant (lower ratio denominator)
+    // Normalize: den ranges 2-16, map so den=2 is close, den=16 is far
+    const consonanceNorm = (def.den - 2) / 14; // 0 = consonant, 1 = dissonant
+    const orbitR = minOrbitR + consonanceNorm * (maxOrbitR - minOrbitR);
+
+    // Orbit speed proportional to prime
+    const speed = def.prime * 0.08;
+    const angle = animTime * speed + (i * TAU / 6);
+
+    const ox = cx + Math.cos(angle) * orbitR;
+    const oy = cy + Math.sin(angle) * orbitR;
+
+    // Orbit path (dim)
+    ctx.strokeStyle = `hsla(${hue}, 60%, 40%, ${active ? 0.12 : 0.04})`;
+    ctx.lineWidth = 0.5 * devicePixelRatio;
+    ctx.beginPath();
+    ctx.arc(cx, cy, orbitR, 0, TAU);
+    ctx.stroke();
+
+    const voiceR = (6 + (active ? rms * 60 : 0)) * devicePixelRatio;
+
+    if (active && smoothF0 > 20) {
+      // Connecting sine wave line
+      drawSineConnection(cx, cy, ox, oy, ratio, hue);
+
+      // Glow on orbit dot
+      const glow = ctx.createRadialGradient(ox, oy, 0, ox, oy, voiceR * 3);
+      glow.addColorStop(0, `hsla(${hue}, 85%, 65%, 0.4)`);
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(ox, oy, voiceR * 3, 0, TAU);
+      ctx.fill();
+    }
+
+    // Voice dot
+    ctx.fillStyle = `hsla(${hue}, 85%, 55%, ${active ? 0.9 : 0.2})`;
+    ctx.beginPath();
+    ctx.arc(ox, oy, voiceR, 0, TAU);
+    ctx.fill();
+
+    // Label
+    if (active) {
+      ctx.fillStyle = `hsla(${hue}, 70%, 70%, 0.7)`;
+      ctx.font = `${8 * devicePixelRatio}px 'Courier New'`;
+      ctx.textAlign = 'center';
+      ctx.fillText(def.name, ox, oy - voiceR - 4 * devicePixelRatio);
+    }
+  }
+}
+
+function drawSineConnection(x1, y1, x2, y2, ratio, hue) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 1) return;
+
+  const steps = Math.floor(dist / (3 * devicePixelRatio));
+  const waveFreq = ratio * 3;
+  const amplitude = 8 * devicePixelRatio * Math.min(rms * 10, 1);
+
+  // Perpendicular direction
+  const nx = -dy / dist;
+  const ny = dx / dist;
+
+  ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${0.15 + rms * 2})`;
+  ctx.lineWidth = 1 * devicePixelRatio;
+  ctx.beginPath();
+
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const wave = Math.sin(t * waveFreq * TAU + animTime * 3) * amplitude * Math.sin(t * Math.PI);
+    const px = x1 + dx * t + nx * wave;
+    const py = y1 + dy * t + ny * wave;
+    if (s === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+
+  ctx.stroke();
+}
+
+function drawWaveformScope() {
+  if (!combinedAnalyser) return;
+  combinedAnalyser.getFloatTimeDomainData(combinedTimeBuf);
+
+  const scopeH = H * 0.15;
+  const scopeY = H - scopeH;
+  const n = combinedTimeBuf.length;
+
+  // Background dim
+  ctx.fillStyle = 'rgba(6,6,16,0.6)';
+  ctx.fillRect(0, scopeY, W, scopeH);
+
+  // Divider line
+  ctx.strokeStyle = 'rgba(0,170,255,0.1)';
+  ctx.lineWidth = 0.5 * devicePixelRatio;
+  ctx.beginPath();
+  ctx.moveTo(0, scopeY);
+  ctx.lineTo(W, scopeY);
+  ctx.stroke();
+
+  // Draw waveform segments colored by voice
+  const segWidth = W / 6;
+  for (let v = 0; v < 6; v++) {
+    if (!voiceActive[v] || harmonyMuted) continue;
+
+    const hue = RING_HUES[v + 1];
+    ctx.strokeStyle = `hsla(${hue}, 80%, 55%, ${0.4 + rms * 2})`;
+    ctx.lineWidth = 1.2 * devicePixelRatio;
+    ctx.beginPath();
+
+    const startIdx = Math.floor(v * n / 6);
+    const endIdx = Math.floor((v + 1) * n / 6);
+
+    for (let i = startIdx; i < endIdx; i++) {
+      const x = (i / n) * W;
+      const y = scopeY + scopeH / 2 + combinedTimeBuf[i] * scopeH * 2;
+      if (i === startIdx) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Also draw full waveform in dim white
+  ctx.strokeStyle = 'rgba(192,192,208,0.15)';
+  ctx.lineWidth = 0.5 * devicePixelRatio;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = (i / n) * W;
+    const y = scopeY + scopeH / 2 + combinedTimeBuf[i] * scopeH * 2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// ════════════════════════════════════════════
+// HUD UPDATE
+// ════════════════════════════════════════════
+function updateHUD() {
+  // Mic bar
+  const fill = document.getElementById('mic-bar-fill');
+  const pct = Math.min(rms * 500, 100);
+  fill.style.width = pct + '%';
+  fill.style.background = pct > 70 ? '#f44' : pct > 40 ? '#fc0' : '#0af';
+  document.getElementById('mic-dot').style.background = rms > 0.01 ? '#0f8' : '#0af';
+
+  // Detected pitch
+  const note = freqToNote(smoothF0);
+  if (smoothF0 > 20) {
+    document.getElementById('detected-pitch').textContent = `${note.name}${note.octave} — ${smoothF0.toFixed(1)} Hz`;
+    document.getElementById('pitch-note').textContent = `${note.name}${note.octave}`;
+    document.getElementById('pitch-hz').textContent = `${smoothF0.toFixed(1)} Hz`;
+    document.getElementById('pitch-cents').textContent = note.cents >= 0 ? `+${note.cents}c` : `${note.cents}c`;
+    document.getElementById('pitch-note').style.opacity = '1';
+  } else {
+    document.getElementById('detected-pitch').textContent = '---';
+    document.getElementById('pitch-note').textContent = '---';
+    document.getElementById('pitch-hz').textContent = '-- Hz';
+    document.getElementById('pitch-cents').textContent = '';
+    document.getElementById('pitch-note').style.opacity = '0.3';
+  }
+
+  // Vowel
+  if (vowel && vowelRing >= 0) {
+    document.getElementById('detected-vowel').innerHTML =
+      `<span style="color:${RING_COLORS[vowelRing]}">${vowel.toUpperCase()}</span> · ${RING_NAMES[vowelRing]}`;
+  } else {
+    document.getElementById('detected-vowel').textContent = '---';
+  }
+
+  // Onset rate
+  document.getElementById('onset-rate').textContent = `${onsetRate.toFixed(1)} /s`;
+
+  // Harmony voice Hz readouts
+  for (let i = 0; i < 6; i++) {
+    const el = document.getElementById(`vhz-${i}`);
+    if (el && harmonyVoices[i]) {
+      const freq = harmonyVoices[i].targetFreq;
+      el.textContent = freq > 20 && voiceActive[i] ? `${freq.toFixed(0)} Hz` : '-- Hz';
+    }
+  }
+
+  // Resonance panel
+  const chord = detectChord();
+  document.getElementById('chord-name').textContent = chord.name;
+  document.getElementById('consonance').textContent = chord.consonance + '%';
+  document.getElementById('harmonic-energy').textContent = chord.energy;
+}
+
+// ════════════════════════════════════════════
+// ANIMATION LOOP
+// ════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (analyser) {
+    detectPitch();
+    detectVowel();
+    updateHarmony();
+  }
+
+  draw();
+  updateHUD();
+}
+
+// ════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════
+async function boot() {
+  initStars();
+  buildVoiceRows();
+  buildPresets();
+
+  // Start on user interaction (autoplay policy)
+  const startOverlay = document.createElement('div');
+  startOverlay.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 9999; display: flex; align-items: center; justify-content: center;
+    background: rgba(6,6,16,0.95); cursor: pointer; flex-direction: column; gap: 16px;
+  `;
+  startOverlay.innerHTML = `
+    <div style="color:#0af; font-size: 24px; letter-spacing: 4px; font-family: 'Courier New', monospace;">SONGBIRD HARMONY</div>
+    <div style="color:#889; font-size: 12px; letter-spacing: 2px; font-family: 'Courier New', monospace;">CLICK TO BEGIN · MICROPHONE REQUIRED</div>
+    <div style="color:#556; font-size: 9px; letter-spacing: 1px; font-family: 'Courier New', monospace; margin-top: 8px;">
+      KEYS: 1-6 toggle voices · Q/W/E/R/T presets · SPACE mute · +/- volume
+    </div>
+  `;
+  document.body.appendChild(startOverlay);
+
+  startOverlay.addEventListener('click', async () => {
+    startOverlay.remove();
+    try {
+      await initAudio();
+      animate();
+      console.log('%c SONGBIRD HARMONY ONLINE ', 'background:#060610;color:#0af;font-size:16px;padding:8px');
+    } catch (err) {
+      console.error('Audio init failed:', err);
+      alert('Could not access microphone. Please allow microphone access and reload.');
+    }
+  }, { once: true });
+
+  // Start animation even before audio (shows stars)
+  animate();
+}
+
+window.addEventListener('load', boot);
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
