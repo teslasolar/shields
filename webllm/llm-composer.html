@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Composer — Musical + Visual Composition</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+::selection{background:#0af3;color:#fff}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#060610}
+::-webkit-scrollbar-thumb{background:#1a2a3e;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#2a3a5e}
+
+/* 3-column layout */
+#app{display:grid;grid-template-columns:30% 40% 30%;height:100vh;padding-bottom:28px}
+
+/* LEFT: Code Editor */
+#code-panel{background:#0a0a18;border-right:1px solid #1a2a3e;display:flex;flex-direction:column;overflow:hidden}
+#code-panel .panel-hdr{padding:10px 12px 8px;font-size:13px;letter-spacing:3px;color:#0af;font-weight:bold;border-bottom:1px solid #1a2a3e;display:flex;justify-content:space-between;align-items:center}
+#code-panel .panel-hdr span{color:#556;font-size:9px;letter-spacing:1px}
+#editor{flex:1;width:100%;resize:none;background:#08081a;color:#aef;border:none;padding:10px;font-family:'Courier New',monospace;font-size:11px;line-height:1.5;outline:none;tab-size:2;min-height:0}
+#editor::selection{background:#1a3a6a}
+#btn-bar{display:flex;gap:6px;padding:8px;border-top:1px solid #1a2a3e}
+#btn-bar button{flex:1;padding:7px 0;border:1px solid #223;border-radius:3px;background:#0c0c1e;color:#889;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s}
+#btn-run{color:#0f8!important;border-color:#0f8!important}
+#btn-run:hover{background:#0f8;color:#060610!important}
+#btn-stop{color:#f44!important;border-color:#f44!important}
+#btn-stop:hover{background:#f44;color:#060610!important}
+#error-display{padding:0 10px;font-size:10px;color:#f66;max-height:60px;overflow-y:auto;background:#1a0808;display:none;border-top:1px solid #f442}
+
+/* Gallery */
+#gallery{border-top:1px solid #1a2a3e;padding:6px;overflow-y:auto;flex-shrink:0}
+#gallery .gallery-title{font-size:9px;color:#556;letter-spacing:2px;padding:4px 6px}
+.gallery-grid{display:flex;flex-wrap:wrap;gap:4px;padding:4px}
+.gallery-item{cursor:pointer;border:1px solid #1a2a3e;border-radius:3px;padding:5px 8px;transition:all .2s;font-size:9px;color:#889;letter-spacing:.5px;flex:1;min-width:calc(50% - 4px);text-align:center}
+.gallery-item:hover{border-color:#0af;color:#0af;background:#0af10}
+.gallery-item .gi-name{color:inherit;font-size:9px;font-weight:bold}
+.gallery-item .gi-desc{color:#445;font-size:8px;margin-top:2px}
+
+/* CENTER: Canvas */
+#canvas-panel{position:relative;background:#060610;overflow:hidden}
+#preview{display:block;width:100%;height:100%}
+#canvas-hud{position:absolute;top:8px;left:8px;font-size:9px;color:#445;letter-spacing:1px;pointer-events:none;z-index:5}
+#canvas-hud .hud-title{color:#0af}
+#canvas-hud .hud-fps{color:#fc0}
+
+/* RIGHT: Chat + Audio */
+#chat-panel{background:#0a0a18;border-left:1px solid #1a2a3e;display:flex;flex-direction:column;overflow:hidden}
+#chat-panel .panel-hdr{padding:10px 12px 8px;font-size:13px;letter-spacing:3px;color:#f0a;font-weight:bold;border-bottom:1px solid #1a2a3e}
+#model-bar{display:flex;gap:6px;padding:8px;border-bottom:1px solid #1a2a3e;align-items:center}
+#model-select{flex:1;background:#08081a;color:#aac;border:1px solid #223;border-radius:3px;padding:5px 6px;font-family:'Courier New',monospace;font-size:10px;outline:none}
+#btn-load-model{padding:5px 10px;border:1px solid #a8f;border-radius:3px;background:#0c0c1e;color:#a8f;font-family:'Courier New',monospace;font-size:9px;letter-spacing:1px;cursor:pointer;transition:all .2s;white-space:nowrap}
+#btn-load-model:hover{background:#a8f;color:#060610}
+#model-status{font-size:8px;color:#445;padding:2px 8px;letter-spacing:1px}
+
+/* Chat messages */
+#chat-messages{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.chat-msg{padding:8px 10px;border-radius:4px;font-size:11px;line-height:1.5;max-width:95%;word-wrap:break-word;white-space:pre-wrap}
+.chat-msg.user{background:#0d1a2e;color:#0af;align-self:flex-end;border:1px solid #1a3a6e}
+.chat-msg.ai{background:#1a0d1e;color:#e0c0f0;align-self:flex-start;border:1px solid #3a1a4e}
+.chat-msg.system{background:#0a1a0a;color:#4a8;align-self:center;font-size:10px;border:1px solid #1a3a2e;text-align:center}
+.chat-msg code{background:#08081a;padding:1px 4px;border-radius:2px;font-size:10px}
+
+/* Quick prompts */
+#quick-prompts{display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-top:1px solid #1a2a3e}
+.qp-btn{padding:3px 8px;font:9px 'Courier New',monospace;background:rgba(255,255,255,.03);border:1px solid #222;border-radius:3px;color:#667;cursor:pointer;transition:all .2s}
+.qp-btn:hover{border-color:#f0a;color:#f0a}
+
+/* Voice bar */
+#voice-bar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-top:1px solid #1a2a3e}
+#btn-mic{width:30px;height:30px;border-radius:50%;border:2px solid #f0a;background:#0c0c1e;color:#f0a;font-size:13px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#btn-mic:hover,#btn-mic.active{background:#f0a;color:#060610}
+#mic-level{flex:1;height:5px;background:#111;border-radius:3px;overflow:hidden}
+#mic-level-fill{height:100%;width:0%;background:linear-gradient(90deg,#0af,#f0a);border-radius:3px;transition:width 50ms}
+
+/* Audio controls */
+#audio-controls{display:flex;align-items:center;gap:6px;padding:6px 8px;border-top:1px solid #1a2a3e;font-size:9px;color:#556}
+#audio-controls input[type=range]{flex:1;height:4px;accent-color:#4af}
+#audio-controls label{white-space:nowrap}
+
+/* Chat input */
+#chat-input-bar{display:flex;gap:6px;padding:8px;border-top:1px solid #1a2a3e}
+#chat-input{flex:1;background:#08081a;color:#dde;border:1px solid #223;border-radius:3px;padding:7px 10px;font-family:'Courier New',monospace;font-size:11px;outline:none;resize:none;height:36px}
+#chat-input:focus{border-color:#a8f}
+#btn-send{padding:7px 12px;border:1px solid #0af;border-radius:3px;background:#0c0c1e;color:#0af;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s}
+#btn-send:hover{background:#0af;color:#060610}
+
+/* Footer */
+#footer{position:fixed;bottom:0;left:0;right:0;height:28px;background:rgba(6,6,16,.97);border-top:1px solid #1a2a3e;display:flex;align-items:center;justify-content:center;gap:12px;font-size:9px;color:#334;letter-spacing:1.5px;z-index:100}
+#footer span{color:#445}
+
+/* Panel class for floating overlays */
+.panel{position:absolute;z-index:100;background:rgba(6,6,16,.88);border:1px solid rgba(0,170,255,.18);border-radius:6px;padding:10px 14px;font-size:10px;letter-spacing:1.2px;backdrop-filter:blur(10px);pointer-events:all;min-width:120px}
+.panel h3{font-size:9px;letter-spacing:2px;color:#0af;margin-bottom:6px;text-transform:uppercase;font-weight:normal}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- LEFT: Code Editor -->
+  <div id="code-panel">
+    <div class="panel-hdr">CODE <span>AUDIO + VISUAL</span></div>
+    <textarea id="editor" spellcheck="false" placeholder="// Generated audio+visual code appears here...
+// Available: ctx, W, H, audioCtx, masterGain
+// osc(hz, type, gain), note(ring, octave)
+// envelope(gainNode, atk, sus, rel)
+// delay(input, time, feedback)
+// PRIMES, RING_HZ, RING_NAMES, RING_HUES
+// M7, PHI, TAU"></textarea>
+    <div id="btn-bar">
+      <button id="btn-run">&#9654; RUN</button>
+      <button id="btn-stop">&#9632; STOP</button>
+    </div>
+    <div id="error-display"></div>
+    <div id="gallery">
+      <div class="gallery-title">GALLERY</div>
+      <div class="gallery-grid" id="gallery-grid"></div>
+    </div>
+  </div>
+
+  <!-- CENTER: Canvas Preview -->
+  <div id="canvas-panel">
+    <canvas id="preview"></canvas>
+    <div id="canvas-hud">
+      <span class="hud-title" id="hud-title">LLM COMPOSER</span>
+      &nbsp;&middot;&nbsp;
+      <span class="hud-fps" id="hud-fps">0 fps</span>
+    </div>
+  </div>
+
+  <!-- RIGHT: Chat + Audio -->
+  <div id="chat-panel">
+    <div class="panel-hdr">COMPOSER AI</div>
+    <div id="model-bar">
+      <select id="model-select">
+        <option value="SmolLM2-135M-Instruct-q4f16_1-MLC">SmolLM2 135M</option>
+        <option value="SmolLM2-360M-Instruct-q4f16_1-MLC">SmolLM2 360M</option>
+        <option value="Qwen2.5-0.5B-Instruct-q4f16_1-MLC">Qwen2.5 0.5B</option>
+        <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC" selected>Qwen2.5 1.5B</option>
+        <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama 3.2 1B</option>
+      </select>
+      <button id="btn-load-model">LOAD</button>
+    </div>
+    <div id="model-status">MODEL: not loaded</div>
+    <div id="chat-messages">
+      <div class="chat-msg system">LLM Composer ready. Load a model to generate audio+visual compositions, or click a gallery preset.</div>
+    </div>
+    <div id="quick-prompts">
+      <button class="qp-btn" data-prompt="Make it louder">Make it louder</button>
+      <button class="qp-btn" data-prompt="Add rhythm">Add rhythm</button>
+      <button class="qp-btn" data-prompt="Change colors">Change colors</button>
+      <button class="qp-btn" data-prompt="More harmonics">More harmonics</button>
+    </div>
+    <div id="voice-bar">
+      <button id="btn-mic" title="Voice input">&#127908;</button>
+      <div id="mic-level"><div id="mic-level-fill"></div></div>
+    </div>
+    <div id="audio-controls">
+      <label>MASTER VOL</label>
+      <input type="range" id="master-vol" min="0" max="100" value="50">
+      <span id="vol-val">50%</span>
+    </div>
+    <div id="chat-input-bar">
+      <input id="chat-input" type="text" placeholder="Describe a composition..." />
+      <button id="btn-send">SEND</button>
+    </div>
+  </div>
+</div>
+
+<div id="footer">
+  <span>M&#x2087; = 127</span><span style="color:#223">&#xB7;</span>
+  <span style="color:#f4a">510,510</span> = 2&#xD7;3&#xD7;5&#xD7;7&#xD7;11&#xD7;13&#xD7;17<span style="color:#223">&#xB7;</span>
+  <span>LLM COMPOSER</span>
+</div>
+
+<script type="module">
+// ── Shield Constants ──
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = 2 * Math.PI;
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+const RING_NAMES = ['GROUND', 'SENSE', 'GATE', 'HEART', 'VOICE', 'SIGHT', 'OBSERVER'];
+const RING_HUES = [0, 25, 50, 140, 210, 270, 300];
+
+// ── DOM Refs ──
+const editor = document.getElementById('editor');
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+const errorDisplay = document.getElementById('error-display');
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const modelSelect = document.getElementById('model-select');
+const modelStatus = document.getElementById('model-status');
+const hudTitle = document.getElementById('hud-title');
+const hudFps = document.getElementById('hud-fps');
+const micLevelFill = document.getElementById('mic-level-fill');
+const galleryGrid = document.getElementById('gallery-grid');
+const masterVolSlider = document.getElementById('master-vol');
+const volVal = document.getElementById('vol-val');
+
+// ── Canvas Sizing ──
+let W, H;
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = W = rect.width;
+  canvas.height = H = rect.height;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ── Audio Engine ──
+let audioCtx = null;
+let masterGain = null;
+let activeOscillators = [];
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = masterVolSlider.value / 100;
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+masterVolSlider.addEventListener('input', () => {
+  volVal.textContent = masterVolSlider.value + '%';
+  if (masterGain) masterGain.gain.value = masterVolSlider.value / 100;
+});
+
+// Helper: create oscillator
+function osc(hz, type = 'sine', gainVal = 0.15) {
+  ensureAudio();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = hz;
+  g.gain.value = gainVal;
+  o.connect(g);
+  g.connect(masterGain);
+  o.start();
+  const handle = {
+    osc: o, gain: g,
+    stop() { try { o.stop(); o.disconnect(); g.disconnect(); } catch(e){} }
+  };
+  activeOscillators.push(handle);
+  return handle;
+}
+
+// Helper: note from ring index + octave
+function note(ring, octave = 0) {
+  return RING_HZ[ring % RING_HZ.length] * Math.pow(2, octave);
+}
+
+// Helper: ADSR envelope
+function envelope(gainNode, attack = 0.05, sustain = 0.3, release = 0.5) {
+  ensureAudio();
+  const now = audioCtx.currentTime;
+  const peak = gainNode.gain.value || 0.3;
+  gainNode.gain.cancelScheduledValues(now);
+  gainNode.gain.setValueAtTime(0, now);
+  gainNode.gain.linearRampToValueAtTime(peak, now + attack);
+  gainNode.gain.setValueAtTime(peak, now + attack + sustain);
+  gainNode.gain.linearRampToValueAtTime(0, now + attack + sustain + release);
+}
+
+// Helper: delay effect
+function delay(input, time = 0.3, feedback = 0.4) {
+  ensureAudio();
+  const delayNode = audioCtx.createDelay(5.0);
+  delayNode.delayTime.value = time;
+  const fbGain = audioCtx.createGain();
+  fbGain.gain.value = feedback;
+  input.connect(delayNode);
+  delayNode.connect(fbGain);
+  fbGain.connect(delayNode);
+  delayNode.connect(masterGain);
+  return { delay: delayNode, feedback: fbGain };
+}
+
+// Helper: hsl
+function hsl(h, s, l) { return `hsl(${h},${s}%,${l}%)`; }
+
+// Helper: polar
+function polar(cx, cy, r, angle) { return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]; }
+
+// ── Oscilloscope HUD ──
+let scopeAnalyser = null;
+let scopeData = null;
+
+function initScope() {
+  ensureAudio();
+  if (!scopeAnalyser) {
+    scopeAnalyser = audioCtx.createAnalyser();
+    scopeAnalyser.fftSize = 256;
+    scopeData = new Uint8Array(scopeAnalyser.frequencyBinCount);
+    masterGain.connect(scopeAnalyser);
+  }
+}
+
+function drawScope() {
+  if (!scopeAnalyser || !scopeData) return;
+  scopeAnalyser.getByteTimeDomainData(scopeData);
+  const sw = 120, sh = 50;
+  const sx = W - sw - 10, sy = 10;
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,6,16,0.75)';
+  ctx.strokeStyle = 'rgba(0,170,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(sx, sy, sw, sh);
+  ctx.strokeRect(sx, sy, sw, sh);
+  ctx.beginPath();
+  ctx.strokeStyle = '#0f8';
+  ctx.lineWidth = 1;
+  const sliceW = sw / scopeData.length;
+  for (let i = 0; i < scopeData.length; i++) {
+    const v = scopeData[i] / 128.0;
+    const y = sy + (v * sh / 2);
+    i === 0 ? ctx.moveTo(sx, y) : ctx.lineTo(sx + sliceW * i, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#445';
+  ctx.font = '7px Courier New';
+  ctx.fillText('SCOPE', sx + 2, sy + sh - 3);
+  ctx.restore();
+}
+
+// ── Code Execution Engine ──
+let animFrame = null;
+let currentCleanup = null;
+
+function stopExecution() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  if (currentCleanup) { try { currentCleanup(); } catch(e){} currentCleanup = null; }
+  activeOscillators.forEach(h => { try { h.stop(); } catch(e){} });
+  activeOscillators = [];
+  ctx.clearRect(0, 0, W, H);
+}
+
+function runCode() {
+  stopExecution();
+  errorDisplay.style.display = 'none';
+  errorDisplay.textContent = '';
+
+  const code = editor.value.trim();
+  if (!code) return;
+
+  ensureAudio();
+  initScope();
+
+  try {
+    const fn = new Function(
+      'ctx', 'W', 'H', 'audioCtx', 'masterGain',
+      'osc', 'note', 'envelope', 'delay',
+      'hsl', 'polar',
+      'PRIMES', 'RING_HZ', 'RING_NAMES', 'RING_HUES',
+      'M7', 'PHI', 'TAU',
+      'Math',
+      code
+    );
+
+    const result = fn(
+      ctx, W, H, audioCtx, masterGain,
+      osc, note, envelope, delay,
+      hsl, polar,
+      PRIMES, RING_HZ, RING_NAMES, RING_HUES,
+      M7, PHI, TAU,
+      Math
+    );
+
+    if (result && typeof result.draw === 'function') {
+      let startTime = performance.now();
+      let lastFrame = startTime;
+      let frameCount = 0;
+
+      function loop(now) {
+        const t = (now - startTime) / 1000;
+        const dt = (now - lastFrame) / 1000;
+        lastFrame = now;
+        frameCount++;
+
+        if (frameCount % 15 === 0) {
+          hudFps.textContent = Math.round(1 / (dt || 0.016)) + ' fps';
+        }
+
+        try {
+          result.draw(t, dt);
+        } catch(e) {
+          showError(e.message);
+          return;
+        }
+
+        drawScope();
+        animFrame = requestAnimationFrame(loop);
+      }
+      animFrame = requestAnimationFrame(loop);
+
+      if (typeof result.cleanup === 'function') {
+        currentCleanup = result.cleanup;
+      }
+    } else {
+      drawScope();
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function showError(msg) {
+  errorDisplay.textContent = msg;
+  errorDisplay.style.display = 'block';
+}
+
+document.getElementById('btn-run').addEventListener('click', runCode);
+document.getElementById('btn-stop').addEventListener('click', stopExecution);
+
+// Tab support in editor
+editor.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = editor.selectionStart, end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 2;
+  }
+  if (e.key === 'Enter' && e.ctrlKey) {
+    e.preventDefault();
+    runCode();
+  }
+});
+
+// ── Gallery Presets ──
+const GALLERY = [
+  {
+    name: 'Prime Drone',
+    desc: 'Sustained chord + ring visuals',
+    code: `// Prime Drone — sustained chord of all 7 primes with phase modulation
+const oscs = [];
+for (let i = 0; i < PRIMES.length; i++) {
+  const hz = RING_HZ[i];
+  const o = osc(hz, 'sine', 0.06);
+  oscs.push(o);
+}
+
+return {
+  draw(t, dt) {
+    ctx.fillStyle = 'rgba(6,6,16,0.08)';
+    ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    const maxR = Math.min(W, H) * 0.42;
+    for (let i = 0; i < PRIMES.length; i++) {
+      const r = maxR * (i + 1) / PRIMES.length;
+      const hue = RING_HUES[i];
+      const phase = t * (0.2 + i * 0.05);
+      // Phase modulate the oscillator
+      oscs[i].osc.frequency.value = RING_HZ[i] + Math.sin(t * 0.3 + i) * 2;
+      ctx.strokeStyle = hsl(hue, 70, 40 + Math.sin(t + i) * 15);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + Math.sin(phase) * 4, 0, TAU);
+      ctx.stroke();
+      // Ring name
+      ctx.fillStyle = hsl(hue, 60, 50);
+      ctx.font = '9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(RING_NAMES[i], cx, cy - r - 6);
+      // Orbiting dots
+      for (let j = 0; j < PRIMES[i]; j++) {
+        const a = (TAU / PRIMES[i]) * j + phase;
+        const x = cx + r * Math.cos(a);
+        const y = cy + r * Math.sin(a);
+        ctx.fillStyle = hsl(hue, 80, 60);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.5, 0, TAU);
+        ctx.fill();
+      }
+    }
+  },
+  cleanup() { oscs.forEach(o => o.stop()); }
+};`
+  },
+  {
+    name: 'Rhythm Grid',
+    desc: 'Sequenced primes + grid viz',
+    code: `// Rhythm Grid — primes as beat divisions + grid visualization
+const bpm = 120;
+const beatSec = 60 / bpm;
+let lastBeat = -1;
+const grid = [];
+for (let i = 0; i < 7; i++) grid[i] = new Array(16).fill(false);
+// Fill grid with prime patterns
+for (let i = 0; i < 7; i++) {
+  for (let s = 0; s < 16; s++) {
+    if (s % PRIMES[i] === 0) grid[i][s] = true;
+  }
+}
+
+return {
+  draw(t, dt) {
+    ctx.fillStyle = 'rgba(6,6,16,0.15)';
+    ctx.fillRect(0, 0, W, H);
+    const step = Math.floor((t / (beatSec / 4)) % 16);
+    // Trigger sounds on new steps
+    if (step !== lastBeat) {
+      lastBeat = step;
+      for (let i = 0; i < 7; i++) {
+        if (grid[i][step]) {
+          const o = osc(RING_HZ[i], 'triangle', 0.12);
+          envelope(o.gain, 0.01, 0.05, 0.1);
+          setTimeout(() => o.stop(), 200);
+        }
+      }
+    }
+    // Draw grid
+    const cellW = W / 18, cellH = H / 9;
+    const ox = cellW, oy = cellH;
+    for (let i = 0; i < 7; i++) {
+      // Row label
+      ctx.fillStyle = hsl(RING_HUES[i], 60, 45);
+      ctx.font = '9px Courier New';
+      ctx.textAlign = 'right';
+      ctx.fillText(RING_NAMES[i], ox - 6, oy + i * cellH + cellH * 0.6);
+      for (let s = 0; s < 16; s++) {
+        const x = ox + s * cellW, y = oy + i * cellH;
+        const active = grid[i][s];
+        const current = s === step;
+        ctx.strokeStyle = current ? '#fff' : '#1a2a3e';
+        ctx.lineWidth = current ? 2 : 1;
+        ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
+        if (active) {
+          ctx.fillStyle = hsl(RING_HUES[i], 70, current ? 60 : 30);
+          ctx.fillRect(x + 3, y + 3, cellW - 6, cellH - 6);
+        }
+      }
+    }
+    // Playhead line
+    const px = ox + step * cellW + cellW / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, H);
+    ctx.stroke();
+  },
+  cleanup() {}
+};`
+  },
+  {
+    name: 'Voice Choir',
+    desc: '7 oscillators + Lissajous curves',
+    code: `// Voice Choir — 7 oscillators sweeping harmonics + Lissajous curves
+const voices = [];
+for (let i = 0; i < 7; i++) {
+  const o = osc(RING_HZ[i], 'sine', 0.04);
+  voices.push(o);
+}
+
+return {
+  draw(t, dt) {
+    ctx.fillStyle = 'rgba(6,6,16,0.05)';
+    ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    const R = Math.min(W, H) * 0.35;
+    // Sweep harmonic frequencies
+    for (let i = 0; i < 7; i++) {
+      const sweep = Math.sin(t * 0.2 + i * PHI) * 0.5 + 1;
+      voices[i].osc.frequency.value = RING_HZ[i] * sweep;
+    }
+    // Draw Lissajous curves for adjacent pairs
+    for (let i = 0; i < 6; i++) {
+      const fA = RING_HZ[i] / 55;
+      const fB = RING_HZ[i + 1] / 55;
+      ctx.strokeStyle = hsl(RING_HUES[i], 75, 50);
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      for (let j = 0; j <= 300; j++) {
+        const p = j / 300 * TAU;
+        const x = cx + R * 0.4 * Math.sin(fA * p + t * 0.5);
+        const y = cy + R * 0.4 * Math.sin(fB * p + t * 0.3 + i);
+        j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // Center label
+    ctx.fillStyle = '#445';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('VOICE CHOIR', cx, H - 20);
+  },
+  cleanup() { voices.forEach(v => v.stop()); }
+};`
+  },
+  {
+    name: 'Fibonacci Bells',
+    desc: 'Fibonacci-timed bell strikes + ripples',
+    code: `// Fibonacci Bells — timed strikes at prime freqs + expanding ripples
+const ripples = [];
+let fib = [1, 1];
+for (let i = 2; i < 12; i++) fib.push(fib[i-1] + fib[i-2]);
+const intervals = fib.map(f => f * 0.25);
+let nextBell = 0;
+let bellIndex = 0;
+let startT = null;
+
+return {
+  draw(t, dt) {
+    if (startT === null) startT = t;
+    const elapsed = t - startT;
+    ctx.fillStyle = 'rgba(6,6,16,0.06)';
+    ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    // Trigger bells on Fibonacci schedule
+    if (elapsed >= nextBell) {
+      const ring = bellIndex % 7;
+      const hz = RING_HZ[ring];
+      const o = osc(hz * 2, 'sine', 0.15);
+      const o2 = osc(hz * 3.01, 'sine', 0.06);
+      envelope(o.gain, 0.005, 0.1, 0.8);
+      envelope(o2.gain, 0.005, 0.05, 0.6);
+      setTimeout(() => { o.stop(); o2.stop(); }, 1200);
+      ripples.push({ x: cx, y: cy, birth: t, hue: RING_HUES[ring], ring: ring });
+      nextBell = elapsed + intervals[bellIndex % intervals.length];
+      bellIndex++;
+    }
+    // Draw ripples
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const rp = ripples[i];
+      const age = t - rp.birth;
+      if (age > 4) { ripples.splice(i, 1); continue; }
+      const r = age * Math.min(W, H) * 0.12;
+      const alpha = 1 - age / 4;
+      ctx.strokeStyle = hsl(rp.hue, 70, 55);
+      ctx.globalAlpha = alpha * 0.7;
+      ctx.lineWidth = 2 - age * 0.4;
+      ctx.beginPath();
+      ctx.arc(rp.x, rp.y, r, 0, TAU);
+      ctx.stroke();
+      // Inner ring with prime subdivisions
+      if (age < 2) {
+        const p = PRIMES[rp.ring];
+        for (let j = 0; j < p; j++) {
+          const a = (TAU / p) * j + age * 0.5;
+          const dx = rp.x + r * 0.7 * Math.cos(a);
+          const dy = rp.y + r * 0.7 * Math.sin(a);
+          ctx.fillStyle = hsl(rp.hue, 80, 65);
+          ctx.globalAlpha = alpha * 0.5;
+          ctx.beginPath();
+          ctx.arc(dx, dy, 2, 0, TAU);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    // Bell count
+    ctx.fillStyle = '#556';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('BELL #' + bellIndex + ' / fib interval', cx, 24);
+  },
+  cleanup() { ripples.length = 0; }
+};`
+  }
+];
+
+// Render gallery
+GALLERY.forEach((item, idx) => {
+  const el = document.createElement('div');
+  el.className = 'gallery-item';
+  el.innerHTML = `<div class="gi-name">${item.name}</div><div class="gi-desc">${item.desc}</div>`;
+  el.addEventListener('click', () => {
+    editor.value = item.code;
+    hudTitle.textContent = item.name.toUpperCase();
+    runCode();
+  });
+  galleryGrid.appendChild(el);
+});
+
+// ── WebLLM Integration ──
+let engine = null;
+let modelLoaded = false;
+let conversationHistory = [];
+
+const SYSTEM_PROMPT = `You are a creative audio-visual composition generator. Generate JavaScript code that creates real-time audio and visuals.
+
+Available variables and helpers:
+- ctx: Canvas 2D rendering context
+- W, H: Canvas width and height
+- audioCtx: Web AudioContext
+- masterGain: Master GainNode connected to output
+- osc(hz, type, gain): Creates oscillator+gain, returns {osc, gain, stop()}. Types: 'sine','square','triangle','sawtooth'
+- note(ring, octave): Returns Hz for ring index (0-6) at octave offset
+- envelope(gainNode, attack, sustain, release): Applies ADSR envelope
+- delay(input, time, feedback): Creates delay effect on an audio node
+- hsl(h, s, l): Returns CSS hsl string
+- polar(cx, cy, r, angle): Returns [x, y] for polar coordinate
+- PRIMES = [2,3,5,7,11,13,17]
+- RING_HZ = [55,110,165,275,385,605,935]
+- RING_NAMES = ['GROUND','SENSE','GATE','HEART','VOICE','SIGHT','OBSERVER']
+- RING_HUES = [0,25,50,140,210,270,300]
+- M7 = 127, PHI = 1.618..., TAU = 2*PI
+
+Your code MUST return an object: { draw(t, dt) { ... }, cleanup() { ... } }
+- draw(t, dt) is called every animation frame. t = seconds elapsed, dt = delta time.
+- cleanup() is called when stopped. Stop any oscillators you created.
+- Start with ctx.fillRect or ctx.clearRect to clear the canvas.
+- Use osc() to create sounds, store references to stop them in cleanup().
+- Output ONLY a JavaScript code block. No explanation.`;
+
+function addChatMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+document.getElementById('btn-load-model').addEventListener('click', async () => {
+  const modelId = modelSelect.value;
+  modelStatus.textContent = 'MODEL: loading...';
+  modelStatus.style.color = '#fc0';
+  addChatMsg('Loading ' + modelId + '...', 'system');
+
+  try {
+    const webllm = await import('https://esm.run/@mlc-ai/web-llm').catch(async () => {
+      return await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm');
+    });
+
+    modelStatus.textContent = 'MODEL: initializing...';
+
+    engine = await webllm.CreateMLCEngine(modelId, {
+      initProgressCallback: (progress) => {
+        modelStatus.textContent = 'MODEL: ' + (progress.text || Math.round((progress.progress || 0) * 100) + '%');
+      }
+    });
+
+    modelLoaded = true;
+    modelStatus.textContent = 'MODEL: ' + modelId.split('-').slice(0, 3).join('-');
+    modelStatus.style.color = '#0f8';
+    addChatMsg('Model loaded. Describe a composition to generate audio+visual code.', 'system');
+    conversationHistory = [];
+  } catch (err) {
+    modelStatus.textContent = 'MODEL: error';
+    modelStatus.style.color = '#f44';
+    addChatMsg('Load failed: ' + err.message, 'system');
+  }
+});
+
+async function sendChat(text) {
+  if (!text.trim()) return;
+  addChatMsg(text, 'user');
+  chatInput.value = '';
+
+  if (!modelLoaded || !engine) {
+    addChatMsg('Please load a model first.', 'system');
+    return;
+  }
+
+  conversationHistory.push({ role: 'user', content: text });
+
+  // Create streaming message bubble
+  const aiDiv = addChatMsg('', 'ai');
+  let fullResponse = '';
+
+  try {
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...conversationHistory.slice(-6)
+    ];
+
+    const stream = await engine.chat.completions.create({
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 1500,
+      stream: true
+    });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      fullResponse += delta;
+      aiDiv.textContent = fullResponse;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    conversationHistory.push({ role: 'assistant', content: fullResponse });
+
+    // Extract code
+    let code = fullResponse;
+    const codeMatch = fullResponse.match(/```(?:javascript|js)?\s*([\s\S]*?)```/);
+    if (codeMatch) {
+      code = codeMatch[1].trim();
+    } else {
+      code = fullResponse.trim();
+    }
+
+    // Put in editor and run
+    editor.value = code;
+    hudTitle.textContent = text.substring(0, 30).toUpperCase();
+    runCode();
+
+  } catch (err) {
+    addChatMsg('Error: ' + err.message, 'system');
+  }
+}
+
+document.getElementById('btn-send').addEventListener('click', () => sendChat(chatInput.value));
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat(chatInput.value);
+  }
+});
+
+// Quick prompt buttons
+document.querySelectorAll('.qp-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const prompt = btn.dataset.prompt;
+    sendChat(prompt);
+  });
+});
+
+// ── Voice Input ──
+let micStream = null;
+let micAnalyser = null;
+let micAudioCtx = null;
+let recognition = null;
+let micActive = false;
+
+document.getElementById('btn-mic').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-mic');
+
+  if (micActive) {
+    micActive = false;
+    btn.classList.remove('active');
+    if (recognition) recognition.stop();
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    micLevelFill.style.width = '0%';
+    return;
+  }
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = micAudioCtx.createMediaStreamSource(micStream);
+    micAnalyser = micAudioCtx.createAnalyser();
+    micAnalyser.fftSize = 2048;
+    micAnalyser.smoothingTimeConstant = 0.8;
+    source.connect(micAnalyser);
+
+    micActive = true;
+    btn.classList.add('active');
+
+    // Mic level meter
+    const dataArray = new Float32Array(micAnalyser.fftSize);
+    function updateMeter() {
+      if (!micActive) return;
+      micAnalyser.getFloatTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
+      const rms = Math.sqrt(sum / dataArray.length);
+      const level = Math.min(100, rms * 400);
+      micLevelFill.style.width = level + '%';
+      requestAnimationFrame(updateMeter);
+    }
+    updateMeter();
+
+    // Speech recognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript;
+          }
+        }
+        if (transcript.trim()) {
+          sendChat(transcript.trim());
+        }
+      };
+
+      recognition.onerror = (e) => {
+        addChatMsg('Speech error: ' + e.error, 'system');
+      };
+
+      recognition.onend = () => {
+        if (micActive) recognition.start();
+      };
+
+      recognition.start();
+    } else {
+      addChatMsg('Speech recognition not supported in this browser.', 'system');
+    }
+  } catch (err) {
+    addChatMsg('Mic access denied: ' + err.message, 'system');
+  }
+});
+</script>
+
+<script src="../shared/nav.js"></script>
+</body>
+</html>
