@@ -119,6 +119,10 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <a href="#emirp" data-id="emirp"><span class="dot" style="background:#0fc"></span><span style="color:#0fc">EMIRP</span></a>
       <a href="#palindrome" data-id="palindrome"><span class="dot" style="background:#f8f"></span><span style="color:#f8f">PALINDROME</span></a>
       <a href="#chen" data-id="chen"><span class="dot" style="background:#8f8"></span><span style="color:#8f8">CHEN</span></a>
+      <a href="#wieferich" data-id="wieferich"><span class="dot" style="background:#f90"></span><span style="color:#f90">WIEFERICH</span></a>
+      <a href="#carmichael" data-id="carmichael"><span class="dot" style="background:#f44"></span><span style="color:#f44">CARMICHAEL</span></a>
+      <a href="#balanced" data-id="balanced"><span class="dot" style="background:#fd0"></span><span style="color:#fd0">BALANCED</span></a>
+      <a href="#isolated" data-id="isolated"><span class="dot" style="background:#70c"></span><span style="color:#70c">ISOLATED</span></a>
     </div>
   </div>
 
@@ -141,6 +145,8 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <a href="#pi" data-id="pi"><span class="dot" style="background:#0ff"></span><span style="color:#0ff">PI</span></a>
       <a href="#wilson" data-id="wilson"><span class="dot" style="background:#ff8"></span><span style="color:#ff8">WILSON</span></a>
       <a href="#primorial" data-id="primorial"><span class="dot" style="background:#f80"></span><span style="color:#f80">PRIMORIAL</span></a>
+      <a href="#eisenstein" data-id="eisenstein"><span class="dot" style="background:#0e8"></span><span style="color:#0e8">EISENSTEIN</span></a>
+      <a href="#dirichlet" data-id="dirichlet"><span class="dot" style="background:#8cf"></span><span style="color:#8cf">DIRICHLET</span></a>
     </div>
   </div>
 
@@ -161,7 +167,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div id="gallery">
     <div class="header">
       <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">38 SHIELDS · 8 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
+      <div class="sub">44 SHIELDS · 8 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
     </div>
 
     <div class="category">
@@ -204,7 +210,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <div class="cat-header">
         <span class="cat-label" style="color:#f48">PRIME TYPES</span>
         <div class="cat-line" style="background:#f48"></div>
-        <span class="cat-count">6 SHIELDS</span>
+        <span class="cat-count">10 SHIELDS</span>
       </div>
       <div class="grid" id="grid-primetypes"></div>
     </div>
@@ -222,7 +228,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <div class="cat-header">
         <span class="cat-label" style="color:#af4">ANALYSIS</span>
         <div class="cat-line" style="background:#af4"></div>
-        <span class="cat-count">6 SHIELDS</span>
+        <span class="cat-count">8 SHIELDS</span>
       </div>
       <div class="grid" id="grid-analysis"></div>
     </div>
@@ -293,6 +299,10 @@ const CATEGORIES = {
       { id:'emirp',       name:'SHIELD-EMIRP',       desc:'Emirps: primes whose digit reversal is a different prime. 13↔31, 17↔71. Double helix of mirror pairs.', tag:'MIRROR', tagColor:'#0fc', colors:['#0fc','#0ec','#0dc','#0cc','#0bc','#0ac','#fff'] },
       { id:'palindrome',  name:'SHIELD-PALINDROME',  desc:'Palindromic primes: same forwards and backwards. 101, 131, 151... Concentric rings by digit count with mirror shimmer.', tag:'PALINDROME', tagColor:'#f8f', colors:['#f8f','#f6f','#f4f','#f2f','#f0f','#e0f','#fff'] },
       { id:'chen',        name:'SHIELD-CHEN',        desc:'Chen primes: p where p+2 is prime or semiprime. Golden arcs for twins, silver for semiprimes. Chen\'s theorem visualized.', tag:'CHEN', tagColor:'#8f8', colors:['#8f8','#6f6','#4f4','#2f2','#0f0','#0e0','#fff'] },
+      { id:'wieferich',   name:'SHIELD-WIEFERICH',   desc:'Wieferich primes: p where 2^(p-1) ≡ 1 (mod p²). Only TWO known: 1093 and 3511. Heat map of residues, golden explosions on discovery.', tag:'WIEFERICH', tagColor:'#f90', colors:['#f90','#fa0','#fb0','#fc0','#fd0','#fe0','#fff'] },
+      { id:'carmichael',  name:'SHIELD-CARMICHAEL',  desc:'Carmichael numbers: composite impostors that fool Fermat\'s test for ALL bases. Click to unmask — crack the shell, reveal the factors.', tag:'IMPOSTOR', tagColor:'#f44', colors:['#f44','#f22','#f00','#d00','#b00','#900','#fff'] },
+      { id:'balanced',    name:'SHIELD-BALANCED',    desc:'Balanced primes: p = (prev + next)/2. Balance beams tilt and level. Golden halos on perfectly centered primes.', tag:'BALANCED', tagColor:'#fd0', colors:['#fd0','#fc0','#fb0','#fa0','#f90','#f80','#fff'] },
+      { id:'isolated',    name:'SHIELD-ISOLATED',    desc:'Isolated primes: both gaps ≥ 6. Lonely stars in composite deserts with void halos. Constellation of solitude.', tag:'LONELY', tagColor:'#70c', colors:['#70c','#60c','#50c','#40c','#30c','#20c','#fff'] },
     ]
   },
   primepairs: {
@@ -313,6 +323,8 @@ const CATEGORIES = {
       { id:'pi',         name:'SHIELD-PI',          desc:'Prime counting function π(x): step function vs x/ln(x) vs Li(x). Prime Number Theorem convergence visualized.', tag:'π(x)', tagColor:'#0ff', colors:['#0ff','#0ef','#0df','#0cf','#0bf','#0af','#fff'] },
       { id:'wilson',     name:'SHIELD-WILSON',      desc:'Wilson\'s theorem: (p-1)! ≡ -1 (mod p) iff p is prime. Animated grid computing factorials. Primes flash golden.', tag:'THEOREM', tagColor:'#ff8', colors:['#ff8','#ff6','#ff4','#ff2','#ff0','#fe0','#fff'] },
       { id:'primorial',  name:'SHIELD-PRIMORIAL',   desc:'Primorial numbers p# = product of primes ≤ p. Nested rings multiplying by each prime. 17# = 510,510 golden finale.', tag:'PRIMORIAL', tagColor:'#f80', colors:['#f80','#f60','#f40','#f20','#f00','#e00','#fff'] },
+      { id:'eisenstein', name:'SHIELD-EISENSTEIN',  desc:'Eisenstein primes in ℤ[ω] hexagonal lattice. Six-fold symmetry. Click to highlight 6 associates. The hex cousin of Gaussian.', tag:'HEXAGONAL', tagColor:'#0e8', colors:['#0e8','#0d8','#0c8','#0b8','#0a8','#098','#fff'] },
+      { id:'dirichlet',  name:'SHIELD-DIRICHLET',   desc:'Primes in arithmetic progressions race across residue classes. Chebyshev bias visible. Equal distribution emerges.', tag:'PRIME RACE', tagColor:'#8cf', colors:['#8cf','#6af','#48f','#26f','#04f','#02f','#fff'] },
     ]
   },
   structures: {

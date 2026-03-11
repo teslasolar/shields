@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-CARMICHAEL</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060610; overflow:hidden; font-family:'Courier New',monospace; color:#c0c0d0; }
+canvas { display:block; cursor:crosshair; }
+#stats {
+  position:fixed; top:12px; right:12px; width:310px;
+  background:rgba(6,6,16,.92); border:1px solid rgba(0,170,255,.15);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-radius:4px; padding:14px 16px; font-size:11px; line-height:1.7;
+  pointer-events:none; z-index:10; max-height:92vh; overflow-y:auto;
+}
+#stats .title { color:#f44; font-size:13px; letter-spacing:3px; margin-bottom:6px; }
+#stats .label { color:#556; }
+#stats .val { color:#c0c0d0; }
+#stats .carm { color:#f44; }
+#stats .prime-c { color:#4af; }
+#stats .factor-c { color:#fa0; }
+#stats .ok { color:#0f8; }
+#stats .section { margin-top:8px; border-top:1px solid rgba(0,170,255,.1); padding-top:8px; }
+#tooltip {
+  position:fixed; display:none; background:rgba(6,6,16,.95);
+  border:1px solid rgba(0,170,255,.3); backdrop-filter:blur(8px);
+  border-radius:4px; padding:12px 14px; font-size:11px; line-height:1.7;
+  font-family:'Courier New',monospace; color:#c0c0d0; pointer-events:none;
+  z-index:20; max-width:380px;
+}
+#tooltip .th { color:#f44; font-size:12px; margin-bottom:4px; }
+#tooltip .dim { color:#445; }
+#tooltip .ok { color:#0f8; }
+#tooltip .factor-c { color:#fa0; }
+#detail-overlay {
+  position:fixed; display:none; top:0; left:0; right:0; bottom:0;
+  background:rgba(6,6,16,.88); z-index:15;
+  justify-content:center; align-items:center; flex-direction:column;
+}
+#detail-overlay canvas { border:1px solid rgba(255,60,60,.2); border-radius:4px; }
+#detail-overlay .close-btn {
+  position:absolute; top:20px; right:30px; color:#f44; font-size:24px;
+  cursor:pointer; font-family:'Courier New',monospace;
+}
+#detail-overlay .info-text {
+  margin-top:16px; color:#aab; font-size:12px; text-align:center;
+  font-family:'Courier New',monospace; max-width:600px; line-height:1.8;
+}
+#instructions {
+  position:fixed; bottom:38px; left:10px; font-size:9px; color:#445;
+  font-family:'Courier New',monospace; letter-spacing:1px; z-index:5;
+}
+</style>
+</head>
+<body>
+<canvas id="main"></canvas>
+
+<div id="stats">
+  <div class="title">CARMICHAEL NUMBERS</div>
+  <div style="font-size:10px;color:#667;margin-bottom:6px">Pseudoprime Impostors</div>
+  <div><span class="label">Range: </span><span id="st-range" class="val">2 - 20000</span></div>
+  <div><span class="label">Carmichael found: </span><span id="st-count" class="carm">0</span></div>
+  <div><span class="label">Primes in range: </span><span id="st-primes" class="prime-c">0</span></div>
+  <div class="section">
+    <div style="color:#f44;font-size:10px;letter-spacing:1px">DEFINITION</div>
+    <div style="font-size:10px;color:#667;margin-top:3px">
+      Composite n where a<sup>n-1</sup> ≡ 1 (mod n)<br>
+      for ALL a coprime to n.<br>
+      They fool Fermat's primality test.
+    </div>
+  </div>
+  <div class="section">
+    <div style="color:#fa0;font-size:10px;letter-spacing:1px">KORSELT'S CRITERION</div>
+    <div style="font-size:10px;color:#667;margin-top:3px">
+      n is Carmichael iff:<br>
+      &bull; n is square-free<br>
+      &bull; n has ≥ 3 prime factors<br>
+      &bull; (p-1) | (n-1) for every prime p | n
+    </div>
+  </div>
+  <div class="section" id="st-list">
+    <div style="color:#f44;font-size:10px;letter-spacing:1px;margin-bottom:4px">CARMICHAEL NUMBERS</div>
+  </div>
+  <div class="section" id="st-selected" style="display:none">
+    <div style="color:#ff0;font-size:10px;letter-spacing:1px">SELECTED</div>
+    <div id="st-sel-detail" style="font-size:10px;margin-top:3px"></div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="detail-overlay">
+  <span class="close-btn" onclick="closeDetail()">&#215;</span>
+  <canvas id="detailCanvas" width="700" height="500"></canvas>
+  <div class="info-text" id="detail-info"></div>
+</div>
+
+<div id="instructions">
+  SCROLL: zoom &nbsp; DRAG: pan &nbsp; HOVER: inspect &nbsp; CLICK CARMICHAEL: unmask impostor
+</div>
+
+<script>
+const canvas = document.getElementById('main');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const N_MAX = 20000;
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Number theory utilities ──
+
+function isPrime(n) {
+  if (n < 2) return false;
+  if (n < 4) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6)
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  return true;
+}
+
+function factorize(n) {
+  const factors = [];
+  let d = 2;
+  while (d * d <= n) {
+    while (n % d === 0) { factors.push(d); n /= d; }
+    d++;
+  }
+  if (n > 1) factors.push(n);
+  return factors;
+}
+
+function uniqueFactors(n) {
+  const f = factorize(n);
+  return [...new Set(f)];
+}
+
+function isSquareFree(n) {
+  const f = factorize(n);
+  const s = new Set(f);
+  return s.size === f.length;
+}
+
+function modPow(base, exp, mod) {
+  let result = 1n;
+  base = BigInt(base) % BigInt(mod);
+  exp = BigInt(exp);
+  mod = BigInt(mod);
+  while (exp > 0n) {
+    if (exp % 2n === 1n) result = (result * base) % mod;
+    exp >>= 1n;
+    base = (base * base) % mod;
+  }
+  return Number(result);
+}
+
+function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
+
+// ── Precompute data ──
+
+const primeSet = new Set();
+const carmichaelSet = new Set();
+const carmichaelList = [];
+const carmichaelFactors = {};
+const numberType = new Uint8Array(N_MAX + 1); // 0=composite, 1=prime, 2=carmichael
+
+// Sieve primes
+for (let i = 2; i <= N_MAX; i++) {
+  if (isPrime(i)) { primeSet.add(i); numberType[i] = 1; }
+}
+
+// Find Carmichael numbers
+for (let n = 9; n <= N_MAX; n += 2) {
+  if (primeSet.has(n)) continue;
+  if (!isSquareFree(n)) continue;
+  const pfs = uniqueFactors(n);
+  if (pfs.length < 3) continue;
+  const nm1 = n - 1;
+  let isCarm = true;
+  for (const p of pfs) {
+    if (nm1 % (p - 1) !== 0) { isCarm = false; break; }
+  }
+  if (isCarm) {
+    carmichaelSet.add(n);
+    carmichaelList.push(n);
+    carmichaelFactors[n] = pfs;
+    numberType[n] = 2;
+  }
+}
+
+// Compute Fermat pass counts for composites (how many bases pass)
+// For heat map: sample bases 2..min(n-1,40)
+const fermatPassCount = {};
+const fermatTestCount = {};
+for (let n = 4; n <= N_MAX; n++) {
+  if (primeSet.has(n)) continue;
+  let pass = 0, tested = 0;
+  const limit = Math.min(n - 1, 50);
+  for (let a = 2; a <= limit; a++) {
+    if (gcd(a, n) !== 1) continue;
+    tested++;
+    if (modPow(a, n - 1, n) === 1) pass++;
+  }
+  fermatPassCount[n] = pass;
+  fermatTestCount[n] = tested;
+}
+
+// Update stats
+document.getElementById('st-count').textContent = carmichaelList.length;
+document.getElementById('st-primes').textContent = primeSet.size;
+
+const listEl = document.getElementById('st-list');
+carmichaelList.forEach(n => {
+  const div = document.createElement('div');
+  div.style.fontSize = '10px';
+  div.innerHTML = `<span style="color:#f44">${n}</span> <span style="color:#556">= ${carmichaelFactors[n].join(' × ')}</span>`;
+  listEl.appendChild(div);
+});
+
+// ── Visualization state ──
+
+let zoom = 1, panX = 0, panY = 0;
+let dragStart = null, dragPan = null;
+let mouseX = -1, mouseY = -1;
+let hoveredN = -1;
+let time = 0;
+
+// Layout: number line wrapped into rows
+const COLS = 200;
+const DOT_SPACING = 5;
+
+function numToGrid(n) {
+  const idx = n - 2;
+  const row = Math.floor(idx / COLS);
+  const col = idx % COLS;
+  return { x: col * DOT_SPACING + 40, y: row * DOT_SPACING + 60 };
+}
+
+function screenToWorld(sx, sy) {
+  return { x: (sx - panX) / zoom, y: (sy - panY) / zoom };
+}
+
+function worldToScreen(wx, wy) {
+  return { x: wx * zoom + panX, y: wy * zoom + panY };
+}
+
+// ── Interaction ──
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const oldZoom = zoom;
+  zoom *= e.deltaY < 0 ? 1.12 : 0.89;
+  zoom = Math.max(0.15, Math.min(12, zoom));
+  panX = e.clientX - (e.clientX - panX) * (zoom / oldZoom);
+  panY = e.clientY - (e.clientY - panY) * (zoom / oldZoom);
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragPan = { x: panX, y: panY };
+});
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (dragStart) {
+    panX = dragPan.x + (e.clientX - dragStart.x);
+    panY = dragPan.y + (e.clientY - dragStart.y);
+  }
+});
+
+canvas.addEventListener('mouseup', () => { dragStart = null; });
+canvas.addEventListener('mouseleave', () => {
+  dragStart = null;
+  mouseX = mouseY = -1;
+  hoveredN = -1;
+  tooltip.style.display = 'none';
+});
+
+canvas.addEventListener('click', e => {
+  if (hoveredN > 0 && carmichaelSet.has(hoveredN)) {
+    openDetail(hoveredN);
+  }
+});
+
+// ── Detail overlay (unmask animation) ──
+
+let detailN = -1;
+let detailAnim = { phase: 0, t: 0, bases: [], factorReveal: 0, korseltReveal: 0 };
+const detailCanvas = document.getElementById('detailCanvas');
+const dctx = detailCanvas.getContext('2d');
+
+function openDetail(n) {
+  detailN = n;
+  const factors = carmichaelFactors[n];
+  // Pick random coprime bases for Fermat test animation
+  const bases = [];
+  for (let a = 2; bases.length < 8 && a < n; a++) {
+    if (gcd(a, n) === 1) bases.push(a);
+  }
+  detailAnim = { phase: 0, t: 0, bases, factorReveal: 0, korseltReveal: 0 };
+  document.getElementById('detail-overlay').style.display = 'flex';
+  document.getElementById('detail-info').innerHTML =
+    `<span style="color:#f44">${n}</span> = ${factors.join(' &times; ')} &mdash; Click to close`;
+  // Update selected panel
+  const selEl = document.getElementById('st-selected');
+  selEl.style.display = 'block';
+  const nm1 = n - 1;
+  let html = `<span style="color:#f44">${n}</span> = ${factors.join(' × ')}<br>`;
+  html += `n - 1 = ${nm1}<br>`;
+  factors.forEach(p => {
+    const div = nm1 / (p - 1);
+    const ok = nm1 % (p - 1) === 0;
+    html += `<span style="color:${ok ? '#0f8' : '#f44'}">(${p}-1)=${p-1} | ${nm1}? ${ok ? div + ' ✓' : '✗'}</span><br>`;
+  });
+  document.getElementById('st-sel-detail').innerHTML = html;
+  animateDetail();
+}
+
+function closeDetail() {
+  document.getElementById('detail-overlay').style.display = 'none';
+  detailN = -1;
+}
+
+function animateDetail() {
+  if (detailN < 0) return;
+  const dc = detailCanvas;
+  const w = dc.width, h = dc.height;
+  dctx.clearRect(0, 0, w, h);
+  dctx.fillStyle = '#060610';
+  dctx.fillRect(0, 0, w, h);
+
+  const n = detailN;
+  const factors = carmichaelFactors[n];
+  const anim = detailAnim;
+  anim.t += 0.016;
+
+  const cx = w / 2, cy = h / 2 - 20;
+
+  // Phase 0: Fermat tests (0-4s)
+  // Phase 1: Crack shell (4-6s)
+  // Phase 2: Reveal factors + Korselt (6s+)
+  if (anim.t < 4) {
+    anim.phase = 0;
+  } else if (anim.t < 6) {
+    anim.phase = 1;
+  } else {
+    anim.phase = 2;
+  }
+
+  // ── Phase 0: Fermat test animation ──
+  if (anim.phase >= 0) {
+    const numShow = Math.min(anim.bases.length, Math.floor(anim.t / 0.45) + 1);
+    dctx.font = '13px Courier New';
+    dctx.fillStyle = '#556';
+    dctx.textAlign = 'center';
+    dctx.fillText(`Fermat's test: a^(n-1) ≡ ? (mod n)`, cx, 30);
+    dctx.fillText(`n = ${n}`, cx, 50);
+
+    for (let i = 0; i < numShow; i++) {
+      const a = anim.bases[i];
+      const result = modPow(a, n - 1, n);
+      const y = 80 + i * 24;
+      const progress = Math.min(1, (anim.t - i * 0.45) * 2);
+
+      if (progress > 0) {
+        dctx.textAlign = 'left';
+        dctx.fillStyle = '#889';
+        dctx.fillText(`a = ${String(a).padStart(4)}:  ${a}^${n-1} mod ${n}`, 60, y);
+
+        if (progress > 0.5) {
+          dctx.fillStyle = result === 1 ? '#0f8' : '#f44';
+          dctx.fillText(`≡ ${result}`, 500, y);
+          if (result === 1) {
+            dctx.fillStyle = '#4a4';
+            dctx.fillText('✓ looks prime', 560, y);
+          }
+        }
+      }
+    }
+
+    // Pulsing "prime?" label
+    if (anim.t > 1.5 && anim.phase === 0) {
+      const pulse = 0.6 + 0.4 * Math.sin(anim.t * 4);
+      dctx.globalAlpha = pulse;
+      dctx.font = '20px Courier New';
+      dctx.fillStyle = '#0af';
+      dctx.textAlign = 'center';
+      dctx.fillText('LOOKS PRIME...?', cx, h - 60);
+      dctx.globalAlpha = 1;
+    }
+  }
+
+  // ── Phase 1: Shell cracking ──
+  if (anim.phase >= 1) {
+    const crackT = Math.min(1, (anim.t - 4) / 2);
+
+    // Draw the "impostor" shell cracking
+    const shellR = 60 - crackT * 20;
+    dctx.save();
+    dctx.translate(cx, cy + 140);
+
+    // Cracks
+    const numCracks = Math.floor(crackT * 12);
+    for (let i = 0; i < numCracks; i++) {
+      const angle = (i / 12) * Math.PI * 2 + 0.3;
+      const len = shellR * (0.5 + crackT * 0.8);
+      dctx.beginPath();
+      dctx.moveTo(0, 0);
+      const jx = Math.cos(angle + Math.sin(i * 3) * 0.3) * len;
+      const jy = Math.sin(angle + Math.sin(i * 3) * 0.3) * len;
+      dctx.lineTo(jx, jy);
+      dctx.strokeStyle = `rgba(255,${60 + crackT * 140},0,${0.3 + crackT * 0.7})`;
+      dctx.lineWidth = 1 + crackT;
+      dctx.stroke();
+    }
+
+    // Shell
+    dctx.beginPath();
+    dctx.arc(0, 0, shellR, 0, Math.PI * 2);
+    dctx.strokeStyle = `rgba(255,60,60,${1 - crackT * 0.7})`;
+    dctx.lineWidth = 3 - crackT * 2;
+    dctx.stroke();
+
+    // Number
+    dctx.font = '18px Courier New';
+    dctx.fillStyle = `rgba(255,60,60,${1 - crackT})`;
+    dctx.textAlign = 'center';
+    dctx.textBaseline = 'middle';
+    dctx.fillText(n, 0, 0);
+
+    dctx.restore();
+
+    if (crackT > 0.5) {
+      const revealT = (crackT - 0.5) * 2;
+      dctx.font = '16px Courier New';
+      dctx.fillStyle = `rgba(255,160,0,${revealT})`;
+      dctx.textAlign = 'center';
+      dctx.fillText('IMPOSTOR! — COMPOSITE', cx, cy + 80);
+    }
+  }
+
+  // ── Phase 2: Factors + Korselt ──
+  if (anim.phase >= 2) {
+    const revT = Math.min(1, (anim.t - 6) / 2);
+    const nm1 = n - 1;
+
+    // Draw factors emerging from cracked shell
+    const fSpacing = 120;
+    const fStartX = cx - ((factors.length - 1) * fSpacing) / 2;
+
+    factors.forEach((p, i) => {
+      const delay = i * 0.3;
+      const ft = Math.max(0, Math.min(1, (revT * 2 - delay)));
+      if (ft <= 0) return;
+
+      const fx = fStartX + i * fSpacing;
+      const fy = cy + 140;
+
+      // Line from center to factor
+      dctx.beginPath();
+      dctx.moveTo(cx, cy + 140);
+      dctx.lineTo(cx + (fx - cx) * ft, fy + 60 * ft);
+      dctx.strokeStyle = `rgba(255,160,0,${ft * 0.6})`;
+      dctx.lineWidth = 1;
+      dctx.stroke();
+
+      // Factor circle
+      const r = 22 * ft;
+      dctx.beginPath();
+      dctx.arc(fx, fy + 60, r, 0, Math.PI * 2);
+      dctx.fillStyle = `rgba(255,160,0,${ft * 0.15})`;
+      dctx.fill();
+      dctx.strokeStyle = `rgba(255,160,0,${ft * 0.8})`;
+      dctx.lineWidth = 1.5;
+      dctx.stroke();
+
+      // Factor label
+      dctx.font = '14px Courier New';
+      dctx.fillStyle = `rgba(255,200,60,${ft})`;
+      dctx.textAlign = 'center';
+      dctx.textBaseline = 'middle';
+      dctx.fillText(p, fx, fy + 60);
+
+      // Korselt check below
+      const kT = Math.max(0, Math.min(1, revT * 2 - 0.5 - delay));
+      if (kT > 0) {
+        dctx.font = '10px Courier New';
+        dctx.fillStyle = `rgba(0,255,136,${kT})`;
+        dctx.fillText(`(${p}-1)=${p-1}`, fx, fy + 90);
+        dctx.fillText(`${nm1}/${p-1}=${nm1/(p-1)}`, fx, fy + 104);
+        dctx.fillStyle = `rgba(0,255,136,${kT})`;
+        dctx.fillText('✓ divides', fx, fy + 118);
+      }
+    });
+
+    // Summary
+    if (revT > 0.8) {
+      const sumT = (revT - 0.8) * 5;
+      dctx.font = '13px Courier New';
+      dctx.fillStyle = `rgba(255,60,60,${Math.min(1, sumT)})`;
+      dctx.textAlign = 'center';
+      dctx.fillText(`${n} = ${factors.join(' × ')}  —  Carmichael number (pseudoprime impostor)`, cx, h - 30);
+    }
+  }
+
+  requestAnimationFrame(animateDetail);
+}
+
+// ── Tooltip ──
+
+function updateTooltip() {
+  if (hoveredN < 2 || dragStart) {
+    tooltip.style.display = 'none';
+    return;
+  }
+  const n = hoveredN;
+  let html = '';
+
+  if (carmichaelSet.has(n)) {
+    const factors = carmichaelFactors[n];
+    const nm1 = n - 1;
+    html += `<div class="th">⚠ CARMICHAEL #${n}</div>`;
+    html += `<div>Pseudoprime impostor</div>`;
+    html += `<div class="factor-c">Factors: ${factors.join(' × ')}</div>`;
+    html += `<div style="margin-top:4px;color:#889">Korselt's criterion:</div>`;
+    factors.forEach(p => {
+      html += `<div class="ok">&nbsp; (${p}-1)=${p-1} divides ${nm1} → ${nm1/(p-1)} ✓</div>`;
+    });
+    html += `<div style="margin-top:4px;color:#889">Fermat test: ALL coprime bases pass</div>`;
+    html += `<div class="dim" style="margin-top:4px">Click to unmask</div>`;
+  } else if (primeSet.has(n)) {
+    html += `<div style="color:#4af">${n} — PRIME</div>`;
+  } else {
+    const factors = factorize(n);
+    const pass = fermatPassCount[n] || 0;
+    const tested = fermatTestCount[n] || 1;
+    const pct = ((pass / tested) * 100).toFixed(1);
+    html += `<div style="color:#667">${n} — COMPOSITE</div>`;
+    html += `<div style="color:#556">Factors: ${factors.join(' × ')}</div>`;
+    html += `<div style="color:#556">Fermat pass: ${pass}/${tested} bases (${pct}%)</div>`;
+    if (pass > 0 && !carmichaelSet.has(n)) {
+      html += `<div style="color:#a60">Partial pseudoprime</div>`;
+    }
+  }
+
+  tooltip.innerHTML = html;
+  tooltip.style.display = 'block';
+  let tx = mouseX + 16, ty = mouseY + 16;
+  if (tx + 350 > W) tx = mouseX - 360;
+  if (ty + 200 > H) ty = mouseY - 200;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+
+// ── Main render ──
+
+function draw() {
+  time += 0.016;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(zoom, zoom);
+
+  // Determine visible range
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(W, H);
+
+  // Effective dot size
+  const dotR = Math.max(0.8, DOT_SPACING * 0.3);
+  const carmR = Math.max(1.5, DOT_SPACING * 0.6);
+
+  hoveredN = -1;
+  const mWorld = screenToWorld(mouseX, mouseY);
+  let closestDist = DOT_SPACING * 1.5;
+
+  // Draw all numbers in visible range
+  for (let n = 2; n <= N_MAX; n++) {
+    const pos = numToGrid(n);
+    // Frustum cull
+    if (pos.x < tl.x - 10 || pos.x > br.x + 10 || pos.y < tl.y - 10 || pos.y > br.y + 10) continue;
+
+    const type = numberType[n];
+
+    if (type === 2) {
+      // Carmichael — red pulsing impostor
+      const pulse = 0.7 + 0.3 * Math.sin(time * 3 + n * 0.1);
+      const glowR = carmR * (1.2 + 0.3 * Math.sin(time * 2 + n * 0.2));
+
+      // Glow
+      const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, glowR * 3);
+      grad.addColorStop(0, `rgba(255,50,50,${0.3 * pulse})`);
+      grad.addColorStop(0.5, `rgba(255,30,30,${0.1 * pulse})`);
+      grad.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(pos.x - glowR * 3, pos.y - glowR * 3, glowR * 6, glowR * 6);
+
+      // Core
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, carmR * pulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,60,60,${0.8 * pulse})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(255,100,100,${0.4 * pulse})`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+
+      // Connecting lines to factor positions
+      const factors = carmichaelFactors[n];
+      factors.forEach(p => {
+        const fp = numToGrid(p);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.lineTo(fp.x, fp.y);
+        ctx.strokeStyle = `rgba(255,160,0,${0.06 + 0.04 * Math.sin(time * 2 + n)})`;
+        ctx.lineWidth = 0.3;
+        ctx.stroke();
+      });
+
+    } else if (type === 1) {
+      // Prime — blue dot
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(60,130,255,0.6)';
+      ctx.fill();
+
+    } else {
+      // Composite — heat-mapped by Fermat pass rate
+      const pass = fermatPassCount[n] || 0;
+      const tested = fermatTestCount[n] || 1;
+      const ratio = pass / tested;
+
+      if (ratio > 0) {
+        // Some bases pass — warmer color
+        const r = Math.floor(100 + ratio * 155);
+        const g = Math.floor(40 + ratio * 40);
+        const a = 0.15 + ratio * 0.5;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, dotR * (0.8 + ratio * 0.5), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r},${g},30,${a})`;
+        ctx.fill();
+      } else {
+        // No bases pass — very dim
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, dotR * 0.6, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(40,40,60,0.2)';
+        ctx.fill();
+      }
+    }
+
+    // Hit test
+    if (mouseX >= 0) {
+      const dx = mWorld.x - pos.x;
+      const dy = mWorld.y - pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) {
+        closestDist = dist;
+        hoveredN = n;
+      }
+    }
+  }
+
+  // Draw highlight on hovered
+  if (hoveredN > 0) {
+    const pos = numToGrid(hoveredN);
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, DOT_SPACING * 0.8, 0, Math.PI * 2);
+    ctx.strokeStyle = carmichaelSet.has(hoveredN) ? 'rgba(255,80,80,0.8)' :
+                      primeSet.has(hoveredN) ? 'rgba(80,160,255,0.8)' : 'rgba(100,100,120,0.5)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // If Carmichael, highlight its factor lines more
+    if (carmichaelSet.has(hoveredN)) {
+      const factors = carmichaelFactors[hoveredN];
+      factors.forEach(p => {
+        const fp = numToGrid(p);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.lineTo(fp.x, fp.y);
+        ctx.strokeStyle = 'rgba(255,160,0,0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Highlight factor
+        ctx.beginPath();
+        ctx.arc(fp.x, fp.y, DOT_SPACING * 0.7, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,200,60,0.7)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      });
+    }
+  }
+
+  ctx.restore();
+
+  // Legend
+  const lx = 14, ly = H - 110;
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'left';
+
+  ctx.fillStyle = 'rgba(60,130,255,0.8)';
+  ctx.fillRect(lx, ly, 8, 8);
+  ctx.fillStyle = '#667';
+  ctx.fillText('Prime', lx + 14, ly + 8);
+
+  ctx.fillStyle = 'rgba(255,60,60,0.8)';
+  ctx.fillRect(lx, ly + 14, 8, 8);
+  ctx.fillStyle = '#667';
+  ctx.fillText('Carmichael (impostor)', lx + 14, ly + 22);
+
+  ctx.fillStyle = 'rgba(180,70,30,0.6)';
+  ctx.fillRect(lx, ly + 28, 8, 8);
+  ctx.fillStyle = '#667';
+  ctx.fillText('Partial pseudoprime', lx + 14, ly + 36);
+
+  ctx.fillStyle = 'rgba(40,40,60,0.4)';
+  ctx.fillRect(lx, ly + 42, 8, 8);
+  ctx.fillStyle = '#667';
+  ctx.fillText('Composite', lx + 14, ly + 50);
+
+  // Heat map legend
+  ctx.fillStyle = '#556';
+  ctx.fillText('Fermat pass rate:', lx, ly + 66);
+  for (let i = 0; i < 60; i++) {
+    const ratio = i / 60;
+    const r = Math.floor(40 + ratio * 215);
+    const g = Math.floor(40 + ratio * 40);
+    ctx.fillStyle = `rgba(${r},${g},30,${0.2 + ratio * 0.6})`;
+    ctx.fillRect(lx + 100 + i * 2, ly + 58, 2, 8);
+  }
+  ctx.fillStyle = '#445';
+  ctx.fillText('0%', lx + 100, ly + 76);
+  ctx.fillText('100%', lx + 210, ly + 76);
+
+  updateTooltip();
+  requestAnimationFrame(draw);
+}
+
+// Initial pan to show beginning of number line
+panX = 20;
+panY = 20;
+zoom = 3;
+
+draw();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
