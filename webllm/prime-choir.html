@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Choir — Voice-Conducted Choral Synthesis</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #c0c0d0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas#chladni {
+  display: block;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+canvas#waveforms {
+  display: block;
+  position: fixed;
+  bottom: 44px; left: 0;
+  width: 100vw;
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* Panels */
+.panel {
+  position: fixed;
+  z-index: 100;
+  background: rgba(6,6,16,.88);
+  border: 1px solid rgba(0,170,255,.18);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  backdrop-filter: blur(10px);
+  pointer-events: all;
+  min-width: 180px;
+}
+.panel h3 {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #0af;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-weight: normal;
+}
+.panel-label { color: #556; font-size: 9px; margin-top: 6px; }
+.panel-value { color: #c0c0d0; font-size: 11px; }
+
+/* Conductor Panel - bottom left */
+#conductor-panel { bottom: 52px; left: 14px; min-width: 200px; }
+#mic-bar-wrap { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+#mic-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #555; flex-shrink: 0; transition: background .15s;
+}
+#mic-bar {
+  flex: 1; height: 6px;
+  background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden;
+}
+#mic-bar-fill {
+  height: 100%; width: 0%;
+  background: #0af; border-radius: 3px;
+  transition: width .05s, background .2s;
+}
+#detected-pitch { font-size: 12px; color: #fc0; margin-top: 4px; min-height: 18px; }
+#active-ring-display { font-size: 11px; color: #0ff; margin-top: 2px; }
+#detected-vowel { font-size: 10px; color: #f4a; margin-top: 4px; }
+
+/* Choir Panel - bottom right */
+#choir-panel { bottom: 52px; right: 14px; min-width: 280px; max-height: 320px; overflow-y: auto; }
+.choir-row {
+  display: flex; align-items: center; gap: 6px;
+  margin: 4px 0; font-size: 9px;
+}
+.choir-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  transition: transform .2s, box-shadow .2s; opacity: .3; flex-shrink: 0;
+}
+.choir-dot.active { opacity: 1; transform: scale(1.5); }
+.choir-name { width: 58px; }
+.choir-hz { color: #556; width: 38px; text-align: right; }
+.choir-gain {
+  width: 60px; height: 4px; accent-color: #4af;
+  cursor: pointer; flex-shrink: 0;
+}
+.choir-wave {
+  font: 9px 'Courier New', monospace;
+  background: rgba(255,255,255,.03); border: 1px solid #222;
+  color: #888; border-radius: 3px; padding: 1px 4px;
+  cursor: pointer; flex-shrink: 0;
+}
+.choir-wave:focus { border-color: #0af; color: #0af; outline: none; }
+#master-vol {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 9px; color: #888; margin-top: 8px;
+}
+#master-vol input { flex: 1; height: 4px; accent-color: #fc0; }
+
+/* Resonance Panel - top right */
+#resonance-panel { top: 50px; right: 14px; min-width: 170px; }
+#chladni-pair { font-size: 14px; color: #0af; margin-top: 4px; }
+#chladni-ratio { font-size: 11px; color: #fc0; margin-top: 2px; }
+#complexity-score { font-size: 11px; color: #f4a; margin-top: 4px; }
+
+/* Footer */
+#footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(140,140,160,.35);
+  padding: 10px;
+  background: rgba(6,6,16,.85);
+  border-top: 1px solid rgba(0,170,255,.08);
+}
+</style>
+</head>
+<body>
+
+<canvas id="chladni"></canvas>
+<canvas id="waveforms"></canvas>
+
+<!-- Conductor Panel -->
+<div class="panel" id="conductor-panel">
+  <h3>CONDUCTOR</h3>
+  <div class="panel-label">MIC LEVEL</div>
+  <div id="mic-bar-wrap">
+    <div id="mic-dot"></div>
+    <div id="mic-bar"><div id="mic-bar-fill"></div></div>
+  </div>
+  <div class="panel-label">DETECTED PITCH</div>
+  <div id="detected-pitch">--</div>
+  <div class="panel-label">ACTIVE RING</div>
+  <div id="active-ring-display">--</div>
+  <div class="panel-label">VOWEL SHAPE</div>
+  <div id="detected-vowel">--</div>
+</div>
+
+<!-- Choir Panel -->
+<div class="panel" id="choir-panel">
+  <h3>PRIME CHOIR</h3>
+  <div id="choir-rows"></div>
+  <div id="master-vol">
+    <span>MASTER</span>
+    <input type="range" min="0" max="100" value="50" id="master-slider">
+    <span id="master-val">50%</span>
+  </div>
+</div>
+
+<!-- Resonance Panel -->
+<div class="panel" id="resonance-panel">
+  <h3>RESONANCE</h3>
+  <div class="panel-label">CHLADNI PAIR</div>
+  <div id="chladni-pair">--</div>
+  <div class="panel-label">RATIO</div>
+  <div id="chladni-ratio">--</div>
+  <div class="panel-label">COMPLEXITY</div>
+  <div id="complexity-score">--</div>
+</div>
+
+<!-- Footer -->
+<div id="footer">
+  <span style="color:#f4a">510,510</span> = 2&times;3&times;5&times;7&times;11&times;13&times;17 &middot; PRIME CHOIR &middot; VOICE CONDUCTS SEVEN
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ════════════════════════════════════════════
+// CONSTANTS — M₇ SHIELD SYSTEM
+// ════════════════════════════════════════════
+const M7 = 127;
+const PHI = (1 + Math.sqrt(5)) / 2;
+const TAU = 2 * Math.PI;
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const RING_HZ = [55, 110, 165, 275, 385, 605, 935];
+const RING_NAMES = ['GROUND','SENSE','GATE','HEART','VOICE','SIGHT','OBSERVER'];
+const RING_HUES = [0, 25, 50, 140, 210, 270, 300];
+const RING_COLORS = RING_HUES.map(h => `hsl(${h},85%,55%)`);
+const WAVE_TYPES = ['sine','triangle','sawtooth','square'];
+const VOWEL_WAVE_MAP = { oo:'sine', oh:'triangle', ah:'sawtooth', eh:'square', ee:'sine' };
+
+// ════════════════════════════════════════════
+// CANVAS SETUP
+// ════════════════════════════════════════════
+const chladniCanvas = document.getElementById('chladni');
+const chladniCtx = chladniCanvas.getContext('2d');
+const waveCanvas = document.getElementById('waveforms');
+const waveCtx = waveCanvas.getContext('2d');
+let W, H, cx, cy;
+const WAVE_LANE_TOTAL = 150;
+
+function resize() {
+  W = chladniCanvas.width = window.innerWidth;
+  H = chladniCanvas.height = window.innerHeight;
+  cx = W / 2; cy = (H - WAVE_LANE_TOTAL - 44) / 2;
+  waveCanvas.width = window.innerWidth;
+  waveCanvas.height = WAVE_LANE_TOTAL;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ════════════════════════════════════════════
+// AUDIO CONTEXT & CHOIR OSCILLATORS
+// ════════════════════════════════════════════
+let audioCtx = null;
+let masterGain = null;
+let convolver = null;
+let choirVoices = []; // {osc, gain, analyser, waveData, enabled, currentGain}
+let micSource = null, micAnalyser = null;
+let micTimeData = null, micFreqData = null;
+let voiceRMS = 0, voiceF0 = 0, voiceVowel = null;
+let masterVolume = 0.5;
+let muted = false;
+let voiceEnabled = [true,true,true,true,true,true,true];
+let voiceGains = [0.5,0.5,0.5,0.5,0.5,0.5,0.5];
+let voiceWaveforms = ['sine','sine','sine','sine','sine','sine','sine'];
+let targetGains = [0,0,0,0,0,0,0];
+let smoothGains = [0,0,0,0,0,0,0];
+
+// Chladni state
+let chladniI = 0, chladniJ = 1; // indices of loudest pair
+let targetI = 0, targetJ = 1;
+let smoothI = 0, smoothJ = 1; // for morph
+const NUM_PARTICLES = 5500;
+let particles = [];
+
+function generateImpulseResponse(ctx, duration, decay) {
+  const sr = ctx.sampleRate;
+  const len = sr * duration;
+  const buf = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+  }
+  return buf;
+}
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Master gain
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0;
+
+  // Convolver (reverb)
+  convolver = audioCtx.createConvolver();
+  convolver.buffer = generateImpulseResponse(audioCtx, 2.5, 2.2);
+
+  // Wet/dry
+  const dryGain = audioCtx.createGain();
+  dryGain.gain.value = 0.6;
+  const wetGain = audioCtx.createGain();
+  wetGain.gain.value = 0.4;
+
+  masterGain.connect(dryGain);
+  masterGain.connect(convolver);
+  convolver.connect(wetGain);
+  dryGain.connect(audioCtx.destination);
+  wetGain.connect(audioCtx.destination);
+
+  // Create 7 choir voices
+  for (let i = 0; i < 7; i++) {
+    const osc = audioCtx.createOscillator();
+    osc.type = voiceWaveforms[i];
+    osc.frequency.value = RING_HZ[i];
+
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0;
+
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+
+    osc.connect(gain);
+    gain.connect(analyser);
+    gain.connect(masterGain);
+
+    osc.start();
+
+    const waveData = new Float32Array(analyser.frequencyBinCount);
+
+    choirVoices.push({ osc, gain, analyser, waveData, currentGain: 0 });
+  }
+}
+
+async function initMic() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    initAudio();
+    micSource = audioCtx.createMediaStreamSource(stream);
+    micAnalyser = audioCtx.createAnalyser();
+    micAnalyser.fftSize = 4096;
+    micAnalyser.smoothingTimeConstant = 0.8;
+    micSource.connect(micAnalyser);
+    micTimeData = new Float32Array(micAnalyser.fftSize);
+    micFreqData = new Float32Array(micAnalyser.frequencyBinCount);
+    document.getElementById('mic-dot').style.background = '#0f0';
+  } catch(e) {
+    console.warn('Mic init failed:', e);
+    document.getElementById('mic-dot').style.background = '#f44';
+    // Still init audio so choir works
+    initAudio();
+  }
+}
+
+// ════════════════════════════════════════════
+// VOICE ANALYSIS
+// ════════════════════════════════════════════
+function calcRMS() {
+  if (!micAnalyser) return 0;
+  micAnalyser.getFloatTimeDomainData(micTimeData);
+  let sum = 0;
+  for (let i = 0; i < micTimeData.length; i++) sum += micTimeData[i] * micTimeData[i];
+  return Math.sqrt(sum / micTimeData.length);
+}
+
+function calcF0() {
+  if (!micAnalyser) return 0;
+  const buf = micTimeData;
+  const n = buf.length;
+  const sr = audioCtx.sampleRate;
+  const minP = Math.floor(sr / 600);
+  const maxP = Math.floor(sr / 50);
+  let bestCorr = 0, bestLag = minP;
+  for (let lag = minP; lag <= maxP && lag < n; lag++) {
+    let corr = 0;
+    for (let i = 0; i < n - lag; i++) corr += buf[i] * buf[i + lag];
+    if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+  }
+  if (bestCorr < 0.01) return 0;
+  return sr / bestLag;
+}
+
+function detectVowel(f0) {
+  if (!micAnalyser || f0 < 60) return null;
+  micAnalyser.getFloatFrequencyData(micFreqData);
+  const sr = audioCtx.sampleRate;
+  const binHz = sr / micAnalyser.fftSize;
+  function energyAt(hz, bw) {
+    const lo = Math.floor((hz - bw) / binHz);
+    const hi = Math.ceil((hz + bw) / binHz);
+    let e = 0;
+    for (let i = Math.max(0,lo); i <= Math.min(hi, micFreqData.length-1); i++)
+      e += Math.pow(10, micFreqData[i] / 20);
+    return e;
+  }
+  const f1low = energyAt(300, 80);
+  const f1mid = energyAt(500, 80);
+  const f1high = energyAt(700, 100);
+  const f2low = energyAt(900, 100);
+  const f2mid = energyAt(1500, 150);
+  const f2high = energyAt(2300, 200);
+
+  const scores = {
+    oo: f1low * 1.5 + (1 / (1 + f2high * 0.01)),
+    oh: f1mid * 1.2 + f2low * 0.8,
+    ah: f1high * 1.4 + f1mid * 0.6,
+    eh: f1high * 0.8 + f2mid * 1.2,
+    ee: f1low * 0.5 + f2high * 1.5
+  };
+  let best = null, bestScore = 0;
+  for (const [v, s] of Object.entries(scores)) {
+    if (s > bestScore) { bestScore = s; best = v; }
+  }
+  return best;
+}
+
+function findNearestRing(hz) {
+  let best = 0, bestDist = Infinity;
+  for (let i = 0; i < 7; i++) {
+    // Check fundamental and octaves
+    for (let oct = -2; oct <= 3; oct++) {
+      const candidate = RING_HZ[i] * Math.pow(2, oct);
+      const dist = Math.abs(hz - candidate);
+      if (dist < bestDist) { bestDist = dist; best = i; }
+    }
+  }
+  return best;
+}
+
+// ════════════════════════════════════════════
+// CHOIR CONTROL
+// ════════════════════════════════════════════
+function updateChoir() {
+  if (!audioCtx) return;
+  const rmsScale = Math.min(1, voiceRMS * 8);
+
+  // Determine target gains based on voice input
+  let nearestRing = -1;
+  if (voiceF0 > 50 && voiceRMS > 0.01) {
+    nearestRing = findNearestRing(voiceF0);
+  }
+
+  for (let i = 0; i < 7; i++) {
+    if (!voiceEnabled[i] || muted) {
+      targetGains[i] = 0;
+    } else {
+      // Base gain from slider
+      let g = voiceGains[i] * 0.3;
+      // Boost from voice proximity
+      if (nearestRing === i) {
+        g += rmsScale * voiceGains[i] * 0.7;
+      } else if (nearestRing >= 0) {
+        // Slight sympathetic resonance for neighbors
+        const dist = Math.abs(i - nearestRing);
+        if (dist === 1) g += rmsScale * voiceGains[i] * 0.25;
+        else if (dist === 2) g += rmsScale * voiceGains[i] * 0.1;
+      }
+      // RMS drives overall volume
+      g *= (0.15 + rmsScale * 0.85);
+      targetGains[i] = g;
+    }
+  }
+
+  // Smooth gain transitions
+  for (let i = 0; i < 7; i++) {
+    smoothGains[i] += (targetGains[i] - smoothGains[i]) * 0.12;
+    const v = choirVoices[i];
+    v.gain.gain.setTargetAtTime(smoothGains[i] * masterVolume, audioCtx.currentTime, 0.03);
+    v.currentGain = smoothGains[i];
+
+    // Waveform from vowel for nearest ring
+    if (nearestRing === i && voiceVowel && voiceRMS > 0.015) {
+      const wt = VOWEL_WAVE_MAP[voiceVowel] || 'sine';
+      if (v.osc.type !== wt) {
+        v.osc.type = wt;
+        voiceWaveforms[i] = wt;
+        // Update dropdown
+        const sel = document.getElementById('wave-' + i);
+        if (sel) sel.value = wt;
+      }
+    }
+  }
+
+  // Master gain envelope driven by RMS
+  const masterEnv = muted ? 0 : (0.05 + rmsScale * 0.95);
+  masterGain.gain.setTargetAtTime(masterEnv * masterVolume, audioCtx.currentTime, 0.05);
+}
+
+// ════════════════════════════════════════════
+// CHLADNI PARTICLE SYSTEM
+// ════════════════════════════════════════════
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    particles.push({
+      x: Math.random() * 2 - 1,
+      y: Math.random() * 2 - 1,
+      vx: 0,
+      vy: 0,
+      ring: i % 7,
+      life: 0.5 + Math.random() * 0.5
+    });
+  }
+}
+
+function chladniValue(x, y, fi, fj) {
+  return Math.sin(fi * x) * Math.sin(fj * y) - Math.sin(fj * x) * Math.sin(fi * y);
+}
+
+function updateParticles() {
+  // Morph indices toward targets
+  smoothI += (targetI - smoothI) * 0.04;
+  smoothJ += (targetJ - smoothJ) * 0.04;
+
+  // Use smooth interpolated frequencies
+  const fi = RING_HZ[Math.round(smoothI)] || RING_HZ[0];
+  const fj = RING_HZ[Math.round(smoothJ)] || RING_HZ[1];
+
+  // Normalized frequency ratios for Chladni formula
+  const nfi = fi / 55;
+  const nfj = fj / 55;
+
+  const dt = 0.008;
+  const eps = 0.02;
+  const attraction = 0.3 + voiceRMS * 4;
+
+  for (let p = 0; p < particles.length; p++) {
+    const pt = particles[p];
+
+    // Gradient of Chladni function — particles move toward nodal lines (value=0)
+    const val = chladniValue(pt.x, pt.y, nfi, nfj);
+    const dx = (chladniValue(pt.x + eps, pt.y, nfi, nfj) - val) / eps;
+    const dy = (chladniValue(pt.x, pt.y + eps, nfi, nfj) - val) / eps;
+
+    // Force toward nodal lines: move against gradient proportional to value
+    const forceMag = -val * attraction;
+    const gradLen = Math.sqrt(dx * dx + dy * dy) + 0.001;
+    pt.vx += (dx / gradLen) * forceMag * dt;
+    pt.vy += (dy / gradLen) * forceMag * dt;
+
+    // Damping
+    pt.vx *= 0.92;
+    pt.vy *= 0.92;
+
+    // Noise for visual interest
+    pt.vx += (Math.random() - 0.5) * 0.002 * (1 + voiceRMS * 5);
+    pt.vy += (Math.random() - 0.5) * 0.002 * (1 + voiceRMS * 5);
+
+    pt.x += pt.vx;
+    pt.y += pt.vy;
+
+    // Wrap bounds
+    if (pt.x < -1.2) pt.x = 1.2;
+    if (pt.x > 1.2) pt.x = -1.2;
+    if (pt.y < -1.2) pt.y = 1.2;
+    if (pt.y > 1.2) pt.y = -1.2;
+  }
+}
+
+function findLoudestPair() {
+  // Find two loudest voices
+  let sorted = smoothGains.map((g, i) => ({ g, i })).sort((a, b) => b.g - a.g);
+  const newI = sorted[0].i;
+  const newJ = sorted[1].i;
+  if (newI !== targetI || newJ !== targetJ) {
+    targetI = Math.min(newI, newJ);
+    targetJ = Math.max(newI, newJ);
+  }
+}
+
+function drawChladni() {
+  const size = Math.min(W, H - WAVE_LANE_TOTAL - 44);
+  const ox = (W - size) / 2;
+  const oy = (H - WAVE_LANE_TOTAL - 44 - size) / 2;
+
+  const brightness = 0.3 + Math.min(0.7, voiceRMS * 6);
+
+  for (let p = 0; p < particles.length; p++) {
+    const pt = particles[p];
+    const sx = ox + (pt.x + 1) * 0.5 * size;
+    const sy = oy + (pt.y + 1) * 0.5 * size;
+
+    if (sx < 0 || sx > W || sy < 0 || sy > H - WAVE_LANE_TOTAL - 44) continue;
+
+    const hue = RING_HUES[pt.ring];
+    const alpha = pt.life * brightness;
+    const r = 1 + smoothGains[pt.ring] * 3;
+
+    chladniCtx.beginPath();
+    chladniCtx.arc(sx, sy, r, 0, TAU);
+    chladniCtx.fillStyle = `hsla(${hue},80%,60%,${Math.min(1, alpha)})`;
+    chladniCtx.fill();
+  }
+}
+
+// ════════════════════════════════════════════
+// WAVEFORM LANES
+// ════════════════════════════════════════════
+function drawWaveformLanes() {
+  const cw = waveCanvas.width;
+  const ch = waveCanvas.height;
+  waveCtx.clearRect(0, 0, cw, ch);
+
+  // Background
+  waveCtx.fillStyle = 'rgba(6,6,16,0.9)';
+  waveCtx.fillRect(0, 0, cw, ch);
+
+  // Top border
+  waveCtx.strokeStyle = 'rgba(0,170,255,0.1)';
+  waveCtx.lineWidth = 1;
+  waveCtx.beginPath();
+  waveCtx.moveTo(0, 0);
+  waveCtx.lineTo(cw, 0);
+  waveCtx.stroke();
+
+  // Total gain for proportional height
+  let totalGain = 0;
+  for (let i = 0; i < 7; i++) totalGain += Math.max(0.05, smoothGains[i]);
+
+  let yOff = 2;
+  for (let i = 0; i < 7; i++) {
+    const v = choirVoices[i];
+    if (!v) continue;
+
+    const proportion = Math.max(0.05, smoothGains[i]) / totalGain;
+    const laneH = Math.max(8, (ch - 14) * proportion);
+    const laneMid = yOff + laneH / 2;
+
+    // Get waveform data
+    v.analyser.getFloatTimeDomainData(v.waveData);
+
+    // Lane separator
+    waveCtx.strokeStyle = `hsla(${RING_HUES[i]},60%,30%,0.2)`;
+    waveCtx.lineWidth = 0.5;
+    waveCtx.beginPath();
+    waveCtx.moveTo(0, yOff);
+    waveCtx.lineTo(cw, yOff);
+    waveCtx.stroke();
+
+    // Label
+    waveCtx.font = '8px Courier New';
+    waveCtx.fillStyle = `hsla(${RING_HUES[i]},70%,55%,0.5)`;
+    waveCtx.fillText(RING_NAMES[i], 4, laneMid + 3);
+
+    // Draw waveform
+    const samples = v.waveData.length;
+    const step = Math.max(1, Math.floor(samples / (cw - 70)));
+    const amp = laneH * 0.4 * Math.min(1, smoothGains[i] * 4 + 0.1);
+
+    waveCtx.beginPath();
+    for (let x = 0; x < cw - 70; x++) {
+      const idx = x * step;
+      if (idx >= samples) break;
+      const val = v.waveData[idx] || 0;
+      const py = laneMid + val * amp;
+      if (x === 0) waveCtx.moveTo(70 + x, py);
+      else waveCtx.lineTo(70 + x, py);
+    }
+    waveCtx.strokeStyle = `hsla(${RING_HUES[i]},85%,55%,${0.3 + smoothGains[i] * 2})`;
+    waveCtx.lineWidth = 1 + smoothGains[i] * 2;
+    waveCtx.stroke();
+
+    yOff += laneH;
+  }
+}
+
+// ════════════════════════════════════════════
+// BUILD UI
+// ════════════════════════════════════════════
+function buildChoirRows() {
+  const cont = document.getElementById('choir-rows');
+  for (let i = 0; i < 7; i++) {
+    const row = document.createElement('div');
+    row.className = 'choir-row';
+
+    const dot = document.createElement('span');
+    dot.className = 'choir-dot';
+    dot.id = 'cdot-' + i;
+    dot.style.background = RING_COLORS[i];
+
+    const name = document.createElement('span');
+    name.className = 'choir-name';
+    name.style.color = RING_COLORS[i];
+    name.textContent = RING_NAMES[i];
+
+    const hz = document.createElement('span');
+    hz.className = 'choir-hz';
+    hz.textContent = RING_HZ[i] + 'Hz';
+
+    const gain = document.createElement('input');
+    gain.type = 'range';
+    gain.className = 'choir-gain';
+    gain.min = '0';
+    gain.max = '100';
+    gain.value = '50';
+    gain.id = 'gain-' + i;
+    gain.style.accentColor = RING_COLORS[i];
+    gain.addEventListener('input', ((idx) => (e) => {
+      voiceGains[idx] = parseInt(e.target.value) / 100;
+    })(i));
+
+    const wave = document.createElement('select');
+    wave.className = 'choir-wave';
+    wave.id = 'wave-' + i;
+    WAVE_TYPES.forEach(wt => {
+      const opt = document.createElement('option');
+      opt.value = wt;
+      opt.textContent = wt.slice(0, 3).toUpperCase();
+      wave.appendChild(opt);
+    });
+    wave.addEventListener('change', ((idx) => (e) => {
+      voiceWaveforms[idx] = e.target.value;
+      if (choirVoices[idx]) choirVoices[idx].osc.type = e.target.value;
+    })(i));
+
+    row.appendChild(dot);
+    row.appendChild(name);
+    row.appendChild(hz);
+    row.appendChild(gain);
+    row.appendChild(wave);
+    cont.appendChild(row);
+  }
+
+  document.getElementById('master-slider').addEventListener('input', (e) => {
+    masterVolume = parseInt(e.target.value) / 100;
+    document.getElementById('master-val').textContent = e.target.value + '%';
+  });
+}
+
+// ════════════════════════════════════════════
+// HUD UPDATES
+// ════════════════════════════════════════════
+function updateHUD() {
+  // Mic bar
+  const pct = Math.min(100, voiceRMS * 500);
+  const barFill = document.getElementById('mic-bar-fill');
+  barFill.style.width = pct + '%';
+  if (pct > 70) barFill.style.background = '#f80';
+  else if (pct > 40) barFill.style.background = '#0f8';
+  else barFill.style.background = '#0af';
+
+  // Pitch
+  const pitchEl = document.getElementById('detected-pitch');
+  if (voiceF0 > 50 && voiceRMS > 0.01) {
+    pitchEl.textContent = Math.round(voiceF0) + ' Hz';
+    pitchEl.style.color = '#fc0';
+  } else {
+    pitchEl.textContent = '--';
+    pitchEl.style.color = '#556';
+  }
+
+  // Active ring
+  const ringEl = document.getElementById('active-ring-display');
+  if (voiceF0 > 50 && voiceRMS > 0.01) {
+    const nr = findNearestRing(voiceF0);
+    ringEl.textContent = RING_NAMES[nr] + ' (' + RING_HZ[nr] + 'Hz)';
+    ringEl.style.color = RING_COLORS[nr];
+  } else {
+    ringEl.textContent = '--';
+    ringEl.style.color = '#556';
+  }
+
+  // Vowel
+  const vowelEl = document.getElementById('detected-vowel');
+  if (voiceVowel && voiceRMS > 0.015) {
+    const labels = { oo:'OO', oh:'OH', ah:'AH', eh:'EH', ee:'EE' };
+    vowelEl.textContent = (labels[voiceVowel] || '--') + ' -> ' + (VOWEL_WAVE_MAP[voiceVowel] || 'sine');
+    vowelEl.style.color = '#f4a';
+  } else {
+    vowelEl.textContent = '--';
+    vowelEl.style.color = '#556';
+  }
+
+  // Choir dots
+  for (let i = 0; i < 7; i++) {
+    const dot = document.getElementById('cdot-' + i);
+    if (dot) {
+      if (smoothGains[i] > 0.05 && voiceEnabled[i]) {
+        dot.classList.add('active');
+        dot.style.boxShadow = `0 0 ${smoothGains[i] * 20}px ${RING_COLORS[i]}`;
+      } else {
+        dot.classList.remove('active');
+        dot.style.boxShadow = 'none';
+      }
+    }
+  }
+
+  // Resonance panel
+  const iR = Math.round(smoothI);
+  const jR = Math.round(smoothJ);
+  document.getElementById('chladni-pair').textContent =
+    RING_NAMES[targetI] + ' + ' + RING_NAMES[targetJ];
+  document.getElementById('chladni-pair').style.color =
+    `hsl(${(RING_HUES[targetI] + RING_HUES[targetJ]) / 2},80%,60%)`;
+
+  const ratio = RING_HZ[targetJ] / RING_HZ[targetI];
+  document.getElementById('chladni-ratio').textContent =
+    RING_HZ[targetI] + ':' + RING_HZ[targetJ] + ' = 1:' + ratio.toFixed(3);
+
+  // Complexity = sum of primes of the pair
+  const complexity = PRIMES[targetI] + PRIMES[targetJ];
+  document.getElementById('complexity-score').textContent =
+    complexity + ' (p' + PRIMES[targetI] + '+p' + PRIMES[targetJ] + ')';
+}
+
+// ════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════
+document.addEventListener('keydown', (e) => {
+  // 1-7: toggle voices
+  const num = parseInt(e.key);
+  if (num >= 1 && num <= 7) {
+    const idx = num - 1;
+    voiceEnabled[idx] = !voiceEnabled[idx];
+    const dot = document.getElementById('cdot-' + idx);
+    if (dot) dot.style.opacity = voiceEnabled[idx] ? '' : '0.15';
+    e.preventDefault();
+    return;
+  }
+
+  // Space: mute/unmute all
+  if (e.code === 'Space') {
+    muted = !muted;
+    e.preventDefault();
+    return;
+  }
+
+  // Up/Down: master volume
+  if (e.key === 'ArrowUp') {
+    masterVolume = Math.min(1, masterVolume + 0.05);
+    const slider = document.getElementById('master-slider');
+    slider.value = Math.round(masterVolume * 100);
+    document.getElementById('master-val').textContent = slider.value + '%';
+    e.preventDefault();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    masterVolume = Math.max(0, masterVolume - 0.05);
+    const slider = document.getElementById('master-slider');
+    slider.value = Math.round(masterVolume * 100);
+    document.getElementById('master-val').textContent = slider.value + '%';
+    e.preventDefault();
+    return;
+  }
+});
+
+// ════════════════════════════════════════════
+// MAIN LOOP
+// ════════════════════════════════════════════
+let t = 0;
+let frameCount = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  t = performance.now() * 0.001;
+  frameCount++;
+
+  // Voice analysis
+  voiceRMS = calcRMS();
+  if (voiceRMS > 0.01) {
+    voiceF0 = calcF0();
+    voiceVowel = detectVowel(voiceF0);
+  } else {
+    voiceF0 = 0;
+    voiceVowel = null;
+  }
+
+  // Update choir gains
+  updateChoir();
+
+  // Find loudest pair for Chladni
+  findLoudestPair();
+
+  // Fade Chladni canvas
+  chladniCtx.fillStyle = 'rgba(6,6,16,0.08)';
+  chladniCtx.fillRect(0, 0, W, H);
+
+  // Update and draw particles
+  updateParticles();
+  drawChladni();
+
+  // Waveform lanes (every other frame for perf)
+  if (frameCount % 2 === 0) {
+    drawWaveformLanes();
+  }
+
+  // HUD
+  if (frameCount % 3 === 0) {
+    updateHUD();
+  }
+}
+
+// ════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════
+async function boot() {
+  buildChoirRows();
+  initParticles();
+  await initMic();
+  animate();
+  console.log('%c PRIME CHOIR ONLINE ', 'background:#060610;color:#0af;font-size:16px;padding:8px');
+  console.log('%c 7 voices await your voice ', 'background:#060610;color:#fc0;font-size:12px;padding:4px');
+}
+
+// Start on first interaction if needed (autoplay policy)
+let started = false;
+function startOnInteraction() {
+  if (started) return;
+  started = true;
+  boot();
+}
+// Try immediate boot, but also listen for interaction
+if (document.readyState === 'complete') {
+  startOnInteraction();
+} else {
+  window.addEventListener('load', startOnInteraction);
+}
+document.addEventListener('click', () => {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (!started) startOnInteraction();
+}, { once: false });
+
+})();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
