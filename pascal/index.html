@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PASCAL</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc}
+canvas#main{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;cursor:grab}
+canvas#main.dragging{cursor:grabbing}
+
+.panel{position:fixed;z-index:20;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);
+  padding:12px 16px;border-radius:4px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+
+#controls{top:44px;left:12px;display:flex;flex-direction:column;gap:8px;min-width:180px}
+#controls h3{color:#0af;font-size:13px;letter-spacing:2px;margin-bottom:4px}
+.prime-btns{display:flex;flex-wrap:wrap;gap:4px}
+.prime-btn{background:rgba(0,170,255,.1);border:1px solid rgba(0,170,255,.3);color:#0af;
+  font-family:'Courier New',monospace;font-size:12px;padding:4px 10px;cursor:pointer;
+  border-radius:2px;transition:all .2s;letter-spacing:1px}
+.prime-btn:hover{background:rgba(0,170,255,.25);border-color:#0af}
+.prime-btn.active{background:rgba(0,170,255,.35);border-color:#0af;color:#fff;
+  box-shadow:0 0 8px rgba(0,170,255,.3)}
+.ctrl-row{display:flex;align-items:center;gap:8px;font-size:11px;color:#889}
+.ctrl-row label{min-width:60px}
+.ctrl-row input[type=range]{flex:1;accent-color:#0af}
+.ctrl-row select,.ctrl-row button{background:rgba(0,170,255,.1);border:1px solid rgba(0,170,255,.3);
+  color:#0af;font-family:'Courier New',monospace;font-size:11px;padding:2px 6px;cursor:pointer;border-radius:2px}
+.ctrl-row button:hover{background:rgba(0,170,255,.25)}
+.checkbox-row{display:flex;align-items:center;gap:6px;font-size:11px;color:#889;cursor:pointer}
+.checkbox-row input{accent-color:#0af}
+
+#stats{top:44px;right:12px;min-width:220px;max-width:280px;font-size:11px}
+#stats h3{color:#0af;font-size:13px;letter-spacing:2px;margin-bottom:8px}
+#stats .stat-line{margin:4px 0;display:flex;justify-content:space-between}
+#stats .stat-label{color:#667}
+#stats .stat-value{color:#0cf;text-align:right}
+#stats .kummer{margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,170,255,.1);
+  color:#778;font-size:10px;line-height:1.5}
+#stats .kummer em{color:#0af;font-style:normal}
+
+#tooltip{position:fixed;z-index:30;background:rgba(6,6,16,.95);border:1px solid rgba(0,170,255,.4);
+  padding:8px 12px;border-radius:3px;font-size:11px;pointer-events:none;display:none;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);white-space:nowrap}
+#tooltip .tt-row{margin:2px 0}
+#tooltip .tt-label{color:#667}
+#tooltip .tt-val{color:#0cf}
+
+#overlay-panel{bottom:12px;left:12px;font-size:11px;min-width:200px}
+#overlay-panel h3{color:#0af;font-size:12px;letter-spacing:2px;margin-bottom:6px}
+.overlay-sel{display:flex;gap:6px;align-items:center;margin:4px 0}
+.overlay-sel label{color:#778;min-width:50px}
+.overlay-sel select{background:rgba(6,6,16,.9);border:1px solid rgba(0,170,255,.3);
+  color:#0af;font-family:'Courier New',monospace;font-size:11px;padding:2px 4px;border-radius:2px}
+
+#footer{position:fixed;bottom:0;left:0;width:100%;z-index:10;text-align:center;
+  padding:8px;font-size:11px;color:#556;background:rgba(6,6,16,.9);
+  border-top:1px solid #1a1a2e;letter-spacing:1px}
+#footer em{color:#0af;font-style:normal}
+</style>
+</head>
+<body>
+<canvas id="main"></canvas>
+
+<div class="panel" id="controls">
+  <h3>PRIME MODULUS</h3>
+  <div class="prime-btns" id="prime-btns"></div>
+  <div class="ctrl-row" style="margin-top:6px">
+    <label>Rows:</label>
+    <input type="range" id="row-slider" min="16" max="256" value="128" step="1">
+    <span id="row-count">128</span>
+  </div>
+  <div class="ctrl-row">
+    <label>Animate:</label>
+    <button id="btn-animate">BUILD</button>
+    <button id="btn-instant">INSTANT</button>
+    <button id="btn-reset-view">RESET VIEW</button>
+  </div>
+  <div class="checkbox-row" style="margin-top:4px">
+    <input type="checkbox" id="chk-overlay"><label for="chk-overlay">Overlay mode</label>
+  </div>
+</div>
+
+<div class="panel" id="stats">
+  <h3>STATISTICS</h3>
+  <div class="stat-line"><span class="stat-label">Prime p:</span><span class="stat-value" id="st-prime">2</span></div>
+  <div class="stat-line"><span class="stat-label">Rows:</span><span class="stat-value" id="st-rows">128</span></div>
+  <div class="stat-line"><span class="stat-label">Total cells:</span><span class="stat-value" id="st-total">0</span></div>
+  <div class="stat-line"><span class="stat-label">Zero entries:</span><span class="stat-value" id="st-zeros">0</span></div>
+  <div class="stat-line"><span class="stat-label">Zero fraction:</span><span class="stat-value" id="st-frac">0</span></div>
+  <div class="stat-line"><span class="stat-label">Limit (p-1)/p:</span><span class="stat-value" id="st-limit">0.500</span></div>
+  <div class="kummer" id="kummer-text">
+    <em>Kummer's Theorem:</em> The highest power of prime p dividing C(m+n, m)
+    equals the number of carries when adding m and n in base p.
+    Thus C(n,k) &equiv; 0 (mod p) iff there is at least one carry
+    when adding k and (n&minus;k) in base p. This produces the
+    <em>Sierpinski-like fractal</em> pattern: a self-similar structure
+    where each "triangle" is replaced by p(p+1)/2 smaller copies.
+  </div>
+</div>
+
+<div class="panel" id="overlay-panel" style="display:none">
+  <h3>OVERLAY MODE</h3>
+  <div class="overlay-sel">
+    <label style="color:#f66">Red ch:</label>
+    <select id="ov-red"><option value="2">mod 2</option><option value="3">mod 3</option><option value="5">mod 5</option><option value="7">mod 7</option><option value="11">mod 11</option><option value="13">mod 13</option><option value="17">mod 17</option></select>
+  </div>
+  <div class="overlay-sel">
+    <label style="color:#66f">Blue ch:</label>
+    <select id="ov-blue"><option value="2">mod 2</option><option value="3" selected>mod 3</option><option value="5">mod 5</option><option value="7">mod 7</option><option value="11">mod 11</option><option value="13">mod 13</option><option value="17">mod 17</option></select>
+  </div>
+  <div style="margin-top:6px;color:#778;font-size:10px">Red = nonzero mod p1, Blue = nonzero mod p2<br>White = nonzero in both, Black = zero in both</div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="footer">PASCAL'S PRIME TRIANGLE &mdash; <em>Sierpinski fractals</em> via modular binomial coefficients</div>
+
+<script>
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+
+// Prime-specific color palettes: index 0 = "zero" (dark), rest = residue colors
+const PALETTES = {
+  2:  ['#0a0a18', '#00ccff'],
+  3:  ['#0a0a18', '#ff4488', '#44ff88'],
+  5:  ['#0a0a18', '#ff3366', '#ffaa22', '#33ddff', '#66ff66'],
+  7:  ['#0a0a18', '#ff2244', '#ff8800', '#ffdd00', '#44ee66', '#2299ff', '#aa44ff'],
+  11: ['#0a0a18', '#ff1133', '#ff6622', '#ffaa11', '#dddd00', '#66ee33', '#22ddaa', '#22bbff', '#4488ff', '#8844ff', '#dd22ff'],
+  13: ['#0a0a18', '#ff0033', '#ff4411', '#ff8800', '#ffbb00', '#eedd00', '#88ee22', '#33dd66', '#22ccaa', '#22aadd', '#3377ff', '#6644ff', '#aa22ff'],
+  17: ['#0a0a18', '#ff0022', '#ff2200', '#ff5500', '#ff8800', '#ffaa00', '#ffcc00', '#ddee00', '#99ee22', '#55dd44', '#22cc77', '#22bbaa', '#2299cc', '#2277ee', '#4455ff', '#7733ff', '#aa22ff']
+};
+
+let currentPrime = 2;
+let numRows = 128;
+let triangleData = null; // numRows x row arrays of residues mod p
+let animating = false;
+let animRow = 0;
+let animFrame = null;
+
+// View transform
+let viewX = 0, viewY = 0, viewScale = 1;
+let isDragging = false, dragStartX, dragStartY, dragViewX, dragViewY;
+
+// Overlay
+let overlayMode = false;
+let overlayData2 = null; // second prime residue data
+
+const canvas = document.getElementById('main');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  render();
+}
+window.addEventListener('resize', resize);
+
+// Compute Pascal row mod p using Lucas' theorem approach — direct row-by-row
+function computeTriangle(p, rows) {
+  const data = new Array(rows);
+  for (let n = 0; n < rows; n++) {
+    data[n] = new Uint8Array(n + 1);
+    data[n][0] = 1;
+    data[n][n] = 1;
+    for (let k = 1; k < n; k++) {
+      data[n][k] = (data[n-1][k-1] + data[n-1][k]) % p;
+    }
+  }
+  return data;
+}
+
+function computeAll() {
+  triangleData = computeTriangle(currentPrime, numRows);
+  if (overlayMode) {
+    const p1 = parseInt(document.getElementById('ov-red').value);
+    const p2 = parseInt(document.getElementById('ov-blue').value);
+    triangleData = computeTriangle(p1, numRows);
+    overlayData2 = computeTriangle(p2, numRows);
+  }
+  updateStats();
+}
+
+function updateStats() {
+  const p = overlayMode ? parseInt(document.getElementById('ov-red').value) : currentPrime;
+  const data = triangleData;
+  let total = 0, zeros = 0;
+  const rowLimit = animating ? animRow : numRows;
+  for (let n = 0; n < rowLimit; n++) {
+    for (let k = 0; k <= n; k++) {
+      total++;
+      if (data[n][k] === 0) zeros++;
+    }
+  }
+  document.getElementById('st-prime').textContent = overlayMode ?
+    document.getElementById('ov-red').value + ' / ' + document.getElementById('ov-blue').value : p;
+  document.getElementById('st-rows').textContent = rowLimit;
+  document.getElementById('st-total').textContent = total;
+  document.getElementById('st-zeros').textContent = zeros;
+  document.getElementById('st-frac').textContent = total > 0 ? (zeros / total).toFixed(4) : '0';
+  document.getElementById('st-limit').textContent = ((p - 1) / p).toFixed(4);
+}
+
+// Render
+function getCellSize() {
+  const W = window.innerWidth;
+  const H = window.innerHeight - 80;
+  return Math.max(1, Math.min(W / (numRows + 2), H / (numRows * 0.9)));
+}
+
+function render() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  ctx.clearRect(0, 0, W, H);
+
+  if (!triangleData) return;
+
+  const cellSize = getCellSize();
+  const rowLimit = animating ? Math.min(animRow, numRows) : numRows;
+
+  ctx.save();
+  ctx.translate(W / 2 + viewX, 52 + viewY);
+  ctx.scale(viewScale, viewScale);
+
+  const palette = PALETTES[currentPrime];
+
+  for (let n = 0; n < rowLimit; n++) {
+    const rowWidth = (n + 1) * cellSize;
+    const startX = -rowWidth / 2;
+    const y = n * cellSize * 0.88;
+
+    for (let k = 0; k <= n; k++) {
+      const x = startX + k * cellSize;
+      const r = triangleData[n][k];
+
+      if (overlayMode && overlayData2) {
+        const r1 = triangleData[n][k];
+        const r2 = overlayData2[n][k];
+        const red = r1 !== 0 ? 200 : 20;
+        const green = (r1 !== 0 && r2 !== 0) ? 120 : 20;
+        const blue = r2 !== 0 ? 200 : 20;
+        ctx.fillStyle = `rgb(${red},${green},${blue})`;
+      } else {
+        ctx.fillStyle = palette[r] || palette[0];
+      }
+
+      if (cellSize >= 3) {
+        ctx.fillRect(x + 0.5, y + 0.5, cellSize - 1, cellSize * 0.88 - 1);
+      } else {
+        ctx.fillRect(x, y, cellSize, cellSize * 0.88);
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+// Animation
+function startAnimate() {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  animating = true;
+  animRow = 0;
+  computeAll();
+
+  const speed = Math.max(1, Math.ceil(numRows / 200));
+
+  function step() {
+    if (animRow < numRows) {
+      animRow += speed;
+      if (animRow > numRows) animRow = numRows;
+      render();
+      if (animRow % 10 < speed) updateStats();
+      animFrame = requestAnimationFrame(step);
+    } else {
+      animating = false;
+      updateStats();
+      render();
+    }
+  }
+  animFrame = requestAnimationFrame(step);
+}
+
+function instantRender() {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  animating = false;
+  computeAll();
+  render();
+}
+
+// Prime buttons
+const btnContainer = document.getElementById('prime-btns');
+PRIMES.forEach(p => {
+  const btn = document.createElement('button');
+  btn.className = 'prime-btn' + (p === 2 ? ' active' : '');
+  btn.textContent = 'mod ' + p;
+  btn.dataset.prime = p;
+  btn.addEventListener('click', () => {
+    currentPrime = p;
+    document.querySelectorAll('.prime-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    instantRender();
+  });
+  btnContainer.appendChild(btn);
+});
+
+// Row slider
+const rowSlider = document.getElementById('row-slider');
+const rowCount = document.getElementById('row-count');
+rowSlider.addEventListener('input', () => {
+  numRows = parseInt(rowSlider.value);
+  rowCount.textContent = numRows;
+});
+rowSlider.addEventListener('change', () => {
+  numRows = parseInt(rowSlider.value);
+  rowCount.textContent = numRows;
+  resetView();
+  instantRender();
+});
+
+// Buttons
+document.getElementById('btn-animate').addEventListener('click', () => { resetView(); startAnimate(); });
+document.getElementById('btn-instant').addEventListener('click', () => { resetView(); instantRender(); });
+document.getElementById('btn-reset-view').addEventListener('click', () => { resetView(); render(); });
+
+function resetView() { viewX = 0; viewY = 0; viewScale = 1; }
+
+// Overlay
+document.getElementById('chk-overlay').addEventListener('change', (e) => {
+  overlayMode = e.target.checked;
+  document.getElementById('overlay-panel').style.display = overlayMode ? 'block' : 'none';
+  instantRender();
+});
+document.getElementById('ov-red').addEventListener('change', () => { if (overlayMode) instantRender(); });
+document.getElementById('ov-blue').addEventListener('change', () => { if (overlayMode) instantRender(); });
+
+// Pan & Zoom
+canvas.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragViewX = viewX;
+  dragViewY = viewY;
+  canvas.classList.add('dragging');
+});
+window.addEventListener('mousemove', (e) => {
+  if (isDragging) {
+    viewX = dragViewX + (e.clientX - dragStartX);
+    viewY = dragViewY + (e.clientY - dragStartY);
+    render();
+  }
+  updateTooltip(e);
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  canvas.classList.remove('dragging');
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const oldScale = viewScale;
+  viewScale = Math.max(0.1, Math.min(20, viewScale * factor));
+  // Zoom toward mouse
+  const cx = e.clientX - window.innerWidth / 2;
+  const cy = e.clientY - 52;
+  viewX = cx - (cx - viewX) * (viewScale / oldScale);
+  viewY = cy - (cy - viewY) * (viewScale / oldScale);
+  render();
+}, { passive: false });
+
+// Tooltip
+const tooltip = document.getElementById('tooltip');
+function updateTooltip(e) {
+  if (!triangleData || isDragging) { tooltip.style.display = 'none'; return; }
+
+  const W = window.innerWidth;
+  const cellSize = getCellSize();
+  const mx = (e.clientX - W / 2 - viewX) / viewScale;
+  const my = (e.clientY - 52 - viewY) / viewScale;
+
+  const n = Math.floor(my / (cellSize * 0.88));
+  if (n < 0 || n >= numRows) { tooltip.style.display = 'none'; return; }
+
+  const rowWidth = (n + 1) * cellSize;
+  const startX = -rowWidth / 2;
+  const k = Math.floor((mx - startX) / cellSize);
+  if (k < 0 || k > n) { tooltip.style.display = 'none'; return; }
+
+  const p = overlayMode ? parseInt(document.getElementById('ov-red').value) : currentPrime;
+  const residue = triangleData[n][k];
+
+  // Compute actual C(n,k) if small enough
+  let actual = '';
+  if (n <= 62) {
+    // Use BigInt for exact values
+    let val = 1n;
+    const bn = BigInt(n);
+    const bk = BigInt(Math.min(k, n - k));
+    for (let i = 0n; i < bk; i++) {
+      val = val * (bn - i) / (i + 1n);
+    }
+    const s = val.toString();
+    actual = s.length > 20 ? s.substring(0, 17) + '...' : s;
+  }
+
+  let html = `<div class="tt-row"><span class="tt-label">Row n = </span><span class="tt-val">${n}</span></div>`;
+  html += `<div class="tt-row"><span class="tt-label">Pos k = </span><span class="tt-val">${k}</span></div>`;
+  html += `<div class="tt-row"><span class="tt-label">C(${n},${k}) mod ${p} = </span><span class="tt-val">${residue}</span></div>`;
+  if (actual) html += `<div class="tt-row"><span class="tt-label">C(${n},${k}) = </span><span class="tt-val">${actual}</span></div>`;
+  if (overlayMode && overlayData2) {
+    const p2 = parseInt(document.getElementById('ov-blue').value);
+    html += `<div class="tt-row"><span class="tt-label">mod ${p2} = </span><span class="tt-val">${overlayData2[n][k]}</span></div>`;
+  }
+
+  tooltip.innerHTML = html;
+  tooltip.style.display = 'block';
+  tooltip.style.left = Math.min(e.clientX + 14, W - 220) + 'px';
+  tooltip.style.top = (e.clientY + 14) + 'px';
+}
+
+canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+// Touch support for mobile pan
+let touchStartX, touchStartY, touchViewX, touchViewY;
+let lastTouchDist = 0;
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchViewX = viewX;
+    touchViewY = viewY;
+  } else if (e.touches.length === 2) {
+    lastTouchDist = Math.hypot(
+      e.touches[1].clientX - e.touches[0].clientX,
+      e.touches[1].clientY - e.touches[0].clientY
+    );
+  }
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 1) {
+    viewX = touchViewX + (e.touches[0].clientX - touchStartX);
+    viewY = touchViewY + (e.touches[0].clientY - touchStartY);
+    render();
+  } else if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[1].clientX - e.touches[0].clientX,
+      e.touches[1].clientY - e.touches[0].clientY
+    );
+    if (lastTouchDist > 0) {
+      viewScale = Math.max(0.1, Math.min(20, viewScale * (dist / lastTouchDist)));
+      render();
+    }
+    lastTouchDist = dist;
+  }
+  e.preventDefault();
+}, { passive: false });
+
+// Init
+resize();
+instantRender();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
