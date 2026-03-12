@@ -169,6 +169,25 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <a href="#catalan" data-id="catalan"><span class="dot" style="background:#0ff"></span><span style="color:#0ff">CATALAN</span></a>
     </div>
   </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#0f8">WEBLLM <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <div class="cat-label">AUDIO</div>
+      <a href="#audio-fabric" data-id="audio-fabric"><span class="dot" style="background:#f4a"></span><span style="color:#f4a">AUDIO FABRIC</span></a>
+      <a href="#llm-composer" data-id="llm-composer"><span class="dot" style="background:#a8f"></span><span style="color:#a8f">LLM COMPOSER</span></a>
+      <a href="#prime-choir" data-id="prime-choir"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">PRIME CHOIR</span></a>
+      <a href="#singing-star" data-id="singing-star"><span class="dot" style="background:#0ff"></span><span style="color:#0ff">SINGING STAR</span></a>
+      <a href="#songbird-harmony" data-id="songbird-harmony"><span class="dot" style="background:#f80"></span><span style="color:#f80">SONGBIRD</span></a>
+      <a href="#voice-geometry" data-id="voice-geometry"><span class="dot" style="background:#8f4"></span><span style="color:#8f4">VOICE GEO</span></a>
+      <div class="cat-label">SIMULATION</div>
+      <a href="#fractal-dive" data-id="fractal-dive"><span class="dot" style="background:#f0a"></span><span style="color:#f0a">FRACTAL DIVE</span></a>
+      <a href="#gravity-orchestra" data-id="gravity-orchestra"><span class="dot" style="background:#4af"></span><span style="color:#4af">GRAVITY ORCH</span></a>
+      <a href="#neural-automata" data-id="neural-automata"><span class="dot" style="background:#0f8"></span><span style="color:#0f8">NEURAL AUTO</span></a>
+      <a href="#particle-life" data-id="particle-life"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">PARTICLE LIFE</span></a>
+      <a href="#shield-forge" data-id="shield-forge"><span class="dot" style="background:#f44"></span><span style="color:#f44">SHIELD FORGE</span></a>
+    </div>
+  </div>
 </nav>
 
 <div id="content">
@@ -177,7 +196,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div id="gallery">
     <div class="header">
       <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">54 SHIELDS · 8 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
+      <div class="sub">65 SHIELDS · 9 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
     </div>
 
     <div class="category">
@@ -250,6 +269,24 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
         <span class="cat-count">6 SHIELDS</span>
       </div>
       <div class="grid" id="grid-structures"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#0f8">WEBLLM · AUDIO</span>
+        <div class="cat-line" style="background:#0f8"></div>
+        <span class="cat-count">6 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-webllm-audio"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#0f8">WEBLLM · SIMULATION</span>
+        <div class="cat-line" style="background:#0f8"></div>
+        <span class="cat-count">5 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-webllm-sim"></div>
     </div>
 
     <div class="footer">
@@ -355,6 +392,27 @@ const CATEGORIES = {
       { id:'pascal',    name:'SHIELD-PASCAL',       desc:'Pascal\'s triangle mod p reveals Sierpinski fractals. Switch between mod 2,3,5,7,11,13,17. Residue coloring by prime palette.', tag:'PASCAL', tagColor:'#f0f', colors:['#f0f','#c0f','#a0f','#80f','#60f','#40f','#fff'] },
       { id:'catalan',   name:'SHIELD-CATALAN',      desc:'Catalan numbers: Dyck paths, parenthesizations, binary trees. Prime-index Catalans glow gold. Only C₂=2 and C₃=5 are prime.', tag:'CATALAN', tagColor:'#0ff', colors:['#0ff','#0ef','#0df','#0cf','#0bf','#0af','#fff'] },
     ]
+  },
+  webllmAudio: {
+    grid: 'grid-webllm-audio',
+    variants: [
+      { id:'audio-fabric',     name:'AUDIO FABRIC',       desc:'Voice-reactive prime harmonics. Microphone input drives woven audio fabric with prime-frequency resonances.', tag:'VOICE', tagColor:'#f4a', colors:['#f4a','#f28','#f06','#e04','#c02','#a00','#fff'], src:'webllm/audio-fabric.html' },
+      { id:'llm-composer',     name:'LLM COMPOSER',       desc:'Musical and visual composition powered by WebLLM. Generate melodies, harmonies, and visual scores in-browser.', tag:'COMPOSE', tagColor:'#a8f', colors:['#a8f','#88f','#68f','#48f','#28f','#08f','#fff'], src:'webllm/llm-composer.html' },
+      { id:'prime-choir',      name:'PRIME CHOIR',        desc:'Voice-conducted choral synthesis. Sing to direct a choir of prime-tuned voices. Harmonic intervals from prime ratios.', tag:'CHOIR', tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'], src:'webllm/prime-choir.html' },
+      { id:'singing-star',     name:'SINGING STAR',       desc:'Voice-driven hyperdimensional topology. Your voice shapes a star in high-dimensional space projected to 3D.', tag:'TOPOLOGY', tagColor:'#0ff', colors:['#0ff','#0ef','#0df','#0cf','#0bf','#0af','#fff'], src:'webllm/singing-star.html' },
+      { id:'songbird-harmony', name:'SONGBIRD HARMONY',   desc:'Prime ratio voice harmonizer. Real-time pitch detection with harmonics generated at prime-ratio intervals.', tag:'HARMONIZER', tagColor:'#f80', colors:['#f80','#f60','#f40','#f20','#f00','#e00','#fff'], src:'webllm/songbird-harmony.html' },
+      { id:'voice-geometry',   name:'VOICE GEOMETRY',     desc:'Sacred geometry driven by voice input. Platonic solids, flower of life, and Metatron\'s cube respond to vocal frequencies.', tag:'SACRED', tagColor:'#8f4', colors:['#8f4','#6f2','#4f0','#2e0','#0d0','#0c0','#fff'], src:'webllm/voice-geometry.html' },
+    ]
+  },
+  webllmSim: {
+    grid: 'grid-webllm-sim',
+    variants: [
+      { id:'fractal-dive',      name:'FRACTAL DIVE',       desc:'Interactive fractal explorer. Dive infinitely into Mandelbrot, Julia, and Burning Ship fractals with smooth zooming.', tag:'FRACTALS', tagColor:'#f0a', colors:['#f0a','#f08','#f06','#f04','#f02','#f00','#fff'], src:'webllm/fractal-dive.html' },
+      { id:'gravity-orchestra',  name:'GRAVITY ORCHESTRA',  desc:'N-body musical simulation. Gravitational particles emit notes on collision. Orbital mechanics become symphonies.', tag:'N-BODY', tagColor:'#4af', colors:['#4af','#2af','#0af','#08f','#06f','#04f','#fff'], src:'webllm/gravity-orchestra.html' },
+      { id:'neural-automata',    name:'NEURAL AUTOMATA',    desc:'Continuous cellular automata with neural-network update rules. Emergent life-like patterns from learned dynamics.', tag:'NEURAL', tagColor:'#0f8', colors:['#0f8','#0e8','#0d8','#0c8','#0b8','#0a8','#fff'], src:'webllm/neural-automata.html' },
+      { id:'particle-life',     name:'PARTICLE LIFE',      desc:'Artificial chemistry simulation. Particles with attraction/repulsion matrices self-organize into lifelike structures.', tag:'A-LIFE', tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'], src:'webllm/particle-life.html' },
+      { id:'shield-forge',      name:'SHIELD FORGE',       desc:'Interactive shield construction tool. Forge custom shield configurations by combining prime dimensions and geometries.', tag:'FORGE', tagColor:'#f44', colors:['#f44','#f22','#f00','#d00','#b00','#900','#fff'], src:'webllm/shield-forge.html' },
+    ]
   }
 };
 
@@ -379,7 +437,8 @@ function showVariant(id) {
   } else {
     galleryEl.style.display = 'none';
     viewer.style.display = '';
-    viewer.src = './' + id + '/';
+    const match = ALL_VARIANTS.find(v => v.id === id);
+    viewer.src = match && match.src ? './' + match.src : './' + id + '/';
   }
 
   navLinks.forEach(a => {
