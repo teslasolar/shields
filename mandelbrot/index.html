@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-MANDELBROT — Mandelbrot Prime</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; color: #f84; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.85); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  color: #ccc; min-width: 260px; z-index: 10;
+}
+#stats .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1px; }
+#stats .val { color: #fff; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.85); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 12px; line-height: 2.2;
+  color: #ccc; z-index: 10; min-width: 280px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1px; }
+#controls label { display: flex; align-items: center; gap: 8px; }
+#controls input[type="range"] {
+  -webkit-appearance: none; appearance: none; height: 4px;
+  background: #333; outline: none; flex: 1;
+}
+#controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  background: #f84; border-radius: 50%; cursor: pointer;
+}
+#controls button {
+  background: transparent; border: 1px solid #f84; color: #f84;
+  padding: 4px 14px; font-family: inherit; font-size: 12px;
+  cursor: pointer; margin-top: 4px; margin-right: 6px;
+}
+#controls button:hover { background: #f84; color: #060610; }
+#julia {
+  position: fixed; bottom: 16px; right: 16px;
+  border: 1px solid #f84;
+  z-index: 10;
+  image-rendering: pixelated;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="julia" width="200" height="200"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-MANDELBROT</div>
+  <div>center: <span class="val" id="sc">-0.5 + 0.0i</span></div>
+  <div>zoom: <span class="val" id="sz">1.00x</span></div>
+  <div>max iter: <span class="val" id="sm">256</span></div>
+  <div>prime escapes: <span class="val" id="sp">0.0%</span></div>
+  <div>cursor c: <span class="val" id="smc">0.0 + 0.0i</span></div>
+  <div>render: <span class="val" id="sr">0 ms</span></div>
+</div>
+
+<div id="controls">
+  <div class="title">CONTROLS</div>
+  <label>max iter <input type="range" id="ci" min="64" max="2048" step="64" value="256"> <span id="civ">256</span></label>
+  <div>
+    <button id="zin">ZOOM IN</button>
+    <button id="zout">ZOOM OUT</button>
+    <button id="reset">RESET</button>
+    <button id="togj">JULIA: ON</button>
+  </div>
+  <div style="margin-top:4px;font-size:11px;color:#666">click to zoom in, shift+click to zoom out</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const juliaCanvas = document.getElementById('julia');
+const jctx = juliaCanvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  needsRedraw = true;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Mandelbrot view
+let centerX = -0.5, centerY = 0.0;
+let zoom = 1.0;
+let maxIter = 256;
+let needsRedraw = true;
+let showJulia = true;
+let mouseX = W / 2, mouseY = H / 2;
+let mouseCX = 0, mouseCY = 0;
+let primePercent = 0;
+
+// Generate prime sieve
+const PRIME_MAX = 2100;
+const isPrime = new Uint8Array(PRIME_MAX);
+isPrime.fill(1);
+isPrime[0] = 0; isPrime[1] = 0;
+for (let i = 2; i * i < PRIME_MAX; i++) {
+  if (isPrime[i]) {
+    for (let j = i * i; j < PRIME_MAX; j += i) isPrime[j] = 0;
+  }
+}
+
+// Prime highlight colors
+const primeColors = {};
+function getPrimeColor(n) {
+  if (primeColors[n]) return primeColors[n];
+  if (n === 2) { primeColors[n] = [255, 215, 0]; return primeColors[n]; } // gold
+  if (n === 3) { primeColors[n] = [0, 255, 255]; return primeColors[n]; } // cyan
+  if (n === 5) { primeColors[n] = [255, 100, 255]; return primeColors[n]; } // magenta
+  if (n === 7) { primeColors[n] = [100, 255, 100]; return primeColors[n]; } // green
+  // Other primes get a hue based on their value
+  const hue = (n * 137.508) % 360;
+  const c = hslToRgb(hue, 1.0, 0.7);
+  primeColors[n] = c;
+  return c;
+}
+
+function hslToRgb(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+function smoothColor(iter, zx, zy, maxI) {
+  if (iter >= maxI) return null; // in set
+  // Smooth iteration count
+  const log2 = Math.log(2);
+  const modSq = zx * zx + zy * zy;
+  const mu = iter + 1 - Math.log(Math.log(modSq) / 2 / log2) / log2;
+  return mu;
+}
+
+function getColor(iter, zx, zy, maxI) {
+  if (iter >= maxI) return [0, 0, 0, 255];
+
+  // Check if escape iteration is prime
+  if (iter < PRIME_MAX && isPrime[iter]) {
+    const pc = getPrimeColor(iter);
+    // Brighten prime-escaped points
+    const brightness = 0.7 + 0.3 * Math.sin(iter * 0.5);
+    return [
+      Math.min(255, Math.round(pc[0] * brightness)),
+      Math.min(255, Math.round(pc[1] * brightness)),
+      Math.min(255, Math.round(pc[2] * brightness)),
+      255
+    ];
+  }
+
+  // Smooth coloring for non-prime escapes
+  const mu = smoothColor(iter, zx, zy, maxI);
+  if (mu === null) return [0, 0, 0, 255];
+
+  const t = mu / maxI;
+  // Dark palette for non-prime
+  const r = Math.round(9 * (1 - t) * t * t * t * 255);
+  const g = Math.round(15 * (1 - t) * (1 - t) * t * t * 255);
+  const b = Math.round(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+  return [r, g, b, 255];
+}
+
+function renderMandelbrot() {
+  const t0 = performance.now();
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+  const scale = 3.0 / (zoom * Math.min(W, H));
+  let primeCount = 0, totalEscaped = 0;
+
+  for (let py = 0; py < H; py++) {
+    const ci = centerY + (py - H / 2) * scale;
+    for (let px = 0; px < W; px++) {
+      const cr = centerX + (px - W / 2) * scale;
+      let zx = 0, zy = 0;
+      let iter = 0;
+      while (iter < maxIter && zx * zx + zy * zy < 4) {
+        const tmp = zx * zx - zy * zy + cr;
+        zy = 2 * zx * zy + ci;
+        zx = tmp;
+        iter++;
+      }
+
+      if (iter < maxIter) {
+        totalEscaped++;
+        if (iter < PRIME_MAX && isPrime[iter]) primeCount++;
+      }
+
+      const col = getColor(iter, zx, zy, maxIter);
+      const idx = (py * W + px) * 4;
+      data[idx] = col[0];
+      data[idx + 1] = col[1];
+      data[idx + 2] = col[2];
+      data[idx + 3] = col[3];
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  primePercent = totalEscaped > 0 ? (primeCount / totalEscaped * 100) : 0;
+
+  const elapsed = (performance.now() - t0).toFixed(0);
+  document.getElementById('sr').textContent = elapsed + ' ms';
+}
+
+function renderJulia(cr, ci) {
+  if (!showJulia) { juliaCanvas.style.display = 'none'; return; }
+  juliaCanvas.style.display = 'block';
+  const JW = 200, JH = 200;
+  const imgData = jctx.createImageData(JW, JH);
+  const data = imgData.data;
+  const jScale = 3.0 / JW;
+  const jMaxIter = Math.min(maxIter, 128);
+
+  for (let py = 0; py < JH; py++) {
+    const zy0 = (py - JH / 2) * jScale;
+    for (let px = 0; px < JW; px++) {
+      const zx0 = (px - JW / 2) * jScale;
+      let zx = zx0, zy = zy0;
+      let iter = 0;
+      while (iter < jMaxIter && zx * zx + zy * zy < 4) {
+        const tmp = zx * zx - zy * zy + cr;
+        zy = 2 * zx * zy + ci;
+        zx = tmp;
+        iter++;
+      }
+
+      const col = getColor(iter, zx, zy, jMaxIter);
+      const idx = (py * JW + px) * 4;
+      data[idx] = col[0];
+      data[idx + 1] = col[1];
+      data[idx + 2] = col[2];
+      data[idx + 3] = col[3];
+    }
+  }
+  jctx.putImageData(imgData, 0, 0);
+
+  // Border label
+  jctx.fillStyle = 'rgba(6,6,16,0.7)';
+  jctx.fillRect(0, 0, JW, 14);
+  jctx.fillStyle = '#f84';
+  jctx.font = '10px Courier New';
+  jctx.fillText('JULIA c=' + cr.toFixed(3) + (ci >= 0 ? '+' : '') + ci.toFixed(3) + 'i', 4, 10);
+}
+
+function updateStats() {
+  const cStr = centerX.toFixed(6) + (centerY >= 0 ? ' + ' : ' - ') + Math.abs(centerY).toFixed(6) + 'i';
+  document.getElementById('sc').textContent = cStr;
+  document.getElementById('sz').textContent = zoom.toFixed(2) + 'x';
+  document.getElementById('sm').textContent = maxIter;
+  document.getElementById('sp').textContent = primePercent.toFixed(1) + '%';
+}
+
+// Mouse interaction
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  const scale = 3.0 / (zoom * Math.min(W, H));
+  mouseCX = centerX + (mouseX - W / 2) * scale;
+  mouseCY = centerY + (mouseY - H / 2) * scale;
+  document.getElementById('smc').textContent =
+    mouseCX.toFixed(4) + (mouseCY >= 0 ? ' + ' : ' - ') + Math.abs(mouseCY).toFixed(4) + 'i';
+  juliaScheduled = true;
+});
+
+canvas.addEventListener('click', e => {
+  const scale = 3.0 / (zoom * Math.min(W, H));
+  const cx = centerX + (e.clientX - W / 2) * scale;
+  const cy = centerY + (e.clientY - H / 2) * scale;
+  centerX = cx;
+  centerY = cy;
+  if (e.shiftKey) {
+    zoom /= 2;
+  } else {
+    zoom *= 2;
+  }
+  needsRedraw = true;
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const scale = 3.0 / (zoom * Math.min(W, H));
+  const cx = centerX + (e.clientX - W / 2) * scale;
+  const cy = centerY + (e.clientY - H / 2) * scale;
+  if (e.deltaY < 0) {
+    centerX = centerX * 0.7 + cx * 0.3;
+    centerY = centerY * 0.7 + cy * 0.3;
+    zoom *= 1.5;
+  } else {
+    zoom /= 1.5;
+  }
+  needsRedraw = true;
+}, { passive: false });
+
+// Controls
+document.getElementById('ci').addEventListener('input', e => {
+  maxIter = parseInt(e.target.value);
+  document.getElementById('civ').textContent = maxIter;
+  needsRedraw = true;
+});
+
+document.getElementById('zin').addEventListener('click', () => {
+  zoom *= 2;
+  needsRedraw = true;
+});
+document.getElementById('zout').addEventListener('click', () => {
+  zoom /= 2;
+  needsRedraw = true;
+});
+document.getElementById('reset').addEventListener('click', () => {
+  centerX = -0.5; centerY = 0; zoom = 1; maxIter = 256;
+  document.getElementById('ci').value = 256;
+  document.getElementById('civ').textContent = '256';
+  needsRedraw = true;
+});
+document.getElementById('togj').addEventListener('click', () => {
+  showJulia = !showJulia;
+  document.getElementById('togj').textContent = 'JULIA: ' + (showJulia ? 'ON' : 'OFF');
+  if (!showJulia) juliaCanvas.style.display = 'none';
+  else juliaScheduled = true;
+});
+
+let juliaScheduled = false;
+let lastJuliaTime = 0;
+
+function animate(now) {
+  if (needsRedraw) {
+    renderMandelbrot();
+    updateStats();
+    needsRedraw = false;
+    juliaScheduled = true;
+  }
+
+  if (juliaScheduled && showJulia && now - lastJuliaTime > 150) {
+    renderJulia(mouseCX, mouseCY);
+    lastJuliaTime = now;
+    juliaScheduled = false;
+  }
+
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

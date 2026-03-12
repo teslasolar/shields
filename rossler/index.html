@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-RÖSSLER — Rössler Attractor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; color: #f84; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.85); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  color: #ccc; min-width: 220px; z-index: 10;
+}
+#stats .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1px; }
+#stats .val { color: #fff; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.85); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 12px; line-height: 2.2;
+  color: #ccc; z-index: 10; min-width: 260px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1px; }
+#controls label { display: flex; align-items: center; gap: 8px; }
+#controls input[type="range"] {
+  -webkit-appearance: none; appearance: none; height: 4px;
+  background: #333; outline: none; flex: 1;
+}
+#controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  background: #f84; border-radius: 50%; cursor: pointer;
+}
+#controls button {
+  background: transparent; border: 1px solid #f84; color: #f84;
+  padding: 4px 14px; font-family: inherit; font-size: 12px;
+  cursor: pointer; margin-top: 4px;
+}
+#controls button:hover { background: #f84; color: #060610; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-RÖSSLER</div>
+  <div>a: <span class="val" id="sa">0.200</span></div>
+  <div>b: <span class="val" id="sb">0.200</span></div>
+  <div>c: <span class="val" id="sc">5.700</span></div>
+  <div>iterations: <span class="val" id="si">0</span></div>
+  <div>particles: <span class="val" id="sp">0</span></div>
+  <div>lyapunov: <span class="val" id="sl">0.000</span></div>
+</div>
+
+<div id="controls">
+  <div class="title">CONTROLS</div>
+  <label>a <input type="range" id="ca" min="0.01" max="0.5" step="0.01" value="0.2"> <span id="cav">0.20</span></label>
+  <label>b <input type="range" id="cb" min="0.01" max="0.5" step="0.01" value="0.2"> <span id="cbv">0.20</span></label>
+  <label>c <input type="range" id="cc" min="1" max="18" step="0.1" value="5.7"> <span id="ccv">5.70</span></label>
+  <label>trail <input type="range" id="ct" min="100" max="5000" step="100" value="2000"> <span id="ctv">2000</span></label>
+  <label>speed <input type="range" id="cs" min="1" max="20" step="1" value="5"> <span id="csv">5</span></label>
+  <button id="reset">RESET</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let a = 0.2, b = 0.2, c = 5.7;
+let trailLen = 2000, speed = 5;
+const dt = 0.005;
+const numParticles = 6;
+let iterations = 0;
+let lyapunovSum = 0, lyapunovCount = 0;
+
+function rossler(x, y, z, pa, pb, pc) {
+  return [
+    -y - z,
+    x + pa * y,
+    pb + z * (x - pc)
+  ];
+}
+
+function rk4(x, y, z, h) {
+  const k1 = rossler(x, y, z, a, b, c);
+  const k2 = rossler(x + h*k1[0]/2, y + h*k1[1]/2, z + h*k1[2]/2, a, b, c);
+  const k3 = rossler(x + h*k2[0]/2, y + h*k2[1]/2, z + h*k2[2]/2, a, b, c);
+  const k4 = rossler(x + h*k3[0], y + h*k3[1], z + h*k3[2], a, b, c);
+  return [
+    x + h*(k1[0] + 2*k2[0] + 2*k3[0] + k4[0])/6,
+    y + h*(k1[1] + 2*k2[1] + 2*k3[1] + k4[1])/6,
+    z + h*(k1[2] + 2*k2[2] + 2*k3[2] + k4[2])/6
+  ];
+}
+
+class Particle {
+  constructor(i) {
+    const angle = (i / numParticles) * Math.PI * 2;
+    this.x = Math.cos(angle) * 0.5 + 0.1;
+    this.y = Math.sin(angle) * 0.5 + 0.1;
+    this.z = 0.1;
+    this.trail = [];
+    this.hueOffset = (i / numParticles) * 360;
+  }
+
+  step() {
+    for (let i = 0; i < speed; i++) {
+      const next = rk4(this.x, this.y, this.z, dt);
+      // Divergence check
+      if (Math.abs(next[0]) > 1e6 || Math.abs(next[1]) > 1e6 || Math.abs(next[2]) > 1e6) {
+        this.x = 0.1; this.y = 0.1; this.z = 0.1;
+        this.trail = [];
+        continue;
+      }
+      this.x = next[0]; this.y = next[1]; this.z = next[2];
+      this.trail.push([this.x, this.y, this.z]);
+      if (this.trail.length > trailLen) this.trail.shift();
+      iterations++;
+    }
+  }
+}
+
+let particles = [];
+function initParticles() {
+  particles = [];
+  iterations = 0;
+  lyapunovSum = 0; lyapunovCount = 0;
+  for (let i = 0; i < numParticles; i++) {
+    particles.push(new Particle(i));
+  }
+}
+initParticles();
+
+// Lyapunov estimation using shadow particle
+let lx = 0.1, ly = 0.1, lz = 0.1;
+let lsx = 0.1 + 1e-9, lsy = 0.1, lsz = 0.1;
+
+function estimateLyapunov() {
+  const next = rk4(lx, ly, lz, dt);
+  const snext = rk4(lsx, lsy, lsz, dt);
+  lx = next[0]; ly = next[1]; lz = next[2];
+  lsx = snext[0]; lsy = snext[1]; lsz = snext[2];
+
+  const dx = lsx - lx, dy = lsy - ly, dz = lsz - lz;
+  const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  if (dist > 0 && dist < 1e6) {
+    lyapunovSum += Math.log(dist / 1e-9);
+    lyapunovCount++;
+    // Renormalize
+    const scale = 1e-9 / dist;
+    lsx = lx + dx * scale;
+    lsy = ly + dy * scale;
+    lsz = lz + dz * scale;
+  }
+}
+
+let rotAngle = 0;
+const scale = 12;
+
+function project(x, y, z, rot) {
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  const rx = x * cos - z * sin;
+  const rz = x * sin + z * cos;
+  // Slight tilt
+  const cosT = Math.cos(0.3), sinT = Math.sin(0.3);
+  const ry = y * cosT - rz * sinT;
+  const rz2 = y * sinT + rz * cosT;
+  return [W/2 + rx * scale, H/2 - ry * scale, rz2];
+}
+
+function draw() {
+  ctx.fillStyle = 'rgba(6,6,16,0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  rotAngle += 0.003;
+
+  for (let p = 0; p < particles.length; p++) {
+    particles[p].step();
+    const trail = particles[p].trail;
+    if (trail.length < 2) continue;
+
+    for (let i = 1; i < trail.length; i++) {
+      const alpha = i / trail.length;
+      const hue = (particles[p].hueOffset + i * 0.15) % 360;
+      ctx.strokeStyle = `hsla(${hue}, 100%, 60%, ${alpha * 0.7})`;
+      ctx.lineWidth = 0.5 + alpha * 1.5;
+      ctx.beginPath();
+      const p0 = project(trail[i-1][0], trail[i-1][1], trail[i-1][2], rotAngle);
+      const p1 = project(trail[i][0], trail[i][1], trail[i][2], rotAngle);
+      ctx.moveTo(p0[0], p0[1]);
+      ctx.lineTo(p1[0], p1[1]);
+      ctx.stroke();
+    }
+
+    // Draw head
+    const last = trail[trail.length - 1];
+    const head = project(last[0], last[1], last[2], rotAngle);
+    ctx.beginPath();
+    ctx.arc(head[0], head[1], 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+
+  estimateLyapunov();
+
+  // Update stats
+  document.getElementById('sa').textContent = a.toFixed(3);
+  document.getElementById('sb').textContent = b.toFixed(3);
+  document.getElementById('sc').textContent = c.toFixed(3);
+  document.getElementById('si').textContent = iterations.toLocaleString();
+  document.getElementById('sp').textContent = numParticles;
+  const lyap = lyapunovCount > 0 ? (lyapunovSum / (lyapunovCount * dt)) : 0;
+  document.getElementById('sl').textContent = lyap.toFixed(4);
+
+  requestAnimationFrame(draw);
+}
+
+// Controls
+const sliders = {
+  ca: v => { a = v; document.getElementById('cav').textContent = v.toFixed(2); },
+  cb: v => { b = v; document.getElementById('cbv').textContent = v.toFixed(2); },
+  cc: v => { c = v; document.getElementById('ccv').textContent = v.toFixed(2); },
+  ct: v => { trailLen = v; document.getElementById('ctv').textContent = v; },
+  cs: v => { speed = v; document.getElementById('csv').textContent = v; },
+};
+
+Object.keys(sliders).forEach(id => {
+  document.getElementById(id).addEventListener('input', e => {
+    sliders[id](parseFloat(e.target.value));
+  });
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  document.getElementById('ca').value = 0.2; a = 0.2; document.getElementById('cav').textContent = '0.20';
+  document.getElementById('cb').value = 0.2; b = 0.2; document.getElementById('cbv').textContent = '0.20';
+  document.getElementById('cc').value = 5.7; c = 5.7; document.getElementById('ccv').textContent = '5.70';
+  lx = 0.1; ly = 0.1; lz = 0.1;
+  lsx = 0.1 + 1e-9; lsy = 0.1; lsz = 0.1;
+  lyapunovSum = 0; lyapunovCount = 0;
+  initParticles();
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+});
+
+draw();
+</script>
+</body>
+</html>

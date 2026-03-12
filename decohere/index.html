@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-DECOHERE — Quantum Decoherence</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;overflow:hidden;font-family:'Courier New',monospace;cursor:crosshair;color:#ccc}
+canvas{display:block;position:fixed;top:0;left:0}
+#stats{position:fixed;top:16px;right:16px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:14px 18px;font-size:13px;line-height:1.7;border-radius:4px;z-index:10;min-width:240px}
+#stats h3{color:#a4f;margin-bottom:6px;font-size:14px;letter-spacing:1px}
+#stats span.val{color:#a4f}
+#controls{position:fixed;bottom:16px;left:16px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:12px 16px;border-radius:4px;z-index:10;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:520px}
+#controls button,#controls select{background:#111;color:#a4f;border:1px solid #a4f;padding:6px 12px;font-family:inherit;font-size:12px;cursor:pointer;border-radius:3px}
+#controls button:hover{background:#a4f;color:#060610}
+#controls label{font-size:11px;color:#888;display:flex;align-items:center;gap:4px}
+#controls input[type=range]{width:80px;accent-color:#a4f}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+<h3>SHIELD-DECOHERE</h3>
+<div>Channel: <span class="val" id="sChan">T1 (relaxation)</span></div>
+<div>Purity Tr(ρ²): <span class="val" id="sPurity">1.0000</span></div>
+<div>T1: <span class="val" id="sT1">200</span></div>
+<div>T2: <span class="val" id="sT2">100</span></div>
+<div>Time: <span class="val" id="sTime">0.00</span></div>
+<div>ρ₀₀: <span class="val" id="sR00">0.500</span></div>
+<div>ρ₀₁: <span class="val" id="sR01">0.500</span></div>
+<div>ρ₁₀: <span class="val" id="sR10">0.500</span></div>
+<div>ρ₁₁: <span class="val" id="sR11">0.500</span></div>
+</div>
+<div id="controls">
+<label>Channel:
+<select id="selChan">
+<option value="t1">T1 (relaxation)</option>
+<option value="t2">T2 (dephasing)</option>
+<option value="depol">Depolarizing</option>
+</select>
+</label>
+<label>T1:<input type="range" id="slT1" min="20" max="500" value="200"><span id="vT1">200</span></label>
+<label>T2:<input type="range" id="slT2" min="20" max="500" value="100"><span id="vT2">100</span></label>
+<button id="btnReset">Reset</button>
+<button id="btnToggleEnv">Env: ON</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}
+resize();addEventListener('resize',resize);
+
+const ACCENT='#aa44ff';
+
+// Density matrix: start in |+⟩ = (|0⟩+|1⟩)/√2
+// ρ = [[0.5, 0.5],[0.5, 0.5]]
+let rho={r00:0.5,r11:0.5,r01_re:0.5,r01_im:0};
+let channel='t1',T1=200,T2=100;
+let time=0,running=true,showEnv=true;
+let envParticles=[];
+let t=0;
+
+function resetSim(){
+  rho={r00:0.5,r11:0.5,r01_re:0.5,r01_im:0};
+  time=0;running=true;envParticles=[];
+}
+
+function purity(){
+  return rho.r00*rho.r00+rho.r11*rho.r11+2*(rho.r01_re*rho.r01_re+rho.r01_im*rho.r01_im);
+}
+
+function evolve(dt){
+  if(!running)return;
+  time+=dt;
+  let ch=channel;
+  if(ch==='t1'){
+    // T1: r11 decays to 0, r00 goes to 1, off-diag decays with T2=2*T1
+    let gamma1=dt/T1;
+    let newR11=rho.r11*(1-gamma1);
+    let newR00=1-newR11;
+    let gammaOD=dt/(2*T1);
+    rho.r01_re*=(1-gammaOD);
+    rho.r01_im*=(1-gammaOD);
+    rho.r00=newR00;rho.r11=newR11;
+  }else if(ch==='t2'){
+    // Pure dephasing: populations stay, off-diag decays with T2
+    let gamma2=dt/T2;
+    rho.r01_re*=(1-gamma2);
+    rho.r01_im*=(1-gamma2);
+  }else if(ch==='depol'){
+    // Depolarizing: everything goes to I/2
+    let gamma=dt/Math.min(T1,T2);
+    rho.r00=rho.r00*(1-gamma)+0.5*gamma;
+    rho.r11=rho.r11*(1-gamma)+0.5*gamma;
+    rho.r01_re*=(1-gamma);
+    rho.r01_im*=(1-gamma);
+  }
+
+  // Spawn environment particles
+  if(showEnv&&Math.random()<0.15){
+    let cx=W*0.38,cy=H*0.45,r=Math.min(W,H)*0.18;
+    // Bloch sphere state vector endpoint
+    let offDiagMag=Math.sqrt(rho.r01_re*rho.r01_re+rho.r01_im*rho.r01_im);
+    let theta=Math.acos(rho.r00-rho.r11);
+    let phi=Math.atan2(rho.r01_im,rho.r01_re);
+    let sx=cx+r*Math.sin(theta)*Math.cos(phi);
+    let sy=cy-r*Math.cos(theta)*0.6;
+    let angle=Math.random()*Math.PI*2;
+    envParticles.push({
+      x:sx,y:sy,
+      vx:Math.cos(angle)*(1.5+Math.random()*2),
+      vy:Math.sin(angle)*(1.5+Math.random()*2),
+      life:1,decay:0.006+Math.random()*0.008,
+      size:1.5+Math.random()*2.5,
+      hue:270+Math.random()*60-30
+    });
+  }
+
+  if(purity()<0.501)running=false;
+}
+
+document.getElementById('selChan').onchange=function(){channel=this.value;resetSim()};
+document.getElementById('slT1').oninput=function(){T1=+this.value;document.getElementById('vT1').textContent=this.value};
+document.getElementById('slT2').oninput=function(){T2=+this.value;document.getElementById('vT2').textContent=this.value};
+document.getElementById('btnReset').onclick=resetSim;
+document.getElementById('btnToggleEnv').onclick=function(){
+  showEnv=!showEnv;
+  this.textContent='Env: '+(showEnv?'ON':'OFF');
+};
+
+function drawBlochSphere(cx,cy,radius){
+  ctx.save();
+  // Sphere outline
+  ctx.strokeStyle='#333';ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
+  // Equator ellipse
+  ctx.beginPath();ctx.ellipse(cx,cy,radius,radius*0.3,0,0,Math.PI*2);ctx.stroke();
+  // Vertical axis
+  ctx.beginPath();ctx.moveTo(cx,cy-radius-10);ctx.lineTo(cx,cy+radius+10);ctx.stroke();
+  // Horizontal axis
+  ctx.beginPath();ctx.moveTo(cx-radius-10,cy);ctx.lineTo(cx+radius+10,cy);ctx.stroke();
+
+  // Labels
+  ctx.fillStyle='#666';ctx.font='12px Courier New';ctx.textAlign='center';
+  ctx.fillText('|0⟩',cx,cy-radius-15);
+  ctx.fillText('|1⟩',cx,cy+radius+20);
+  ctx.fillText('+x',cx+radius+18,cy+4);
+  ctx.fillText('-x',cx-radius-18,cy+4);
+
+  // Meridian
+  ctx.strokeStyle='#222';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.ellipse(cx,cy,radius*0.3,radius,0,0,Math.PI*2);ctx.stroke();
+
+  // State vector
+  let offDiagMag=Math.sqrt(rho.r01_re*rho.r01_re+rho.r01_im*rho.r01_im);
+  let rz=rho.r00-rho.r11;// z component = r00 - r11
+  let rx=2*rho.r01_re;
+  let ry=2*rho.r01_im;
+  let blochR=Math.sqrt(rx*rx+ry*ry+rz*rz);
+
+  let sx=cx+rx*radius;
+  let sy=cy-rz*radius*0.6-ry*radius*0.3;
+
+  // Trail / ghost showing pure state position
+  ctx.strokeStyle='rgba(170,68,255,0.15)';ctx.lineWidth=1;
+  ctx.setLineDash([3,5]);
+  let pureTheta=Math.PI/4;// initial state angle
+  let pureSx=cx+radius*Math.sin(pureTheta);
+  let pureSy=cy-radius*Math.cos(pureTheta)*0.6;
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(pureSx,pureSy);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(170,68,255,0.15)';
+  ctx.beginPath();ctx.arc(pureSx,pureSy,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#444';ctx.font='9px Courier New';
+  ctx.fillText('pure',pureSx+15,pureSy);
+
+  // Current state vector
+  ctx.strokeStyle=ACCENT;ctx.lineWidth=2.5;
+  ctx.shadowColor=ACCENT;ctx.shadowBlur=10;
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(sx,sy);ctx.stroke();
+  ctx.fillStyle=ACCENT;
+  ctx.beginPath();ctx.arc(sx,sy,5,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Bloch radius indicator
+  ctx.fillStyle='#888';ctx.font='10px Courier New';ctx.textAlign='left';
+  ctx.fillText('r = '+blochR.toFixed(3),cx+radius+10,cy-radius+20);
+  ctx.fillText('(1=pure, 0=mixed)',cx+radius+10,cy-radius+35);
+
+  // Purity ring
+  let pRing=purity();
+  ctx.strokeStyle='rgba(170,68,255,0.3)';ctx.lineWidth=3;
+  ctx.beginPath();ctx.arc(cx,cy,radius*blochR,0,Math.PI*2);ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawDensityMatrix(x,y,size){
+  ctx.save();
+  ctx.fillStyle='#666';ctx.font='12px Courier New';ctx.textAlign='center';
+  ctx.fillText('Density Matrix ρ',x+size,y-15);
+
+  let cells=[[rho.r00,rho.r01_re],[rho.r01_re,rho.r11]];
+  let labels=[['ρ₀₀','ρ₀₁'],['ρ₁₀','ρ₁₁']];
+  let csize=size;
+
+  for(let r=0;r<2;r++){
+    for(let c=0;c<2;c++){
+      let cx=x+c*csize,cy=y+r*csize;
+      let val=cells[r][c];
+      let intensity=Math.abs(val);
+      let hue=val>=0?270:0;
+      ctx.fillStyle=`hsla(${hue},70%,${20+intensity*50}%,0.8)`;
+      ctx.fillRect(cx,cy,csize-2,csize-2);
+      ctx.strokeStyle='#333';ctx.lineWidth=1;
+      ctx.strokeRect(cx,cy,csize-2,csize-2);
+      ctx.fillStyle='#fff';ctx.font='11px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(val.toFixed(3),cx+csize/2-1,cy+csize/2-1);
+    }
+  }
+  ctx.restore();
+}
+
+function drawPurityGraph(x,y,w,h){
+  ctx.save();
+  ctx.fillStyle='#666';ctx.font='11px Courier New';ctx.textAlign='left';
+  ctx.fillText('Purity over time',x,y-8);
+
+  ctx.strokeStyle='#222';ctx.lineWidth=1;
+  ctx.strokeRect(x,y,w,h);
+
+  // Y axis
+  ctx.fillStyle='#444';ctx.font='9px Courier New';ctx.textAlign='right';
+  ctx.fillText('1.0',x-4,y+5);
+  ctx.fillText('0.5',x-4,y+h/2+3);
+  ctx.fillText('0.0',x-4,y+h+3);
+
+  // 0.5 line
+  ctx.strokeStyle='#333';ctx.setLineDash([3,5]);
+  ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#555';ctx.textAlign='left';
+  ctx.fillText('mixed state',x+w+5,y+h/2+3);
+
+  // Purity dot at current value
+  let p=purity();
+  let py=y+h*(1-p);
+  ctx.fillStyle=ACCENT;
+  ctx.beginPath();ctx.arc(x+w*Math.min(1,time/500),py,4,0,Math.PI*2);ctx.fill();
+
+  // Decay curve preview
+  ctx.strokeStyle='rgba(170,68,255,0.5)';ctx.lineWidth=1.5;
+  ctx.beginPath();
+  let tauEff=channel==='t1'?T1:(channel==='t2'?T2:Math.min(T1,T2));
+  for(let i=0;i<=w;i++){
+    let tt=i/w*500;
+    let pp;
+    if(channel==='t2'){
+      pp=0.5+0.5*Math.exp(-2*tt/T2);
+    }else if(channel==='t1'){
+      let e1=Math.exp(-tt/T1);
+      let e2=Math.exp(-tt/(2*T1));
+      pp=0.5*(1+e1*e1-2*e1)+0.5*e2*e2+0.5;
+      pp=Math.min(1,0.5+0.5*Math.exp(-tt/tauEff));
+    }else{
+      pp=0.5+0.5*Math.exp(-2*tt/tauEff);
+    }
+    if(i===0)ctx.moveTo(x+i,y+h*(1-pp));
+    else ctx.lineTo(x+i,y+h*(1-pp));
+  }
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function updateEnvParticles(){
+  for(let i=envParticles.length-1;i>=0;i--){
+    let p=envParticles[i];
+    p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
+    if(p.life<=0||p.x<0||p.x>W||p.y<0||p.y>H)envParticles.splice(i,1);
+  }
+}
+
+function drawEnvParticles(){
+  for(let p of envParticles){
+    ctx.save();
+    ctx.globalAlpha=p.life*0.6;
+    ctx.fillStyle=`hsl(${p.hue},60%,55%)`;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+}
+
+function updateStats(){
+  let labels={t1:'T1 (relaxation)',t2:'T2 (dephasing)',depol:'Depolarizing'};
+  document.getElementById('sChan').textContent=labels[channel];
+  document.getElementById('sPurity').textContent=purity().toFixed(6);
+  document.getElementById('sT1').textContent=T1;
+  document.getElementById('sT2').textContent=T2;
+  document.getElementById('sTime').textContent=time.toFixed(1);
+  document.getElementById('sR00').textContent=rho.r00.toFixed(4);
+  document.getElementById('sR01').textContent=rho.r01_re.toFixed(4);
+  document.getElementById('sR10').textContent=rho.r01_re.toFixed(4);
+  document.getElementById('sR11').textContent=rho.r11.toFixed(4);
+}
+
+function draw(){
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+  t++;
+
+  evolve(0.5);
+
+  // Title
+  ctx.fillStyle=ACCENT;ctx.font='bold 16px Courier New';ctx.textAlign='left';
+  ctx.fillText('SHIELD-DECOHERE — Quantum Decoherence',20,30);
+  ctx.fillStyle='#555';ctx.font='11px Courier New';
+  ctx.fillText('Visualizing qubit decoherence on the Bloch sphere',20,48);
+
+  // Bloch sphere
+  let bx=W*0.32,by=H*0.48,br=Math.min(W*0.18,H*0.28);
+  drawBlochSphere(bx,by,br);
+
+  // Density matrix
+  let dmSize=60;
+  drawDensityMatrix(W*0.62,H*0.2,dmSize);
+
+  // Purity graph
+  drawPurityGraph(W*0.62,H*0.5,W*0.25,H*0.25);
+
+  // Channel description
+  ctx.fillStyle='#555';ctx.font='11px Courier New';ctx.textAlign='left';
+  let descY=H*0.82;
+  if(channel==='t1'){
+    ctx.fillText('T1 (Energy Relaxation): |1⟩ → |0⟩ spontaneous emission',40,descY);
+    ctx.fillText('State vector shrinks and falls toward |0⟩ (north pole)',40,descY+16);
+  }else if(channel==='t2'){
+    ctx.fillText('T2 (Pure Dephasing): Off-diagonal elements decay',40,descY);
+    ctx.fillText('State vector shrinks toward z-axis, loses phase coherence',40,descY+16);
+  }else{
+    ctx.fillText('Depolarizing Channel: All Bloch components decay equally',40,descY);
+    ctx.fillText('State vector shrinks uniformly toward origin (maximally mixed)',40,descY+16);
+  }
+
+  updateEnvParticles();
+  drawEnvParticles();
+  updateStats();
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

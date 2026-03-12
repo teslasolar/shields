@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-TUNING — Prime Tuning Systems</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc;cursor:crosshair}
+canvas{display:block;position:absolute;top:0;left:0}
+#stats{position:fixed;top:16px;right:16px;background:rgba(6,6,16,0.88);border:1px solid #ff44aa55;padding:14px 18px;font-size:13px;line-height:1.8;z-index:10;min-width:250px;pointer-events:none}
+#stats .hdr{font-size:11px;letter-spacing:2px;color:#ff44aa;border-bottom:1px solid #ff44aa33;padding-bottom:6px;margin-bottom:6px}
+#stats .row{display:flex;justify-content:space-between;gap:14px}
+#stats .lbl{color:#777}
+#stats .val{color:#ff44aa;text-align:right}
+#controls{position:fixed;bottom:16px;left:16px;background:rgba(6,6,16,0.88);border:1px solid #ff44aa55;padding:14px 18px;font-size:12px;z-index:10;display:flex;flex-direction:column;gap:8px;min-width:280px}
+#controls .hdr{font-size:11px;letter-spacing:2px;color:#ff44aa;border-bottom:1px solid #ff44aa33;padding-bottom:6px;margin-bottom:4px}
+button{background:transparent;color:#ff44aa;border:1px solid #ff44aa66;padding:5px 13px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;transition:background .2s}
+button:hover{background:#ff44aa22}
+button.active{background:#ff44aa33;border-color:#ff44aa}
+.btn-row{display:flex;gap:6px;flex-wrap:wrap}
+.info{color:#555;font-size:11px;margin-top:2px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="hdr">SHIELD-TUNING</div>
+  <div class="row"><span class="lbl">SYSTEM</span><span class="val" id="s-sys">—</span></div>
+  <div class="row"><span class="lbl">INTERVAL</span><span class="val" id="s-int">—</span></div>
+  <div class="row"><span class="lbl">RATIO</span><span class="val" id="s-ratio">—</span></div>
+  <div class="row"><span class="lbl">CENTS</span><span class="val" id="s-cents">—</span></div>
+  <div class="row"><span class="lbl">BEAT FREQ</span><span class="val" id="s-beat">—</span></div>
+  <div class="row"><span class="lbl">COMPARE</span><span class="val" id="s-cmp">—</span></div>
+</div>
+<div id="controls">
+  <div class="hdr">CONTROLS</div>
+  <div class="btn-row">
+    <button id="b-equal" class="active">EQUAL</button>
+    <button id="b-just">JUST</button>
+    <button id="b-pyth">PYTHAG</button>
+    <button id="b-prime">PRIME</button>
+  </div>
+  <div class="btn-row">
+    <button id="b-cmp">COMPARE: OFF</button>
+  </div>
+  <div class="info">Click keys to play. Web Audio starts on first click.</div>
+</div>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+
+function resize(){ C.width=innerWidth; C.height=innerHeight; }
+addEventListener('resize',resize); resize();
+
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const INTERVAL_NAMES = ['Unison','m2','M2','m3','M3','P4','Tritone','P5','m6','M6','m7','M7','Octave'];
+const WHITE_NOTES = [0,2,4,5,7,9,11]; // C D E F G A B
+const BLACK_NOTES = [1,3,6,8,10]; // C# D# F# G# A#
+
+// Tuning ratios (12 semitones + octave = 13 entries)
+const EQUAL = Array.from({length:13},(_,i)=>Math.pow(2,i/12));
+const JUST = [1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 9/5, 15/8, 2];
+const PYTH = [1, 256/243, 9/8, 32/27, 81/64, 4/3, 729/512, 3/2, 128/81, 27/16, 16/9, 243/128, 2];
+// Prime-limit tuning using shield primes (2,3,5,7,11,13,17)
+const PRIME = [1, 17/16, 13/12, 7/6, 5/4, 4/3, 17/12, 3/2, 13/8, 5/3, 7/4, 17/9, 2];
+
+const SYSTEMS = {equal:EQUAL, just:JUST, pyth:PYTH, prime:PRIME};
+const SYS_NAMES = {equal:'Equal Temperament', just:'Just Intonation', pyth:'Pythagorean', prime:'Prime-Limit'};
+
+let curSys = 'equal';
+let cmpSys = null; // comparison system
+let selNote = -1;
+let audioCtx = null;
+let activeOscs = [];
+
+function ratioToStr(r){
+  // find simple fraction
+  for(let d=1;d<=512;d++){
+    const n=Math.round(r*d);
+    if(Math.abs(n/d-r)<0.0001) return `${n}/${d}`;
+  }
+  return r.toFixed(4);
+}
+
+function ratioToCents(r){ return 1200*Math.log2(r); }
+
+function getKeyLayout(){
+  const totalWhite = 14; // 2 octaves
+  const kw = Math.min(60, (C.width*0.7)/totalWhite);
+  const kh = kw*4;
+  const startX = (C.width - totalWhite*kw)/2;
+  const startY = C.height*0.45;
+  const keys = [];
+
+  for(let oct=0;oct<2;oct++){
+    for(let i=0;i<7;i++){
+      const idx = oct*7+i;
+      const note = oct*12+WHITE_NOTES[i];
+      keys.push({x:startX+idx*kw, y:startY, w:kw-2, h:kh, note, black:false, idx});
+    }
+  }
+  for(let oct=0;oct<2;oct++){
+    const blackPos = [0,1,3,4,5]; // positions relative to white keys
+    for(let i=0;i<5;i++){
+      const wIdx = oct*7+blackPos[i];
+      const note = oct*12+BLACK_NOTES[i];
+      const bw = kw*0.6, bh = kh*0.6;
+      keys.push({x:startX+wIdx*kw+kw-bw/2-1, y:startY, w:bw, h:bh, note, black:true});
+    }
+  }
+  return {keys, kw, kh, startX, startY, totalWhite};
+}
+
+function playNote(note){
+  if(!audioCtx) audioCtx = new AudioContext();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+
+  // stop prev
+  activeOscs.forEach(o=>{try{o.g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.1);o.osc.stop(audioCtx.currentTime+0.15);}catch(e){}});
+  activeOscs=[];
+
+  const baseFreq = 261.63; // C4
+  const semi = note % 24;
+  const octShift = Math.floor(note/12);
+  const ratios = SYSTEMS[curSys];
+  const semiInOct = semi % 12;
+  const freq = baseFreq * ratios[semiInOct] * Math.pow(2, octShift);
+
+  function makeOsc(f){
+    const osc=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    osc.type='sine'; osc.frequency.value=f;
+    g.gain.value=0.15;
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start();
+    g.gain.setValueAtTime(0.15,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+2);
+    osc.stop(audioCtx.currentTime+2.1);
+    activeOscs.push({osc,g});
+    return f;
+  }
+
+  const f1 = makeOsc(freq);
+
+  if(cmpSys){
+    const cmpRatios = SYSTEMS[cmpSys];
+    const f2 = baseFreq * cmpRatios[semiInOct] * Math.pow(2, octShift);
+    makeOsc(f2);
+    document.getElementById('s-beat').textContent = Math.abs(f1-f2).toFixed(2)+' Hz';
+    document.getElementById('s-cmp').textContent = SYS_NAMES[cmpSys];
+  } else {
+    document.getElementById('s-beat').textContent = '—';
+    document.getElementById('s-cmp').textContent = 'OFF';
+  }
+
+  selNote = note;
+  const sIdx = semiInOct;
+  document.getElementById('s-sys').textContent = SYS_NAMES[curSys];
+  document.getElementById('s-int').textContent = INTERVAL_NAMES[sIdx] + ' (' + NOTE_NAMES[sIdx] + ')';
+  document.getElementById('s-ratio').textContent = ratioToStr(ratios[sIdx]);
+  document.getElementById('s-cents').textContent = ratioToCents(ratios[sIdx]).toFixed(2);
+}
+
+C.addEventListener('click', e=>{
+  const rect = C.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const {keys} = getKeyLayout();
+  // check black keys first (on top)
+  for(let i=keys.length-1;i>=0;i--){
+    const k=keys[i];
+    if(mx>=k.x && mx<=k.x+k.w && my>=k.y && my<=k.y+k.h){
+      playNote(k.note);
+      return;
+    }
+  }
+});
+
+// System buttons
+const sysBtns = {equal:'b-equal',just:'b-just',pyth:'b-pyth',prime:'b-prime'};
+for(const [sys,id] of Object.entries(sysBtns)){
+  document.getElementById(id).onclick=()=>{
+    curSys=sys;
+    for(const bid of Object.values(sysBtns)) document.getElementById(bid).classList.remove('active');
+    document.getElementById(id).classList.add('active');
+    document.getElementById('s-sys').textContent=SYS_NAMES[sys];
+    if(selNote>=0) playNote(selNote);
+  };
+}
+
+// Compare button
+const cmpBtn = document.getElementById('b-cmp');
+const cmpOrder = [null,'equal','just','pyth','prime'];
+let cmpIdx = 0;
+cmpBtn.onclick=()=>{
+  cmpIdx=(cmpIdx+1)%cmpOrder.length;
+  cmpSys=cmpOrder[cmpIdx];
+  cmpBtn.textContent='COMPARE: '+(cmpSys?SYS_NAMES[cmpSys].toUpperCase():'OFF');
+};
+
+function draw(){
+  X.fillStyle='#060610'; X.fillRect(0,0,C.width,C.height);
+
+  // header
+  X.font='11px "Courier New",monospace'; X.fillStyle='#ff44aa55'; X.textAlign='center';
+  X.fillText('SHIELD-TUNING \u2014 Prime Tuning Systems',C.width/2,28);
+
+  const {keys,kw,kh,startX,startY,totalWhite}=getKeyLayout();
+  const ratios = SYSTEMS[curSys];
+
+  // Draw interval ratios above keyboard
+  X.font='10px "Courier New",monospace'; X.textAlign='center';
+  for(let i=0;i<13;i++){
+    const xp = startX + i*(totalWhite*kw/12);
+    X.fillStyle='#ff44aa44';
+    X.fillText(INTERVAL_NAMES[i], startX + i*kw, startY-30);
+    X.fillStyle='#ff44aa22';
+    X.fillText(ratioToStr(ratios[Math.min(i,12)]), startX + i*kw, startY-15);
+  }
+
+  // Draw beat frequency visualization above keyboard
+  if(cmpSys){
+    const cmpRatios = SYSTEMS[cmpSys];
+    const baseFreq = 261.63;
+    X.strokeStyle='#ff44aa33'; X.lineWidth=1;
+    const beatY = startY - 80;
+    const beatH = 30;
+    X.beginPath();
+    for(let i=0;i<13;i++){
+      const f1=baseFreq*ratios[i], f2=baseFreq*cmpRatios[i];
+      const beat=Math.abs(f1-f2);
+      const bh=Math.min(beat*2,beatH);
+      const xp=startX+i*(totalWhite*kw/12.5);
+      X.fillStyle=`rgba(255,68,170,${Math.min(beat/10,0.6)})`;
+      X.fillRect(xp-kw*0.3,beatY+beatH-bh,kw*0.6,bh);
+    }
+    X.font='9px "Courier New",monospace'; X.fillStyle='#ff44aa33';
+    X.fillText('BEAT FREQUENCIES (Hz)',C.width/2, beatY-6);
+  }
+
+  // Draw white keys
+  for(const k of keys){
+    if(k.black) continue;
+    const selected = selNote===k.note;
+    X.fillStyle = selected ? '#2a1520' : '#141420';
+    X.fillRect(k.x,k.y,k.w,k.h);
+    X.strokeStyle = selected ? '#ff44aa' : '#ff44aa33';
+    X.lineWidth = selected ? 2 : 1;
+    X.strokeRect(k.x,k.y,k.w,k.h);
+
+    // note name
+    const noteName = NOTE_NAMES[k.note%12];
+    X.font='10px "Courier New",monospace';
+    X.fillStyle = selected ? '#ff44aa' : '#ff44aa44';
+    X.textAlign='center';
+    X.fillText(noteName, k.x+k.w/2, k.y+k.h-10);
+  }
+
+  // Draw black keys
+  for(const k of keys){
+    if(!k.black) continue;
+    const selected = selNote===k.note;
+    X.fillStyle = selected ? '#3a1530' : '#060610';
+    X.fillRect(k.x,k.y,k.w,k.h);
+    X.strokeStyle = selected ? '#ff44aa' : '#ff44aa44';
+    X.lineWidth = selected ? 2 : 1;
+    X.strokeRect(k.x,k.y,k.w,k.h);
+
+    const noteName = NOTE_NAMES[k.note%12];
+    X.font='9px "Courier New",monospace';
+    X.fillStyle = selected ? '#ff44aa' : '#ff44aa33';
+    X.textAlign='center';
+    X.fillText(noteName, k.x+k.w/2, k.y+k.h-8);
+  }
+
+  // Draw cents comparison chart below keyboard
+  const chartY = startY+kh+40;
+  const chartH = Math.min(120, C.height-chartY-80);
+  if(chartH>40){
+    X.font='9px "Courier New",monospace'; X.fillStyle='#ff44aa33'; X.textAlign='center';
+    X.fillText('CENTS DEVIATION FROM EQUAL TEMPERAMENT',C.width/2,chartY-8);
+
+    const barW = (totalWhite*kw)/13;
+    for(let i=0;i<13;i++){
+      const eqCents = ratioToCents(EQUAL[i]);
+      const curCents = ratioToCents(ratios[i]);
+      const diff = curCents - eqCents;
+      const xp = startX + i*barW;
+
+      // zero line
+      X.strokeStyle='#333'; X.lineWidth=0.5;
+      const zeroY = chartY+chartH/2;
+
+      const bh = diff * (chartH/50); // scale
+      X.fillStyle = diff>=0 ? 'rgba(255,68,170,0.4)' : 'rgba(68,170,255,0.4)';
+      X.fillRect(xp+2, zeroY-Math.max(0,bh), barW-4, Math.abs(bh));
+
+      X.fillStyle='#777'; X.font='8px "Courier New",monospace'; X.textAlign='center';
+      X.fillText(diff.toFixed(1), xp+barW/2, zeroY+(diff>=0?-bh-4:Math.abs(bh)+10));
+      X.fillText(NOTE_NAMES[i%12], xp+barW/2, chartY+chartH+12);
+    }
+    // zero line
+    X.strokeStyle='#444'; X.lineWidth=1;
+    X.beginPath(); X.moveTo(startX,chartY+chartH/2); X.lineTo(startX+totalWhite*kw,chartY+chartH/2); X.stroke();
+  }
+
+  // system indicator
+  X.font='13px "Courier New",monospace'; X.fillStyle='#ff44aa'; X.textAlign='center';
+  X.fillText(SYS_NAMES[curSys].toUpperCase(), C.width/2, startY-55);
+
+  requestAnimationFrame(draw);
+}
+
+document.getElementById('s-sys').textContent=SYS_NAMES[curSys];
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

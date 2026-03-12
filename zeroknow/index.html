@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-ZEROKNOW — Zero-Knowledge Proof</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; color: #4f8; }
+canvas { display: block; position: fixed; top: 0; left: 0; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4f8; padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  z-index: 10; min-width: 240px; border-radius: 4px;
+}
+#stats .title { font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #4f8; letter-spacing: 1px; }
+#stats .label { color: #6a7; }
+#stats .val { color: #bfe; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; z-index: 10; display: flex; gap: 8px; flex-wrap: wrap;
+}
+#controls button {
+  background: rgba(6,6,16,0.85); border: 1px solid #4f8; color: #4f8;
+  font-family: 'Courier New', monospace; font-size: 12px; padding: 7px 14px;
+  cursor: pointer; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,255,136,0.15); }
+#controls button.active { background: rgba(68,255,136,0.25); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-ZEROKNOW — ZK Proof</div>
+  <div><span class="label">Round: </span><span class="val" id="s-round">0</span></div>
+  <div><span class="label">Passed: </span><span class="val" id="s-passed">0</span></div>
+  <div><span class="label">Confidence: </span><span class="val" id="s-conf">0%</span></div>
+  <div><span class="label">Nodes: </span><span class="val" id="s-nodes">7</span></div>
+  <div><span class="label">Edges: </span><span class="val" id="s-edges">—</span></div>
+  <div><span class="label">Status: </span><span class="val" id="s-status">Ready</span></div>
+</div>
+<div id="controls">
+  <button id="btn-next">Next Round</button>
+  <button id="btn-auto">Auto-Play</button>
+  <button id="btn-reset">Reset</button>
+  <button id="btn-reveal">Reveal (Cheat)</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const NUM_NODES = 7; // shield primes
+const COLORS_PALETTE = ['#ff4444', '#44aaff', '#ffcc00']; // 3-coloring colors
+const NODE_RADIUS = 28;
+
+// Graph structure — build a 3-colorable graph
+let nodes = [];
+let edges = [];
+let trueColoring = []; // secret: indices into COLORS_PALETTE
+let permutedColoring = []; // per-round random permutation of colors
+let roundNum = 0;
+let challengesPassed = 0;
+let revealed = false;
+let autoPlay = false;
+let autoTimer = 0;
+let animPhase = 'idle'; // idle, committed, challenged, revealed
+let challengedEdge = -1;
+let phaseTimer = 0;
+let particles = [];
+let flashNodes = []; // nodes that flash during reveal
+
+function buildGraph() {
+  // Place 7 nodes in a circle
+  const cx = W * 0.45;
+  const cy = H * 0.48;
+  const radius = Math.min(W, H) * 0.25;
+  nodes = [];
+  for (let i = 0; i < NUM_NODES; i++) {
+    const angle = (i / NUM_NODES) * Math.PI * 2 - Math.PI / 2;
+    nodes.push({
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
+      label: i
+    });
+  }
+
+  // Build edges ensuring 3-colorability
+  // Use a known 3-colorable structure: connect each node to the next 2
+  edges = [];
+  const edgeSet = new Set();
+  function addEdge(a, b) {
+    if (a === b) return;
+    const key = Math.min(a, b) + ',' + Math.max(a, b);
+    if (!edgeSet.has(key)) {
+      edgeSet.add(key);
+      edges.push([a, b]);
+    }
+  }
+  for (let i = 0; i < NUM_NODES; i++) {
+    addEdge(i, (i + 1) % NUM_NODES);
+    addEdge(i, (i + 2) % NUM_NODES);
+  }
+  // Add a few cross edges that maintain 3-colorability
+  addEdge(0, 3);
+
+  // Generate a valid 3-coloring via greedy
+  trueColoring = new Array(NUM_NODES).fill(-1);
+  for (let i = 0; i < NUM_NODES; i++) {
+    const usedColors = new Set();
+    for (const [a, b] of edges) {
+      if (a === i && trueColoring[b] >= 0) usedColors.add(trueColoring[b]);
+      if (b === i && trueColoring[a] >= 0) usedColors.add(trueColoring[a]);
+    }
+    for (let c = 0; c < 3; c++) {
+      if (!usedColors.has(c)) { trueColoring[i] = c; break; }
+    }
+  }
+
+  document.getElementById('s-nodes').textContent = NUM_NODES;
+  document.getElementById('s-edges').textContent = edges.length;
+}
+
+function randomPermutation() {
+  // Create a random permutation of colors (0,1,2)
+  const perm = [0, 1, 2];
+  for (let i = perm.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [perm[i], perm[j]] = [perm[j], perm[i]];
+  }
+  permutedColoring = trueColoring.map(c => perm[c]);
+}
+
+function startRound() {
+  roundNum++;
+  randomPermutation();
+  animPhase = 'committed';
+  phaseTimer = 0;
+  challengedEdge = -1;
+  flashNodes = [];
+  document.getElementById('s-status').textContent = 'Committed';
+  updateStats();
+}
+
+function challenge() {
+  challengedEdge = Math.floor(Math.random() * edges.length);
+  animPhase = 'challenged';
+  phaseTimer = 0;
+  document.getElementById('s-status').textContent = 'Challenged edge ' + challengedEdge;
+}
+
+function revealChallenge() {
+  const [a, b] = edges[challengedEdge];
+  const ca = permutedColoring[a];
+  const cb = permutedColoring[b];
+  flashNodes = [a, b];
+  // Check: colors must differ
+  if (ca !== cb) {
+    challengesPassed++;
+    animPhase = 'pass';
+    document.getElementById('s-status').textContent = 'PASS — colors differ';
+    // Spawn success particles
+    for (const ni of [a, b]) {
+      for (let p = 0; p < 10; p++) {
+        particles.push({
+          x: nodes[ni].x, y: nodes[ni].y,
+          vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
+          life: 1, decay: 0.012 + Math.random() * 0.01, r: 3 + Math.random() * 3,
+          color: COLORS_PALETTE[permutedColoring[ni]]
+        });
+      }
+    }
+  } else {
+    animPhase = 'fail';
+    document.getElementById('s-status').textContent = 'FAIL — same color!';
+  }
+  phaseTimer = 0;
+  updateStats();
+}
+
+function nextRound() {
+  if (animPhase === 'idle' || animPhase === 'pass' || animPhase === 'fail') {
+    startRound();
+    // auto-advance through phases with slight delay via phaseTimer
+  } else if (animPhase === 'committed') {
+    challenge();
+  } else if (animPhase === 'challenged') {
+    revealChallenge();
+  }
+}
+
+function resetAll() {
+  roundNum = 0;
+  challengesPassed = 0;
+  revealed = false;
+  autoPlay = false;
+  animPhase = 'idle';
+  challengedEdge = -1;
+  flashNodes = [];
+  document.getElementById('btn-auto').textContent = 'Auto-Play';
+  document.getElementById('btn-auto').classList.remove('active');
+  document.getElementById('btn-reveal').textContent = 'Reveal (Cheat)';
+  document.getElementById('s-status').textContent = 'Ready';
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('s-round').textContent = roundNum;
+  document.getElementById('s-passed').textContent = challengesPassed;
+  // Confidence: 1 - (1/edges)^passed
+  const conf = roundNum > 0 ? (1 - Math.pow(1 / edges.length, challengesPassed)) * 100 : 0;
+  document.getElementById('s-conf').textContent = conf.toFixed(2) + '%';
+}
+
+// Buttons
+document.getElementById('btn-next').addEventListener('click', nextRound);
+document.getElementById('btn-auto').addEventListener('click', () => {
+  autoPlay = !autoPlay;
+  document.getElementById('btn-auto').textContent = autoPlay ? 'Stop' : 'Auto-Play';
+  document.getElementById('btn-auto').classList.toggle('active', autoPlay);
+});
+document.getElementById('btn-reset').addEventListener('click', resetAll);
+document.getElementById('btn-reveal').addEventListener('click', () => {
+  revealed = !revealed;
+  document.getElementById('btn-reveal').textContent = revealed ? 'Hide Colors' : 'Reveal (Cheat)';
+});
+
+let animTime = 0;
+function draw(t) {
+  animTime = t * 0.001;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background grid
+  ctx.strokeStyle = 'rgba(68,255,136,0.03)';
+  ctx.lineWidth = 1;
+  const gs = 40;
+  for (let x = 0; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Draw edges
+  for (let i = 0; i < edges.length; i++) {
+    const [a, b] = edges[i];
+    const isChallenged = i === challengedEdge && (animPhase === 'challenged' || animPhase === 'pass' || animPhase === 'fail');
+    ctx.strokeStyle = isChallenged
+      ? `rgba(255,255,100,${0.6 + 0.3 * Math.sin(animTime * 5)})`
+      : 'rgba(68,255,136,0.2)';
+    ctx.lineWidth = isChallenged ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(nodes[a].x, nodes[a].y);
+    ctx.lineTo(nodes[b].x, nodes[b].y);
+    ctx.stroke();
+
+    if (isChallenged) {
+      // Highlight glow
+      ctx.shadowColor = '#ff8';
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = 'rgba(255,255,100,0.3)';
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Draw nodes
+  for (let i = 0; i < NUM_NODES; i++) {
+    const n = nodes[i];
+    const isFlash = flashNodes.includes(i);
+    const isRevealed = revealed || (isFlash && (animPhase === 'pass' || animPhase === 'fail'));
+
+    // Committed state: show locked boxes
+    const showCommit = animPhase === 'committed' || animPhase === 'challenged';
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
+
+    if (isRevealed) {
+      const col = revealed ? COLORS_PALETTE[trueColoring[i]] : COLORS_PALETTE[permutedColoring[i]];
+      ctx.fillStyle = col;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = isFlash ? 20 + 10 * Math.sin(animTime * 6) : 8;
+    } else if (showCommit) {
+      ctx.fillStyle = '#1a2a1a';
+      ctx.shadowColor = '#4f8';
+      ctx.shadowBlur = 4;
+    } else {
+      ctx.fillStyle = '#1a1a2a';
+      ctx.shadowBlur = 0;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Border
+    ctx.strokeStyle = isFlash ? '#fff' : '#4f8';
+    ctx.lineWidth = isFlash ? 2.5 : 1.5;
+    ctx.stroke();
+
+    // Node label
+    ctx.fillStyle = isRevealed ? '#060610' : '#4f8';
+    ctx.font = '14px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(i, n.x, n.y);
+
+    // Lock icon when committed
+    if (showCommit && !isRevealed) {
+      ctx.fillStyle = 'rgba(68,255,136,0.4)';
+      ctx.font = '10px Courier New';
+      ctx.fillText('?', n.x, n.y + NODE_RADIUS + 14);
+    }
+  }
+
+  // Title
+  ctx.fillStyle = `rgba(68,255,136,${0.4 + 0.15 * Math.sin(animTime * 1.5)})`;
+  ctx.font = '20px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('ZERO-KNOWLEDGE PROOF', W * 0.45, H * 0.06);
+  ctx.font = '11px Courier New';
+  ctx.fillStyle = 'rgba(68,255,136,0.35)';
+  ctx.fillText('Graph 3-Coloring Protocol', W * 0.45, H * 0.09);
+
+  // Phase indicator
+  const phaseLabels = {
+    idle: 'PRESS [NEXT ROUND]',
+    committed: 'PROVER COMMITTED — PRESS [NEXT ROUND] TO CHALLENGE',
+    challenged: 'VERIFIER CHALLENGED — PRESS [NEXT ROUND] TO REVEAL',
+    pass: 'VERIFIED — COLORS DIFFER',
+    fail: 'FAILED — INVALID PROOF'
+  };
+  ctx.fillStyle = animPhase === 'fail' ? '#f44' : (animPhase === 'pass' ? '#4f8' : 'rgba(68,255,136,0.5)');
+  ctx.font = '12px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(phaseLabels[animPhase] || '', W * 0.45, H * 0.94);
+
+  // Confidence bar
+  const conf = roundNum > 0 ? (1 - Math.pow(1 / edges.length, challengesPassed)) : 0;
+  const barW = 300;
+  const barH = 10;
+  const barX = W * 0.45 - barW / 2;
+  const barY = H * 0.88;
+  ctx.strokeStyle = '#4f8';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barW, barH);
+  const grad = ctx.createLinearGradient(barX, barY, barX + barW * conf, barY);
+  grad.addColorStop(0, '#1a3a1a');
+  grad.addColorStop(1, '#4f8');
+  ctx.fillStyle = grad;
+  ctx.fillRect(barX + 1, barY + 1, (barW - 2) * conf, barH - 2);
+  ctx.fillStyle = '#4f8';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('CONFIDENCE: ' + (conf * 100).toFixed(2) + '%', W * 0.45, barY - 6);
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color || '#4f8';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Auto play
+  if (autoPlay) {
+    autoTimer++;
+    if (autoTimer > 50) {
+      autoTimer = 0;
+      nextRound();
+    }
+  }
+
+  phaseTimer++;
+  requestAnimationFrame(draw);
+}
+
+buildGraph();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

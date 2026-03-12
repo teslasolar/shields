@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-GROVER — Grover's Search</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;overflow:hidden;font-family:'Courier New',monospace;cursor:crosshair;color:#ccc}
+canvas{display:block;position:fixed;top:0;left:0}
+#stats{position:fixed;top:16px;right:16px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:14px 18px;font-size:13px;line-height:1.7;border-radius:4px;z-index:10;min-width:240px}
+#stats h3{color:#a4f;margin-bottom:6px;font-size:14px;letter-spacing:1px}
+#stats span.val{color:#a4f}
+#controls{position:fixed;bottom:16px;left:16px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:12px 16px;border-radius:4px;z-index:10;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#controls button,#controls select,#controls input{background:#111;color:#a4f;border:1px solid #a4f;padding:6px 12px;font-family:inherit;font-size:12px;cursor:pointer;border-radius:3px}
+#controls button:hover{background:#a4f;color:#060610}
+#controls label{font-size:12px;color:#888}
+#controls input[type=number]{width:55px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+<h3>SHIELD-GROVER</h3>
+<div>Target State: <span class="val" id="sTarget">|127⟩</span></div>
+<div>Iteration: <span class="val" id="sIter">0</span></div>
+<div>Target Probability: <span class="val" id="sProb">0.0078</span></div>
+<div>Theoretical Optimum: <span class="val" id="sOpt">11 iterations</span></div>
+<div>Max Amplitude: <span class="val" id="sMaxAmp">0.0884</span></div>
+<div>Database Size: <span class="val">128 (7 qubits)</span></div>
+</div>
+<div id="controls">
+<button id="btnStep">Step</button>
+<button id="btnAuto">Auto-Run</button>
+<button id="btnReset">Reset</button>
+<label>Target:
+<input type="number" id="inTarget" min="0" max="127" value="127">
+</label>
+<button id="btnSetTarget">Set</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}
+resize();addEventListener('resize',resize);
+
+const ACCENT='#aa44ff',N=128,QUBITS=7;
+const optIterations=Math.round(Math.PI/4*Math.sqrt(N));
+
+let target=127,iteration=0,autoPlay=false,autoTimer=0,autoDelay=30;
+let amplitudes=new Float64Array(N);
+let displayAmps=new Float64Array(N);
+let t=0;
+let animProgress=1;
+
+function initAmplitudes(){
+  let a=1/Math.sqrt(N);
+  for(let i=0;i<N;i++)amplitudes[i]=a;
+  displayAmps.set(amplitudes);
+}
+
+function groverStep(){
+  // Oracle: flip target
+  amplitudes[target]*=-1;
+  // Diffusion
+  let mean=0;
+  for(let i=0;i<N;i++)mean+=amplitudes[i];
+  mean/=N;
+  for(let i=0;i<N;i++)amplitudes[i]=2*mean-amplitudes[i];
+  iteration++;
+  animProgress=0;
+}
+
+function resetSim(){
+  iteration=0;autoPlay=false;animProgress=1;
+  document.getElementById('btnAuto').textContent='Auto-Run';
+  initAmplitudes();
+}
+
+initAmplitudes();
+
+document.getElementById('btnStep').onclick=function(){
+  if(animProgress<0.95)return;
+  groverStep();
+};
+document.getElementById('btnAuto').onclick=function(){
+  autoPlay=!autoPlay;
+  this.textContent=autoPlay?'Pause':'Auto-Run';
+};
+document.getElementById('btnReset').onclick=resetSim;
+document.getElementById('btnSetTarget').onclick=function(){
+  let v=parseInt(document.getElementById('inTarget').value);
+  if(v>=0&&v<N){target=v;resetSim();}
+};
+
+function updateStats(){
+  let prob=amplitudes[target]*amplitudes[target];
+  let maxA=0;for(let i=0;i<N;i++)if(Math.abs(amplitudes[i])>maxA)maxA=Math.abs(amplitudes[i]);
+  document.getElementById('sTarget').textContent='|'+target+'⟩ (0b'+target.toString(2).padStart(7,'0')+')';
+  document.getElementById('sIter').textContent=iteration;
+  document.getElementById('sProb').textContent=prob.toFixed(6);
+  document.getElementById('sOpt').textContent=optIterations+' iterations';
+  document.getElementById('sMaxAmp').textContent=maxA.toFixed(6);
+}
+
+function draw(){
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+  t++;
+
+  // Animate display amplitudes toward real amplitudes
+  if(animProgress<1){
+    animProgress=Math.min(1,animProgress+0.04);
+    for(let i=0;i<N;i++){
+      displayAmps[i]+=(amplitudes[i]-displayAmps[i])*0.12;
+    }
+  }
+
+  // Title
+  ctx.fillStyle=ACCENT;ctx.font='bold 16px Courier New';ctx.textAlign='left';
+  ctx.fillText("SHIELD-GROVER — Grover's Search Algorithm",20,30);
+  ctx.fillStyle='#555';ctx.font='11px Courier New';
+  ctx.fillText('7-qubit database (128 states) | Oracle + Diffusion operator',20,48);
+
+  // Amplitude bars
+  let margin=60,barAreaW=W-margin*2-260,barAreaH=H*0.55;
+  let barAreaX=margin,barAreaY=H*0.15;
+  let barW=Math.max(1,(barAreaW/N)-0.5);
+  let spacing=barAreaW/N;
+
+  // Axes
+  ctx.strokeStyle='#222';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(barAreaX,barAreaY+barAreaH);ctx.lineTo(barAreaX+barAreaW,barAreaY+barAreaH);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(barAreaX,barAreaY);ctx.lineTo(barAreaX,barAreaY+barAreaH);ctx.stroke();
+
+  // Y-axis labels
+  ctx.fillStyle='#444';ctx.font='10px Courier New';ctx.textAlign='right';
+  for(let v=-0.5;v<=1.0;v+=0.25){
+    let yy=barAreaY+barAreaH-v*barAreaH;
+    if(yy>=barAreaY-5&&yy<=barAreaY+barAreaH+5){
+      ctx.fillText(v.toFixed(2),barAreaX-5,yy+3);
+      ctx.strokeStyle='#151520';ctx.beginPath();ctx.moveTo(barAreaX,yy);ctx.lineTo(barAreaX+barAreaW,yy);ctx.stroke();
+    }
+  }
+
+  // Zero line
+  let zeroY=barAreaY+barAreaH;
+
+  // Draw bars
+  for(let i=0;i<N;i++){
+    let x=barAreaX+i*spacing;
+    let a=displayAmps[i];
+    let h=a*barAreaH;
+    let isTarget=i===target;
+
+    if(isTarget){
+      ctx.fillStyle=ACCENT;
+      ctx.shadowColor=ACCENT;ctx.shadowBlur=8;
+    }else{
+      let brightness=Math.abs(a)*200+30;
+      ctx.fillStyle=`rgb(${brightness*0.3},${brightness*0.4},${brightness})`;
+      ctx.shadowBlur=0;
+    }
+    ctx.fillRect(x,zeroY-h,barW,h);
+    ctx.shadowBlur=0;
+  }
+
+  // Target indicator
+  let tx=barAreaX+target*spacing+barW/2;
+  ctx.strokeStyle=ACCENT;ctx.lineWidth=1;ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(tx,barAreaY);ctx.lineTo(tx,barAreaY+barAreaH+15);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle=ACCENT;ctx.font='10px Courier New';ctx.textAlign='center';
+  ctx.fillText('|'+target+'⟩',tx,barAreaY+barAreaH+25);
+
+  // Probability distribution
+  let probY=barAreaY+barAreaH+50;
+  let probH=H*0.18;
+  ctx.fillStyle='#555';ctx.font='11px Courier New';ctx.textAlign='left';
+  ctx.fillText('Probability Distribution |α|²',barAreaX,probY-5);
+
+  for(let i=0;i<N;i++){
+    let x=barAreaX+i*spacing;
+    let p=displayAmps[i]*displayAmps[i];
+    let h=p*probH*N*0.8;
+    let isTarget=i===target;
+    if(isTarget){
+      ctx.fillStyle='rgba(170,68,255,0.9)';
+      ctx.shadowColor=ACCENT;ctx.shadowBlur=6;
+    }else{
+      ctx.fillStyle='rgba(60,80,140,0.6)';
+      ctx.shadowBlur=0;
+    }
+    ctx.fillRect(x,probY+probH-h,barW,h);
+    ctx.shadowBlur=0;
+  }
+
+  // Iteration indicator / circuit visualization
+  let circY=H*0.88;
+  ctx.fillStyle='#444';ctx.font='11px Courier New';ctx.textAlign='center';
+  ctx.fillText('Grover Iterations',W*0.35,circY-10);
+
+  let maxShow=Math.min(20,optIterations+3);
+  let cw=W*0.5/maxShow;
+  for(let i=0;i<maxShow;i++){
+    let cx=W*0.1+i*cw+cw/2;
+    ctx.fillStyle=i<iteration?ACCENT:(i===iteration?'rgba(170,68,255,0.4)'):'#222';
+    ctx.beginPath();ctx.arc(cx,circY+10,5,0,Math.PI*2);ctx.fill();
+    if(i===optIterations-1){
+      ctx.strokeStyle='#0a0';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(cx,circY+10,9,0,Math.PI*2);ctx.stroke();
+    }
+  }
+  ctx.fillStyle='#555';ctx.font='9px Courier New';
+  ctx.fillText('(green ring = theoretical optimum)',W*0.35,circY+30);
+
+  // Oracle + Diffusion diagram
+  if(iteration>0){
+    let dgX=W*0.7,dgY=circY-10;
+    ctx.fillStyle='#666';ctx.font='10px Courier New';ctx.textAlign='center';
+    ctx.fillText('Last operation:',dgX,dgY);
+    ctx.strokeStyle=ACCENT;ctx.lineWidth=1.5;
+    ctx.strokeRect(dgX-60,dgY+5,50,22);
+    ctx.fillStyle='#fff';ctx.fillText('Uf',dgX-35,dgY+19);
+    ctx.strokeRect(dgX+10,dgY+5,50,22);
+    ctx.fillText('D',dgX+35,dgY+19);
+    ctx.strokeStyle='#666';
+    ctx.beginPath();ctx.moveTo(dgX-10,dgY+16);ctx.lineTo(dgX+10,dgY+16);ctx.stroke();
+    ctx.fillStyle='#666';ctx.fillText('Oracle',dgX-35,dgY+38);
+    ctx.fillText('Diffusion',dgX+35,dgY+38);
+  }
+
+  updateStats();
+
+  // Auto-play
+  if(autoPlay&&animProgress>=0.95){
+    autoTimer++;
+    if(autoTimer>=autoDelay){
+      autoTimer=0;
+      if(iteration<optIterations+3)groverStep();
+      else{autoPlay=false;document.getElementById('btnAuto').textContent='Auto-Run';}
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

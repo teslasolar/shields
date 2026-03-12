@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-CHLADNI — Chladni Patterns</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc;cursor:crosshair}
+canvas{display:block;position:absolute;top:0;left:0}
+#stats{position:fixed;top:16px;right:16px;background:rgba(6,6,16,0.88);border:1px solid #ff44aa55;padding:14px 18px;font-size:13px;line-height:1.8;z-index:10;min-width:230px;pointer-events:none}
+#stats .hdr{font-size:11px;letter-spacing:2px;color:#ff44aa;border-bottom:1px solid #ff44aa33;padding-bottom:6px;margin-bottom:6px}
+#stats .row{display:flex;justify-content:space-between;gap:16px}
+#stats .lbl{color:#777}
+#stats .val{color:#ff44aa;text-align:right}
+#controls{position:fixed;bottom:16px;left:16px;background:rgba(6,6,16,0.88);border:1px solid #ff44aa55;padding:14px 18px;font-size:12px;z-index:10;display:flex;flex-direction:column;gap:8px;min-width:250px}
+#controls .hdr{font-size:11px;letter-spacing:2px;color:#ff44aa;border-bottom:1px solid #ff44aa33;padding-bottom:6px;margin-bottom:4px}
+button{background:transparent;color:#ff44aa;border:1px solid #ff44aa66;padding:5px 13px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;transition:background .2s}
+button:hover{background:#ff44aa22}
+.btn-row{display:flex;gap:6px;flex-wrap:wrap}
+.slider-row{display:flex;align-items:center;gap:8px}
+.slider-row label{color:#777;min-width:90px;font-size:12px}
+.slider-row span{color:#ff44aa;min-width:45px;text-align:right;font-size:12px}
+input[type=range]{-webkit-appearance:none;appearance:none;background:#1a1a2e;height:4px;border-radius:2px;outline:none;flex:1}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;background:#ff44aa;border-radius:50%;cursor:pointer}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="hdr">SHIELD-CHLADNI</div>
+  <div class="row"><span class="lbl">MODE (n,m)</span><span class="val" id="s-mode">—</span></div>
+  <div class="row"><span class="lbl">FREQ RATIO</span><span class="val" id="s-freq">—</span></div>
+  <div class="row"><span class="lbl">NODAL LINES</span><span class="val" id="s-nodal">—</span></div>
+  <div class="row"><span class="lbl">PARTICLES</span><span class="val" id="s-parts">—</span></div>
+  <div class="row"><span class="lbl">SETTLED</span><span class="val" id="s-settled">—</span></div>
+</div>
+<div id="controls">
+  <div class="hdr">CONTROLS</div>
+  <div class="btn-row">
+    <button id="btn-prev">&#9664; PREV MODE</button>
+    <button id="btn-next">NEXT MODE &#9654;</button>
+  </div>
+  <div class="slider-row">
+    <label>PARTICLES</label>
+    <input type="range" id="sl-count" min="1000" max="25000" value="10000" step="500">
+    <span id="sl-count-val">10000</span>
+  </div>
+  <div class="btn-row">
+    <button id="btn-reset">RESET</button>
+    <button id="btn-color">PLATE COLOR</button>
+  </div>
+</div>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const MODES = [[2,3],[3,5],[5,7],[7,11],[11,13],[13,17]];
+let mi = 0, pCount = 10000, particles = [], settled = 0;
+let plateClr = 0;
+const PLATE_CLRS = ['#0a0a1a','#1a0a14','#0a141a','#141a0a'];
+
+function resize(){ C.width = innerWidth; C.height = innerHeight; }
+addEventListener('resize', resize); resize();
+
+function chladni(x, y, n, m){
+  return Math.sin(n*Math.PI*x)*Math.sin(m*Math.PI*y)
+       - Math.sin(m*Math.PI*x)*Math.sin(n*Math.PI*y);
+}
+
+function initP(){
+  particles = []; settled = 0;
+  for(let i=0;i<pCount;i++)
+    particles.push({x:Math.random(),y:Math.random(),vx:0,vy:0,s:false,b:0.3+Math.random()*0.7});
+}
+initP();
+
+function plateRect(){
+  const sz = Math.min(C.width, C.height)*0.68;
+  return { ox:(C.width-sz)/2, oy:(C.height-sz)/2, sz };
+}
+
+function nodalEst(n,m){
+  const res=80; let cross=0;
+  for(let i=0;i<res;i++) for(let j=0;j<res;j++){
+    const v=chladni(i/res,j/res,n,m);
+    if(i<res-1 && v*chladni((i+1)/res,j/res,n,m)<0) cross++;
+    if(j<res-1 && v*chladni(i/res,(j+1)/res,n,m)<0) cross++;
+  }
+  return Math.round(cross/35);
+}
+
+function step(){
+  const [n,m]=MODES[mi], h=0.002, F=0.0007, D=0.91, thr=0.0003;
+  settled=0;
+  for(const p of particles){
+    if(p.s){settled++;continue;}
+    const v=chladni(p.x,p.y,n,m);
+    const gx=(chladni(p.x+h,p.y,n,m)-chladni(p.x-h,p.y,n,m))/(2*h);
+    const gy=(chladni(p.x,p.y+h,n,m)-chladni(p.x,p.y-h,n,m))/(2*h);
+    const mg=Math.sqrt(gx*gx+gy*gy)+1e-6;
+    p.vx += -v*gx/mg*F + (Math.random()-0.5)*4e-5;
+    p.vy += -v*gy/mg*F + (Math.random()-0.5)*4e-5;
+    p.vx*=D; p.vy*=D;
+    p.x+=p.vx; p.y+=p.vy;
+    if(p.x<0){p.x=0;p.vx*=-0.5;} if(p.x>1){p.x=1;p.vx*=-0.5;}
+    if(p.y<0){p.y=0;p.vy*=-0.5;} if(p.y>1){p.y=1;p.vy*=-0.5;}
+    if(Math.sqrt(p.vx*p.vx+p.vy*p.vy)<thr && Math.abs(v)<0.12){p.s=true;settled++;}
+  }
+}
+
+function draw(){
+  X.fillStyle='#060610'; X.fillRect(0,0,C.width,C.height);
+  const {ox,oy,sz}=plateRect();
+  const [n,m]=MODES[mi];
+
+  // plate bg
+  X.fillStyle=PLATE_CLRS[plateClr]; X.fillRect(ox,oy,sz,sz);
+
+  // faint grid
+  X.strokeStyle='#ff44aa08'; X.lineWidth=0.5;
+  const gs=sz/20;
+  for(let i=1;i<20;i++){
+    X.beginPath();X.moveTo(ox+i*gs,oy);X.lineTo(ox+i*gs,oy+sz);X.stroke();
+    X.beginPath();X.moveTo(ox,oy+i*gs);X.lineTo(ox+sz,oy+i*gs);X.stroke();
+  }
+
+  // plate border
+  X.strokeStyle='#ff44aa44'; X.lineWidth=1; X.strokeRect(ox,oy,sz,sz);
+
+  // particles
+  for(const p of particles){
+    const px=ox+p.x*sz, py=oy+p.y*sz;
+    if(px<ox||px>ox+sz||py<oy||py>oy+sz) continue;
+    const a = p.s ? 0.85*p.b : 0.35*p.b;
+    X.fillStyle = p.s ? `rgba(255,68,170,${a})` : `rgba(200,180,160,${a*0.7})`;
+    const r = p.s ? 1.3 : 0.9;
+    X.fillRect(px-r/2,py-r/2,r,r);
+  }
+
+  // center glow
+  const g=X.createRadialGradient(C.width/2,C.height/2,0,C.width/2,C.height/2,sz*0.45);
+  g.addColorStop(0,'rgba(255,68,170,0.03)'); g.addColorStop(1,'transparent');
+  X.fillStyle=g; X.fillRect(0,0,C.width,C.height);
+
+  // header
+  X.font='11px "Courier New",monospace'; X.fillStyle='#ff44aa55'; X.textAlign='center';
+  X.fillText('SHIELD-CHLADNI \u2014 Chladni Patterns',C.width/2,28);
+
+  // mode label
+  X.font='13px "Courier New",monospace'; X.fillStyle='#ff44aa88';
+  X.fillText(`sin(${n}\u03C0x)sin(${m}\u03C0y) \u2212 sin(${m}\u03C0x)sin(${n}\u03C0y) = 0`, ox+sz/2, oy+sz+22);
+
+  // stats
+  document.getElementById('s-mode').textContent=`(${n}, ${m})`;
+  document.getElementById('s-freq').textContent=`${n}/${m} = ${(n/m).toFixed(4)}`;
+  document.getElementById('s-nodal').textContent=`~${nodalEst(n,m)}`;
+  document.getElementById('s-parts').textContent=pCount;
+  document.getElementById('s-settled').textContent=`${settled} (${(100*settled/pCount).toFixed(1)}%)`;
+
+  step();
+  requestAnimationFrame(draw);
+}
+
+document.getElementById('btn-prev').onclick=()=>{mi=(mi-1+MODES.length)%MODES.length;initP();};
+document.getElementById('btn-next').onclick=()=>{mi=(mi+1)%MODES.length;initP();};
+document.getElementById('btn-reset').onclick=initP;
+document.getElementById('btn-color').onclick=()=>{plateClr=(plateClr+1)%PLATE_CLRS.length;};
+const sl=document.getElementById('sl-count');
+sl.oninput=()=>{pCount=+sl.value;document.getElementById('sl-count-val').textContent=pCount;initP();};
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'){mi=(mi+1)%MODES.length;initP();}
+  if(e.key==='ArrowLeft'){mi=(mi-1+MODES.length)%MODES.length;initP();}
+  if(e.key==='r')initP();
+});
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

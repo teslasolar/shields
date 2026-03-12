@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SHAMIR — Shamir's Secret Sharing</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; color: #4f8; }
+canvas { display: block; position: fixed; top: 0; left: 0; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4f8; padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  z-index: 10; min-width: 260px; border-radius: 4px;
+}
+#stats .title { font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #4f8; letter-spacing: 1px; }
+#stats .label { color: #6a7; }
+#stats .val { color: #bfe; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; z-index: 10; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+}
+#controls button, #controls select {
+  background: rgba(6,6,16,0.85); border: 1px solid #4f8; color: #4f8;
+  font-family: 'Courier New', monospace; font-size: 12px; padding: 7px 14px;
+  cursor: pointer; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover, #controls select:hover { background: rgba(68,255,136,0.15); }
+#controls select option { background: #060610; color: #4f8; }
+#controls label { color: #6a7; font-size: 11px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-SHAMIR — Secret Sharing</div>
+  <div><span class="label">Secret: </span><span class="val" id="s-secret">—</span></div>
+  <div><span class="label">Threshold k: </span><span class="val" id="s-k">—</span></div>
+  <div><span class="label">Shares n: </span><span class="val" id="s-n">—</span></div>
+  <div><span class="label">Poly degree: </span><span class="val" id="s-deg">—</span></div>
+  <div><span class="label">Reconstructed: </span><span class="val" id="s-recon">—</span></div>
+  <div><span class="label">Active shares: </span><span class="val" id="s-active">—</span></div>
+  <div><span class="label">Status: </span><span class="val" id="s-status">—</span></div>
+</div>
+<div id="controls">
+  <label>k=<select id="sel-k"></select></label>
+  <button id="btn-secret">New Secret</button>
+  <button id="btn-add">Add Share</button>
+  <button id="btn-remove">Remove Share</button>
+  <button id="btn-recon">Reconstruct</button>
+  <button id="btn-reset">Reset</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+// --- Shamir's Secret Sharing ---
+const PRIME = 257; // work in GF(257) for simplicity
+let secret = 42;
+let k = 3; // threshold
+let n = 7; // total shares
+let coefficients = []; // polynomial coefficients, coefficients[0] = secret
+let shares = []; // { x, y, active }
+let reconstructedValue = null;
+let reconstructing = false;
+let reconAnim = 0;
+let reconCurvePoints = [];
+let ghostCurves = []; // curves through k-1 points showing ambiguity
+let particles = [];
+
+// Plot coordinates
+let plotLeft, plotRight, plotTop, plotBottom;
+function updatePlotBounds() {
+  plotLeft = W * 0.1;
+  plotRight = W * 0.85;
+  plotTop = H * 0.1;
+  plotBottom = H * 0.82;
+}
+updatePlotBounds();
+
+function mod(a, m) { return ((a % m) + m) % m; }
+
+function generatePolynomial() {
+  coefficients = [secret];
+  for (let i = 1; i < k; i++) {
+    coefficients.push(Math.floor(Math.random() * (PRIME - 1)) + 1);
+  }
+}
+
+function evalPoly(x) {
+  let result = 0;
+  for (let i = 0; i < coefficients.length; i++) {
+    result = mod(result + coefficients[i] * Math.pow(x, i), PRIME);
+  }
+  return result;
+}
+
+function generateShares() {
+  shares = [];
+  for (let i = 1; i <= n; i++) {
+    shares.push({ x: i, y: evalPoly(i), active: true });
+  }
+}
+
+function lagrangeInterpolate(points, xTarget) {
+  let result = 0;
+  const m = points.length;
+  for (let i = 0; i < m; i++) {
+    let num = points[i].y;
+    let den = 1;
+    for (let j = 0; j < m; j++) {
+      if (i === j) continue;
+      num = num * (xTarget - points[j].x);
+      den = den * (points[i].x - points[j].x);
+    }
+    result += num / den;
+  }
+  return result;
+}
+
+function lagrangeCurve(points, xTarget) {
+  // Return floating point (not modular) for visual curve
+  return lagrangeInterpolate(points, xTarget);
+}
+
+function reconstruct() {
+  const activeShares = shares.filter(s => s.active);
+  if (activeShares.length < k) {
+    document.getElementById('s-status').textContent = 'Need ' + k + ' shares (have ' + activeShares.length + ')';
+    reconstructedValue = null;
+    // Generate ghost curves to show ambiguity
+    generateGhostCurves(activeShares);
+    reconstructing = true;
+    reconAnim = 0;
+    return;
+  }
+  // Use first k active shares
+  const useShares = activeShares.slice(0, k);
+  reconstructedValue = Math.round(lagrangeInterpolate(useShares, 0));
+  reconstructing = true;
+  reconAnim = 0;
+  ghostCurves = [];
+
+  // Build reconstruction curve points
+  reconCurvePoints = [];
+  for (let px = -0.5; px <= n + 1; px += 0.05) {
+    reconCurvePoints.push({ x: px, y: lagrangeCurve(useShares, px) });
+  }
+
+  document.getElementById('s-status').textContent =
+    reconstructedValue === secret ? 'SUCCESS — Secret recovered!' : 'Reconstructed: ' + reconstructedValue;
+
+  // Success particles at y-intercept
+  if (reconstructedValue === secret) {
+    const sx = mapX(0);
+    const sy = mapY(secret);
+    for (let p = 0; p < 30; p++) {
+      particles.push({
+        x: sx, y: sy,
+        vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5,
+        life: 1, decay: 0.01 + Math.random() * 0.01, r: 2 + Math.random() * 4,
+        color: '#4f8'
+      });
+    }
+  }
+  updateStats();
+}
+
+function generateGhostCurves(activeShares) {
+  ghostCurves = [];
+  // Generate several random polynomials that pass through the active shares but have different secrets
+  for (let g = 0; g < 5; g++) {
+    const fakeSecret = Math.floor(Math.random() * PRIME);
+    // Build points: active shares + fake (0, fakeSecret)
+    const pts = [{ x: 0, y: fakeSecret }, ...activeShares];
+    // If we have enough points, interpolate a curve
+    const curvePoints = [];
+    for (let px = -0.5; px <= n + 1; px += 0.1) {
+      curvePoints.push({ x: px, y: lagrangeCurve(pts, px) });
+    }
+    ghostCurves.push({ points: curvePoints, secret: fakeSecret });
+  }
+}
+
+// Coordinate mapping
+function mapX(dataX) {
+  const xMin = -1;
+  const xMax = n + 1;
+  return plotLeft + (dataX - xMin) / (xMax - xMin) * (plotRight - plotLeft);
+}
+function mapY(dataY) {
+  const yMin = -20;
+  const yMax = PRIME + 20;
+  return plotBottom - (dataY - yMin) / (yMax - yMin) * (plotBottom - plotTop);
+}
+
+function initScheme() {
+  generatePolynomial();
+  generateShares();
+  reconstructedValue = null;
+  reconstructing = false;
+  ghostCurves = [];
+  reconCurvePoints = [];
+  updateStats();
+}
+
+function updateStats() {
+  const activeCount = shares.filter(s => s.active).length;
+  document.getElementById('s-secret').textContent = secret;
+  document.getElementById('s-k').textContent = k;
+  document.getElementById('s-n').textContent = n;
+  document.getElementById('s-deg').textContent = (k - 1);
+  document.getElementById('s-recon').textContent = reconstructedValue !== null ? reconstructedValue : '—';
+  document.getElementById('s-active').textContent = activeCount + ' / ' + shares.length;
+  if (!reconstructing) {
+    document.getElementById('s-status').textContent = activeCount >= k ? 'Ready to reconstruct' : 'Need ' + (k - activeCount) + ' more shares';
+  }
+}
+
+// Populate k selector
+const selK = document.getElementById('sel-k');
+for (let i = 2; i <= 7; i++) {
+  const opt = document.createElement('option');
+  opt.value = i; opt.textContent = i;
+  if (i === k) opt.selected = true;
+  selK.appendChild(opt);
+}
+selK.addEventListener('change', (e) => {
+  k = parseInt(e.target.value);
+  if (k > n) n = k;
+  initScheme();
+});
+
+document.getElementById('btn-secret').addEventListener('click', () => {
+  secret = Math.floor(Math.random() * 200) + 10;
+  initScheme();
+});
+
+document.getElementById('btn-add').addEventListener('click', () => {
+  // Add a new share or reactivate an inactive one
+  const inactive = shares.find(s => !s.active);
+  if (inactive) {
+    inactive.active = true;
+  } else {
+    n++;
+    shares.push({ x: n, y: evalPoly(n), active: true });
+  }
+  reconstructing = false;
+  reconstructedValue = null;
+  ghostCurves = [];
+  updateStats();
+});
+
+document.getElementById('btn-remove').addEventListener('click', () => {
+  // Deactivate last active share
+  for (let i = shares.length - 1; i >= 0; i--) {
+    if (shares[i].active) {
+      shares[i].active = false;
+      break;
+    }
+  }
+  reconstructing = false;
+  reconstructedValue = null;
+  ghostCurves = [];
+  updateStats();
+});
+
+document.getElementById('btn-recon').addEventListener('click', reconstruct);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  n = 7; k = 3;
+  selK.value = k;
+  secret = Math.floor(Math.random() * 200) + 10;
+  initScheme();
+});
+
+// Click on canvas to toggle shares
+canvas.addEventListener('click', (e) => {
+  const mx = e.clientX;
+  const my = e.clientY;
+  for (const s of shares) {
+    const sx = mapX(s.x);
+    const sy = mapY(s.y);
+    if (Math.hypot(mx - sx, my - sy) < 18) {
+      s.active = !s.active;
+      reconstructing = false;
+      reconstructedValue = null;
+      ghostCurves = [];
+      updateStats();
+      break;
+    }
+  }
+});
+
+let animTime = 0;
+function draw(t) {
+  animTime = t * 0.001;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+  updatePlotBounds();
+
+  // Background grid
+  ctx.strokeStyle = 'rgba(68,255,136,0.03)';
+  ctx.lineWidth = 1;
+  const gs = 40;
+  for (let x = 0; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Axes
+  ctx.strokeStyle = 'rgba(68,255,136,0.25)';
+  ctx.lineWidth = 1;
+  // X axis (y=0)
+  const y0 = mapY(0);
+  ctx.beginPath(); ctx.moveTo(plotLeft, y0); ctx.lineTo(plotRight, y0); ctx.stroke();
+  // Y axis (x=0)
+  const x0 = mapX(0);
+  ctx.beginPath(); ctx.moveTo(x0, plotTop); ctx.lineTo(x0, plotBottom); ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(68,255,136,0.35)';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= n + 1; i++) {
+    const lx = mapX(i);
+    if (lx > plotLeft && lx < plotRight) {
+      ctx.fillText(i, lx, plotBottom + 16);
+    }
+  }
+  ctx.textAlign = 'right';
+  for (let v = 0; v <= PRIME; v += 50) {
+    const ly = mapY(v);
+    if (ly > plotTop && ly < plotBottom) {
+      ctx.fillText(v, plotLeft - 8, ly + 4);
+    }
+  }
+
+  // Draw true polynomial curve (faint)
+  ctx.strokeStyle = 'rgba(68,255,136,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  let first = true;
+  for (let px = -0.5; px <= n + 1; px += 0.05) {
+    const val = evalPoly(px);
+    const sx = mapX(px);
+    const sy = mapY(val);
+    if (sy < plotTop - 50 || sy > plotBottom + 50) { first = true; continue; }
+    if (first) { ctx.moveTo(sx, sy); first = false; }
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+
+  // Ghost curves (when insufficient shares)
+  for (let g = 0; g < ghostCurves.length; g++) {
+    const gc = ghostCurves[g];
+    const hue = (g * 50 + 30) % 360;
+    ctx.strokeStyle = `hsla(${hue}, 60%, 50%, ${0.15 + 0.05 * Math.sin(animTime * 2 + g)})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    let f2 = true;
+    for (const pt of gc.points) {
+      const sx = mapX(pt.x);
+      const sy = mapY(pt.y);
+      if (sy < plotTop - 100 || sy > plotBottom + 100) { f2 = true; continue; }
+      if (f2) { ctx.moveTo(sx, sy); f2 = false; }
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label the ghost secret
+    const gsx = mapX(0);
+    const gsy = mapY(gc.secret);
+    if (gsy > plotTop && gsy < plotBottom) {
+      ctx.fillStyle = `hsla(${hue}, 60%, 50%, 0.5)`;
+      ctx.font = '10px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('s=' + gc.secret + '?', gsx + 10, gsy);
+    }
+  }
+
+  // Reconstructed curve
+  if (reconstructing && reconCurvePoints.length > 0) {
+    const progress = Math.min(1, reconAnim);
+    const drawCount = Math.floor(reconCurvePoints.length * progress);
+    ctx.strokeStyle = `rgba(68,255,136,${0.6 + 0.2 * Math.sin(animTime * 3)})`;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#4f8';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    let f3 = true;
+    for (let i = 0; i < drawCount; i++) {
+      const pt = reconCurvePoints[i];
+      const sx = mapX(pt.x);
+      const sy = mapY(pt.y);
+      if (sy < plotTop - 100 || sy > plotBottom + 100) { f3 = true; continue; }
+      if (f3) { ctx.moveTo(sx, sy); f3 = false; }
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    reconAnim += 0.02;
+  }
+
+  // Secret marker on y-axis
+  const secretX = mapX(0);
+  const secretY = mapY(secret);
+  ctx.fillStyle = `rgba(255,136,68,${0.5 + 0.3 * Math.sin(animTime * 2)})`;
+  ctx.beginPath();
+  ctx.arc(secretX, secretY, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#f84';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#f84';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SECRET=' + secret, secretX + 14, secretY + 4);
+
+  // Reconstructed value marker
+  if (reconstructedValue !== null && reconAnim > 0.5) {
+    const ry = mapY(reconstructedValue);
+    ctx.fillStyle = '#4f8';
+    ctx.shadowColor = '#4f8';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(secretX, ry, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (Math.abs(ry - secretY) > 12) {
+      ctx.fillStyle = '#4f8';
+      ctx.font = '10px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('recon=' + reconstructedValue, secretX + 14, ry + 4);
+    }
+  }
+
+  // Draw share points
+  for (const s of shares) {
+    const sx = mapX(s.x);
+    const sy = mapY(s.y);
+
+    if (sy < plotTop - 20 || sy > plotBottom + 20) continue;
+
+    const glowAlpha = s.active ? 0.3 + 0.15 * Math.sin(animTime * 2 + s.x) : 0;
+    if (s.active) {
+      ctx.shadowColor = '#4f8';
+      ctx.shadowBlur = 10;
+    }
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.active ? 8 : 5, 0, Math.PI * 2);
+    ctx.fillStyle = s.active ? '#4f8' : '#2a2a3a';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = s.active ? '#4f8' : '#444';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = s.active ? '#bfe' : '#555';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('(' + s.x + ',' + s.y + ')', sx, sy - 14);
+  }
+
+  // Title
+  ctx.fillStyle = `rgba(68,255,136,${0.4 + 0.15 * Math.sin(animTime * 1.5)})`;
+  ctx.font = '20px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText("SHAMIR'S SECRET SHARING", W * 0.45, H * 0.05);
+  ctx.font = '11px Courier New';
+  ctx.fillStyle = 'rgba(68,255,136,0.35)';
+  ctx.fillText('(' + k + ',' + n + ') Threshold Scheme over GF(' + PRIME + ')', W * 0.45, H * 0.08);
+
+  // Info text
+  const activeCount = shares.filter(s => s.active).length;
+  ctx.fillStyle = activeCount >= k ? 'rgba(68,255,136,0.5)' : 'rgba(255,136,68,0.5)';
+  ctx.font = '12px Courier New';
+  ctx.textAlign = 'center';
+  if (!reconstructing) {
+    ctx.fillText(
+      activeCount >= k
+        ? activeCount + ' shares active (>= k=' + k + ') — ready to reconstruct'
+        : activeCount + ' shares active (need ' + (k - activeCount) + ' more)',
+      W * 0.45, H * 0.92
+    );
+  } else if (reconstructedValue !== null) {
+    ctx.fillStyle = '#4f8';
+    ctx.fillText('Polynomial reconstructed via Lagrange interpolation — secret = ' + reconstructedValue, W * 0.45, H * 0.92);
+  } else {
+    ctx.fillStyle = '#f84';
+    ctx.fillText('Insufficient shares — infinite polynomials possible (shown as dashed curves)', W * 0.45, H * 0.92);
+  }
+
+  // Click hint
+  ctx.fillStyle = 'rgba(68,255,136,0.2)';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('Click share points to toggle active/inactive', W * 0.45, H * 0.96);
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color || '#4f8';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  requestAnimationFrame(draw);
+}
+
+initScheme();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

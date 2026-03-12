@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-WAVEFORM — Prime Waveform Sculptor</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610;font-family:'Courier New',monospace;color:#ccc;cursor:crosshair}
+canvas{display:block;position:absolute;top:0;left:0}
+#stats{position:fixed;top:16px;right:16px;background:rgba(6,6,16,0.88);border:1px solid #ff44aa55;padding:14px 18px;font-size:13px;line-height:1.8;z-index:10;min-width:230px;pointer-events:none}
+#stats .hdr{font-size:11px;letter-spacing:2px;color:#ff44aa;border-bottom:1px solid #ff44aa33;padding-bottom:6px;margin-bottom:6px}
+#stats .row{display:flex;justify-content:space-between;gap:14px}
+#stats .lbl{color:#777}
+#stats .val{color:#ff44aa;text-align:right}
+#controls{position:fixed;bottom:16px;left:16px;background:rgba(6,6,16,0.88);border:1px solid #ff44aa55;padding:14px 18px;font-size:12px;z-index:10;display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 40px);overflow-y:auto;min-width:260px}
+#controls .hdr{font-size:11px;letter-spacing:2px;color:#ff44aa;border-bottom:1px solid #ff44aa33;padding-bottom:6px;margin-bottom:4px}
+button{background:transparent;color:#ff44aa;border:1px solid #ff44aa66;padding:4px 10px;font-family:'Courier New',monospace;font-size:11px;cursor:pointer;transition:background .2s}
+button:hover{background:#ff44aa22}
+button.active{background:#ff44aa33;border-color:#ff44aa}
+.btn-row{display:flex;gap:5px;flex-wrap:wrap}
+.sl-row{display:flex;align-items:center;gap:4px;font-size:11px}
+.sl-row .sn{color:#777;min-width:22px;text-align:right}
+.sl-row .sv{color:#ff44aa;min-width:30px;text-align:right;font-size:10px}
+.sl-row .prime{color:#ff44aa}
+.sl-row .composite{color:#555}
+input[type=range]{-webkit-appearance:none;appearance:none;background:#1a1a2e;height:3px;border-radius:2px;outline:none;flex:1;min-width:80px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:10px;height:10px;background:#ff44aa;border-radius:50%;cursor:pointer}
+#controls::-webkit-scrollbar{width:4px}
+#controls::-webkit-scrollbar-thumb{background:#ff44aa44;border-radius:2px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="hdr">SHIELD-WAVEFORM</div>
+  <div class="row"><span class="lbl">HARMONICS</span><span class="val" id="s-harm">0</span></div>
+  <div class="row"><span class="lbl">RMS</span><span class="val" id="s-rms">0.000</span></div>
+  <div class="row"><span class="lbl">CREST FACTOR</span><span class="val" id="s-crest">0.000</span></div>
+  <div class="row"><span class="lbl">PRIME %</span><span class="val" id="s-prime">0.0%</span></div>
+  <div class="row"><span class="lbl">PRESET</span><span class="val" id="s-preset">—</span></div>
+</div>
+<div id="controls">
+  <div class="hdr">CONTROLS</div>
+  <div class="btn-row">
+    <button id="b-square">SQUARE</button>
+    <button id="b-saw">SAWTOOTH</button>
+    <button id="b-tri">TRIANGLE</button>
+    <button id="b-prime">PRIME</button>
+    <button id="b-clear">CLEAR</button>
+  </div>
+  <button id="b-play" style="margin:4px 0">PLAY TONE (220 Hz)</button>
+  <div class="hdr" style="margin-top:4px">HARMONICS</div>
+  <div id="sliders"></div>
+</div>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+
+function resize(){ C.width=innerWidth; C.height=innerHeight; }
+addEventListener('resize',resize); resize();
+
+const PRIMES = [2,3,5,7,11,13,17];
+const isPrime = n => [2,3,5,7,11,13,17].includes(n);
+const amps = new Float64Array(17); // harmonics 1-17
+
+let audioCtx = null;
+let playing = false;
+let activeNodes = [];
+let curPreset = '—';
+let animPhase = 0;
+
+// Build sliders
+const slidersDiv = document.getElementById('sliders');
+for(let i=0;i<17;i++){
+  const h = i+1;
+  const row = document.createElement('div');
+  row.className='sl-row';
+  const cls = isPrime(h) ? 'prime' : 'composite';
+  row.innerHTML=`<span class="sn ${cls}">${h}${isPrime(h)?'*':''}</span>`+
+    `<input type="range" min="0" max="100" value="0" data-h="${i}" id="sl-${i}">`+
+    `<span class="sv" id="sv-${i}">0.00</span>`;
+  slidersDiv.appendChild(row);
+}
+
+slidersDiv.addEventListener('input', e=>{
+  if(e.target.type==='range'){
+    const i=+e.target.dataset.h;
+    amps[i]=e.target.value/100;
+    document.getElementById('sv-'+i).textContent=amps[i].toFixed(2);
+    curPreset='CUSTOM';
+    if(playing) updateAudio();
+  }
+});
+
+function setAmps(arr, name){
+  for(let i=0;i<17;i++){
+    amps[i]=arr[i]||0;
+    document.getElementById('sl-'+i).value=Math.round(amps[i]*100);
+    document.getElementById('sv-'+i).textContent=amps[i].toFixed(2);
+  }
+  curPreset=name;
+  if(playing) updateAudio();
+}
+
+// Presets
+document.getElementById('b-square').onclick=()=>{
+  const a=[];
+  for(let i=0;i<17;i++){const h=i+1; a[i]=(h%2===1)?1/h:0;}
+  setAmps(a,'SQUARE');
+};
+document.getElementById('b-saw').onclick=()=>{
+  const a=[];
+  for(let i=0;i<17;i++) a[i]=1/(i+1);
+  setAmps(a,'SAWTOOTH');
+};
+document.getElementById('b-tri').onclick=()=>{
+  const a=[];
+  for(let i=0;i<17;i++){
+    const h=i+1;
+    if(h%2===1){
+      const k=(h-1)/2;
+      a[i]=(1/(h*h))*(k%2===0?1:-1);
+    } else a[i]=0;
+  }
+  // normalize
+  const mx=Math.max(...a.map(Math.abs));
+  if(mx>0) for(let i=0;i<17;i++) a[i]/=mx;
+  setAmps(a,'TRIANGLE');
+};
+document.getElementById('b-prime').onclick=()=>{
+  const a=[];
+  for(let i=0;i<17;i++){const h=i+1; a[i]=isPrime(h)?1/h:0;}
+  setAmps(a,'PRIME');
+};
+document.getElementById('b-clear').onclick=()=>{
+  setAmps(new Array(17).fill(0),'—');
+};
+
+// Audio
+function updateAudio(){
+  stopAudio();
+  if(!audioCtx) audioCtx=new AudioContext();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  const baseFreq=220;
+  activeNodes=[];
+  for(let i=0;i<17;i++){
+    if(amps[i]<0.001) continue;
+    const osc=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    osc.type='sine';
+    osc.frequency.value=baseFreq*(i+1);
+    g.gain.value=amps[i]*0.12;
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start();
+    activeNodes.push({osc,g});
+  }
+}
+
+function stopAudio(){
+  activeNodes.forEach(n=>{try{n.g.gain.exponentialRampToValueAtTime(0.001,audioCtx?audioCtx.currentTime+0.05:0);n.osc.stop(audioCtx?audioCtx.currentTime+0.06:0);}catch(e){}});
+  activeNodes=[];
+}
+
+document.getElementById('b-play').onclick=()=>{
+  if(!audioCtx) audioCtx=new AudioContext();
+  if(playing){
+    stopAudio(); playing=false;
+    document.getElementById('b-play').textContent='PLAY TONE (220 Hz)';
+  } else {
+    updateAudio(); playing=true;
+    document.getElementById('b-play').textContent='STOP TONE';
+  }
+};
+
+// Compute waveform
+function getWaveform(samples){
+  const wave=new Float64Array(samples);
+  for(let s=0;s<samples;s++){
+    const t=s/samples*2*Math.PI;
+    let v=0;
+    for(let i=0;i<17;i++){
+      if(amps[i]<0.001) continue;
+      v+=amps[i]*Math.sin((i+1)*t);
+    }
+    wave[s]=v;
+  }
+  return wave;
+}
+
+function computeStats(){
+  const wave=getWaveform(512);
+  let sumSq=0, peak=0, active=0, primeEnergy=0, totalEnergy=0;
+  for(let i=0;i<17;i++){
+    const e=amps[i]*amps[i];
+    totalEnergy+=e;
+    if(amps[i]>0.001) active++;
+    if(isPrime(i+1)) primeEnergy+=e;
+  }
+  for(let s=0;s<wave.length;s++){
+    sumSq+=wave[s]*wave[s];
+    if(Math.abs(wave[s])>peak) peak=Math.abs(wave[s]);
+  }
+  const rms=Math.sqrt(sumSq/wave.length);
+  const crest=rms>0?peak/rms:0;
+  const primePct=totalEnergy>0?(primeEnergy/totalEnergy*100):0;
+  return {active,rms,crest,primePct};
+}
+
+function draw(){
+  X.fillStyle='#060610'; X.fillRect(0,0,C.width,C.height);
+  animPhase+=0.02;
+
+  // header
+  X.font='11px "Courier New",monospace'; X.fillStyle='#ff44aa55'; X.textAlign='center';
+  X.fillText('SHIELD-WAVEFORM \u2014 Prime Waveform Sculptor',C.width/2,28);
+
+  // layout
+  const margin=40;
+  const panelW=280; // controls width approx
+  const availW=C.width-panelW-margin*3;
+  const waveX=panelW+margin*2;
+  const waveW=Math.max(200,availW);
+  const waveH=C.height*0.35;
+  const waveY=60;
+
+  // Draw waveform
+  const wave=getWaveform(1024);
+  const waveMax=Math.max(0.01,...wave.map(Math.abs));
+
+  // waveform background
+  X.fillStyle='#0a0a18'; X.fillRect(waveX,waveY,waveW,waveH);
+  X.strokeStyle='#ff44aa22'; X.lineWidth=0.5;
+  // center line
+  X.beginPath(); X.moveTo(waveX,waveY+waveH/2); X.lineTo(waveX+waveW,waveY+waveH/2); X.stroke();
+  // grid lines
+  for(let i=1;i<4;i++){
+    const yy=waveY+i*waveH/4;
+    X.beginPath(); X.moveTo(waveX,yy); X.lineTo(waveX+waveW,yy); X.stroke();
+  }
+
+  // animated waveform
+  X.strokeStyle='#ff44aa'; X.lineWidth=2;
+  X.beginPath();
+  for(let s=0;s<1024;s++){
+    const xp=waveX+s/1024*waveW;
+    const yp=waveY+waveH/2-wave[s]/waveMax*(waveH/2-10);
+    if(s===0) X.moveTo(xp,yp); else X.lineTo(xp,yp);
+  }
+  X.stroke();
+
+  // glow version
+  X.strokeStyle='#ff44aa33'; X.lineWidth=6;
+  X.beginPath();
+  for(let s=0;s<1024;s++){
+    const xp=waveX+s/1024*waveW;
+    const yp=waveY+waveH/2-wave[s]/waveMax*(waveH/2-10);
+    if(s===0) X.moveTo(xp,yp); else X.lineTo(xp,yp);
+  }
+  X.stroke();
+
+  X.strokeStyle='#ff44aa44'; X.lineWidth=1;
+  X.strokeRect(waveX,waveY,waveW,waveH);
+
+  X.font='10px "Courier New",monospace'; X.fillStyle='#ff44aa44'; X.textAlign='center';
+  X.fillText('COMPOSITE WAVEFORM',waveX+waveW/2,waveY-8);
+
+  // Draw Fourier bar chart
+  const barY=waveY+waveH+50;
+  const barH=C.height-barY-80;
+  if(barH>60){
+    X.fillStyle='#0a0a18'; X.fillRect(waveX,barY,waveW,barH);
+    X.strokeStyle='#ff44aa44'; X.lineWidth=1;
+    X.strokeRect(waveX,barY,waveW,barH);
+
+    const bw=waveW/17;
+    const maxAmp=Math.max(0.01,...amps);
+    for(let i=0;i<17;i++){
+      const h=i+1;
+      const bh=amps[i]/maxAmp*(barH-20);
+      const xp=waveX+i*bw;
+      const prime=isPrime(h);
+
+      // bar
+      X.fillStyle=prime?'rgba(255,68,170,0.6)':'rgba(255,68,170,0.2)';
+      X.fillRect(xp+2,barY+barH-bh-5,bw-4,bh);
+
+      // bar outline
+      if(amps[i]>0.001){
+        X.strokeStyle=prime?'#ff44aa':'#ff44aa44';
+        X.lineWidth=1;
+        X.strokeRect(xp+2,barY+barH-bh-5,bw-4,bh);
+      }
+
+      // harmonic number
+      X.font='9px "Courier New",monospace';
+      X.fillStyle=prime?'#ff44aa':'#555';
+      X.textAlign='center';
+      X.fillText(h.toString(),xp+bw/2,barY+barH+10);
+
+      // amplitude value
+      if(amps[i]>0.001){
+        X.fillStyle='#ff44aa88';
+        X.fillText(amps[i].toFixed(2),xp+bw/2,barY+barH-bh-12);
+      }
+    }
+
+    X.font='10px "Courier New",monospace'; X.fillStyle='#ff44aa44'; X.textAlign='center';
+    X.fillText('FOURIER COEFFICIENTS (* = prime)',waveX+waveW/2,barY-8);
+  }
+
+  // Stats
+  const st=computeStats();
+  document.getElementById('s-harm').textContent=st.active+' / 17';
+  document.getElementById('s-rms').textContent=st.rms.toFixed(4);
+  document.getElementById('s-crest').textContent=st.crest.toFixed(3);
+  document.getElementById('s-prime').textContent=st.primePct.toFixed(1)+'%';
+  document.getElementById('s-preset').textContent=curPreset;
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

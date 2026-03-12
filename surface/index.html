@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SURFACE — Surface Classification</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;overflow:hidden;font-family:'Courier New',monospace;cursor:crosshair;color:#e4a}
+canvas{display:block;width:100vw;height:100vh}
+#stats{position:fixed;top:20px;right:20px;background:rgba(6,6,16,0.85);border:1px solid #e4a;padding:16px 22px;font-size:13px;line-height:2;min-width:220px;pointer-events:none;z-index:10}
+#stats h2{font-size:11px;letter-spacing:3px;color:#e4a;border-bottom:1px solid rgba(238,68,170,0.3);padding-bottom:6px;margin-bottom:6px}
+#stats .val{color:#fff}
+#controls{position:fixed;bottom:20px;left:20px;display:flex;flex-direction:column;gap:8px;z-index:10}
+#controls button{background:rgba(6,6,16,0.85);border:1px solid #e4a;color:#e4a;padding:8px 16px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;letter-spacing:1px;transition:background .2s}
+#controls button:hover{background:rgba(238,68,170,0.2)}
+#title{position:fixed;top:20px;left:20px;font-size:11px;letter-spacing:3px;color:#e4a;opacity:0.7;z-index:10}
+</style>
+</head>
+<body>
+<div id="title">SHIELD-SURFACE &mdash; Surface Classification</div>
+<div id="stats">
+<h2>SURFACE STATS</h2>
+<div>surface: <span class="val" id="s-name">Sphere</span></div>
+<div>genus: <span class="val" id="s-genus">0</span></div>
+<div>Euler char: <span class="val" id="s-euler">2</span></div>
+<div>orientable: <span class="val" id="s-orient">YES</span></div>
+<div>boundary: <span class="val" id="s-bound">0</span></div>
+<div>prime genus: <span class="val" id="s-prime">NO</span></div>
+</div>
+<div id="controls">
+<button onclick="prevSurface()">[ &larr; PREV SURFACE ]</button>
+<button onclick="nextSurface()">[ NEXT SURFACE &rarr; ]</button>
+<button onclick="toggleWireframe()">[ TOGGLE WIREFRAME ]</button>
+<button onclick="toggleGluing()">[ ANIMATE GLUING ]</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+function isPrime(n){if(n<2)return false;for(let i=2;i*i<=n;i++)if(n%i===0)return false;return true}
+
+let currentGenus=0;
+let wireframe=false;
+let animatingGlue=false;
+let glueProgress=0;
+let time=0;
+
+const surfaces=[
+  {name:'Sphere S\u00B2',genus:0,euler:2,orientable:true,word:'aa\u207B\u00B9',sides:2},
+  {name:'Torus T\u00B2',genus:1,euler:0,orientable:true,word:'aba\u207B\u00B9b\u207B\u00B9',sides:4},
+  {name:'Genus-2',genus:2,euler:-2,orientable:true,word:'a\u2081b\u2081a\u2081\u207B\u00B9b\u2081\u207B\u00B9a\u2082b\u2082a\u2082\u207B\u00B9b\u2082\u207B\u00B9',sides:8},
+  {name:'Genus-3',genus:3,euler:-4,orientable:true,word:'3 handles',sides:12},
+  {name:'Genus-4',genus:4,euler:-6,orientable:true,word:'4 handles',sides:16},
+  {name:'Genus-5',genus:5,euler:-8,orientable:true,word:'5 handles',sides:20},
+  {name:'Genus-6',genus:6,euler:-10,orientable:true,word:'6 handles',sides:24},
+  {name:'Genus-7',genus:7,euler:-12,orientable:true,word:'7 handles',sides:28},
+];
+
+function nextSurface(){currentGenus=Math.min(7,currentGenus+1);glueProgress=0;updateStats()}
+function prevSurface(){currentGenus=Math.max(0,currentGenus-1);glueProgress=0;updateStats()}
+function toggleWireframe(){wireframe=!wireframe}
+function toggleGluing(){animatingGlue=!animatingGlue;if(animatingGlue)glueProgress=0}
+
+function updateStats(){
+  const s=surfaces[currentGenus];
+  document.getElementById('s-name').textContent=s.name;
+  document.getElementById('s-genus').textContent=s.genus;
+  document.getElementById('s-euler').textContent=s.euler;
+  document.getElementById('s-orient').textContent=s.orientable?'YES':'NO';
+  document.getElementById('s-bound').textContent='0';
+  document.getElementById('s-prime').textContent=isPrime(s.genus)?'YES':'NO';
+}
+
+const EDGE_COLORS=['#ee44aa','#44aaff','#44ff88','#ffaa22','#aa44ff','#ff6644','#22ffcc',
+                   '#ff4466','#88aaff','#ffdd44','#ff44cc','#44ffaa','#ff8844','#aaff44'];
+
+function drawPolygon(cx,cy,R,sides,genus){
+  const pts=[];
+  for(let i=0;i<sides;i++){
+    const a=-Math.PI/2+i*Math.PI*2/sides;
+    pts.push({x:cx+Math.cos(a)*R,y:cy+Math.sin(a)*R});
+  }
+
+  // fill polygon
+  ctx.fillStyle='rgba(238,68,170,0.05)';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.closePath();ctx.fill();
+
+  // draw edges with identification coloring
+  // For genus g orientable: pattern is a_i b_i a_i^-1 b_i^-1 repeated g times
+  // Each group of 4 edges shares 2 colors
+  for(let i=0;i<sides;i++){
+    const p1=pts[i],p2=pts[(i+1)%sides];
+    let colorIdx,reversed;
+
+    if(genus===0){
+      // sphere: aa^-1 (2 edges identified with reversal)
+      colorIdx=0;reversed=(i===1);
+    }else{
+      // genus g: groups of 4 edges per handle
+      const handleIdx=Math.floor(i/4);
+      const edgeInHandle=i%4;
+      colorIdx=handleIdx*2+(edgeInHandle%2===0?0:1);
+      reversed=(edgeInHandle>=2);
+    }
+
+    const col=EDGE_COLORS[colorIdx%EDGE_COLORS.length];
+    ctx.strokeStyle=col;
+    ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+
+    // arrow showing direction
+    const mx=(p1.x+p2.x)/2,my=(p1.y+p2.y)/2;
+    const dx=p2.x-p1.x,dy=p2.y-p1.y;
+    const len=Math.hypot(dx,dy);
+    const nx=dx/len,ny=dy/len;
+    const dir=reversed?-1:1;
+    const ax=mx+nx*10*dir,ay=my+ny*10*dir;
+    const perpX=-ny,perpY=nx;
+
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(ax,ay);
+    ctx.lineTo(ax-nx*8*dir+perpX*4,ay-ny*8*dir+perpY*4);
+    ctx.lineTo(ax-nx*8*dir-perpX*4,ay-ny*8*dir-perpY*4);
+    ctx.closePath();ctx.fill();
+
+    // edge label
+    const labelX=mx+(cx-mx)*0.15-ny*15;
+    const labelY=my+(cy-my)*0.15+nx*15;
+    ctx.fillStyle='rgba(255,255,255,0.6)';
+    ctx.font='11px Courier New';
+    const label=String.fromCharCode(97+colorIdx);
+    ctx.fillText(reversed?label+'\u207B\u00B9':label,labelX-5,labelY+4);
+  }
+
+  // vertices
+  for(let i=0;i<pts.length;i++){
+    ctx.fillStyle='#fff';
+    ctx.shadowColor='#e4a';ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(pts[i].x,pts[i].y,4,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  return pts;
+}
+
+function drawSurfaceVisualization(cx,cy,R,genus){
+  // Draw the 3D-ish representation of the surface
+  const rotY=time*0.4;
+  const rotX=0.3+Math.sin(time*0.2)*0.1;
+
+  if(genus===0){
+    // Sphere
+    drawSphere3D(cx,cy,R*0.6,rotY,rotX);
+  }else if(genus===1){
+    // Torus
+    drawTorus3D(cx,cy,R*0.5,rotY,rotX);
+  }else{
+    // Higher genus: draw connected tori schematically
+    drawHighGenus(cx,cy,R*0.5,genus,rotY);
+  }
+}
+
+function drawSphere3D(cx,cy,R,rotY,rotX){
+  const strips=30,stacks=20;
+  for(let i=0;i<strips;i++){
+    const u1=i*Math.PI/strips-Math.PI/2;
+    const u2=(i+1)*Math.PI/strips-Math.PI/2;
+    for(let j=0;j<stacks;j++){
+      const v=j*Math.PI*2/stacks;
+      const v2=(j+1)*Math.PI*2/stacks;
+
+      const x1=Math.cos(u1)*Math.cos(v+rotY),y1=Math.sin(u1),z1=Math.cos(u1)*Math.sin(v+rotY);
+      const x2=Math.cos(u1)*Math.cos(v2+rotY),y2=Math.sin(u1),z2=Math.cos(u1)*Math.sin(v2+rotY);
+      const x3=Math.cos(u2)*Math.cos(v+rotY),y3=Math.sin(u2),z3=Math.cos(u2)*Math.sin(v+rotY);
+
+      // simple rotation
+      const ry1=y1*Math.cos(rotX)-z1*Math.sin(rotX);
+      const rz1=y1*Math.sin(rotX)+z1*Math.cos(rotX);
+      const ry2=y2*Math.cos(rotX)-z2*Math.sin(rotX);
+      const rz2=y2*Math.sin(rotX)+z2*Math.cos(rotX);
+      const ry3=y3*Math.cos(rotX)-z3*Math.sin(rotX);
+      const rz3=y3*Math.sin(rotX)+z3*Math.cos(rotX);
+
+      const depth=(rz1+rz2)/2;
+      const alpha=wireframe?0.3:0.05+0.12*(depth+1)/2;
+
+      ctx.strokeStyle='rgba(238,68,170,'+Math.max(0.02,alpha)+')';
+      ctx.lineWidth=wireframe?0.8:0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx+x1*R,cy+ry1*R);ctx.lineTo(cx+x2*R,cy+ry2*R);ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx+x1*R,cy+ry1*R);ctx.lineTo(cx+x3*R,cy+ry3*R);ctx.stroke();
+    }
+  }
+}
+
+function drawTorus3D(cx,cy,R,rotY,rotX){
+  const Rmaj=R,Rmin=R*0.35;
+  const strips=35,stacks=20;
+  for(let i=0;i<strips;i++){
+    const u=i*Math.PI*2/strips;
+    const u2=(i+1)*Math.PI*2/strips;
+    for(let j=0;j<stacks;j++){
+      const v=j*Math.PI*2/stacks;
+      const v2=(j+1)*Math.PI*2/stacks;
+
+      function torusPoint(uu,vv){
+        const x=(Rmaj+Rmin*Math.cos(vv))*Math.cos(uu+rotY);
+        const y=Rmin*Math.sin(vv);
+        const z=(Rmaj+Rmin*Math.cos(vv))*Math.sin(uu+rotY);
+        const ry=y*Math.cos(rotX)-z*Math.sin(rotX);
+        const rz=y*Math.sin(rotX)+z*Math.cos(rotX);
+        return{x:cx+x,y:cy+ry,z:rz};
+      }
+
+      const p1=torusPoint(u,v);
+      const p2=torusPoint(u,v2);
+      const p3=torusPoint(u2,v);
+
+      const depth=(p1.z+p2.z)/(2*R);
+      const alpha=wireframe?0.3:0.04+0.16*(depth+1)/2;
+
+      ctx.strokeStyle='rgba(238,68,170,'+Math.max(0.02,alpha)+')';
+      ctx.lineWidth=wireframe?0.8:0.5;
+      ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p3.x,p3.y);ctx.stroke();
+    }
+  }
+}
+
+function drawHighGenus(cx,cy,R,g,rotY){
+  // Draw g connected tori in a row
+  const spacing=R*1.2;
+  const totalW=(g-1)*spacing;
+  const startX=cx-totalW/2;
+
+  for(let h=0;h<g;h++){
+    const hcx=startX+h*spacing;
+    const Rmaj=R*0.4,Rmin=R*0.15;
+    const prime=isPrime(h+1);
+    const strips=24,stacks=14;
+
+    for(let i=0;i<strips;i++){
+      const u=i*Math.PI*2/strips;
+      const u2=(i+1)*Math.PI*2/strips;
+      for(let j=0;j<stacks;j++){
+        const v=j*Math.PI*2/stacks;
+        const v2=(j+1)*Math.PI*2/stacks;
+
+        function tp(uu,vv){
+          const x=(Rmaj+Rmin*Math.cos(vv))*Math.cos(uu+rotY);
+          const y=Rmin*Math.sin(vv);
+          const z=(Rmaj+Rmin*Math.cos(vv))*Math.sin(uu+rotY);
+          return{x:hcx+x,y:cy+y*Math.cos(0.3)-z*Math.sin(0.3),z:y*Math.sin(0.3)+z*Math.cos(0.3)};
+        }
+
+        const p1=tp(u,v),p2=tp(u,v2),p3=tp(u2,v);
+        const depth=(p1.z+p2.z)/(2*R);
+        let alpha=wireframe?0.3:0.04+0.14*(depth+1)/2;
+        if(prime)alpha=Math.min(1,alpha*2);
+
+        const col=prime?'rgba(255,200,50,':'rgba(238,68,170,';
+        ctx.strokeStyle=col+Math.max(0.02,alpha)+')';
+        ctx.lineWidth=wireframe?0.8:0.5;
+        ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p3.x,p3.y);ctx.stroke();
+      }
+    }
+
+    // connecting tubes between handles
+    if(h<g-1){
+      const nextX=startX+(h+1)*spacing;
+      const tubeY=cy;
+      ctx.strokeStyle='rgba(238,68,170,0.2)';ctx.lineWidth=1;
+      for(let t=0;t<8;t++){
+        const a=t*Math.PI*2/8;
+        const r=Rmin*0.8;
+        const y1=tubeY+Math.sin(a)*r;
+        const y2=tubeY+Math.sin(a)*r;
+        ctx.beginPath();
+        ctx.moveTo(hcx+Rmaj,y1);
+        ctx.lineTo(nextX-Rmaj,y2);
+        ctx.stroke();
+      }
+    }
+
+    // label
+    if(prime){
+      ctx.fillStyle='rgba(255,200,50,0.6)';ctx.font='10px Courier New';
+      ctx.fillText('p='+(h+1),hcx-10,cy+Rmaj+Rmin+15);
+    }
+  }
+}
+
+function drawGluingAnimation(cx,cy,R,genus){
+  if(genus===0)return;
+  const sides=Math.max(4,genus*4);
+  const progress=glueProgress;
+
+  // Show polygon edges being identified
+  const pts=[];
+  for(let i=0;i<sides;i++){
+    const a=-Math.PI/2+i*Math.PI*2/sides;
+    const baseR=R*(1-progress*0.3);
+    pts.push({x:cx+Math.cos(a)*baseR,y:cy+Math.sin(a)*baseR});
+  }
+
+  // Animate edges moving toward their identified partners
+  for(let i=0;i<sides;i++){
+    const p1=pts[i],p2=pts[(i+1)%sides];
+    const handleIdx=Math.floor(i/4);
+    const edgeInHandle=i%4;
+    const colorIdx=handleIdx*2+(edgeInHandle%2===0?0:1);
+    const reversed=(edgeInHandle>=2);
+
+    // Find partner edge
+    let partnerStart;
+    if(edgeInHandle<2){
+      partnerStart=handleIdx*4+(edgeInHandle+2);
+    }else{
+      partnerStart=handleIdx*4+(edgeInHandle-2);
+    }
+    if(partnerStart>=sides)continue;
+
+    const q1=pts[partnerStart],q2=pts[(partnerStart+1)%sides];
+
+    // Interpolate edges toward each other
+    const mx1=p1.x+(q1.x-p1.x)*progress*0.5;
+    const my1=p1.y+(q1.y-p1.y)*progress*0.5;
+    const mx2=p2.x+(q2.x-p2.x)*progress*0.5;
+    const my2=p2.y+(q2.y-p2.y)*progress*0.5;
+
+    const col=EDGE_COLORS[colorIdx%EDGE_COLORS.length];
+    ctx.strokeStyle=col;
+    ctx.lineWidth=2;
+    ctx.globalAlpha=0.6+0.4*Math.sin(time*2);
+    ctx.beginPath();ctx.moveTo(mx1,my1);ctx.lineTo(mx2,my2);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+}
+
+function draw(){
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+  time+=0.016;
+
+  if(animatingGlue){
+    glueProgress+=0.003;
+    if(glueProgress>1)glueProgress=0;
+  }
+
+  // grid
+  ctx.strokeStyle='rgba(238,68,170,0.03)';ctx.lineWidth=1;
+  for(let x=0;x<W;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+
+  const s=surfaces[currentGenus];
+  const polyR=Math.min(W,H)*0.2;
+
+  // Left side: polygon identification
+  const polyCx=W*0.28,polyCy=H*0.5;
+  ctx.fillStyle='rgba(238,68,170,0.4)';ctx.font='12px Courier New';
+  ctx.fillText('Polygon Identification',polyCx-70,polyCy-polyR-25);
+  ctx.fillStyle='rgba(255,255,255,0.4)';ctx.font='11px Courier New';
+  ctx.fillText('word: '+s.word,polyCx-50,polyCy+polyR+35);
+
+  drawPolygon(polyCx,polyCy,polyR,s.sides,s.genus);
+
+  if(animatingGlue){
+    drawGluingAnimation(polyCx,polyCy,polyR,s.genus);
+  }
+
+  // Right side: 3D surface
+  const surfCx=W*0.7,surfCy=H*0.5;
+  const surfR=Math.min(W,H)*0.28;
+  ctx.fillStyle='rgba(238,68,170,0.4)';ctx.font='12px Courier New';
+  ctx.fillText('Surface Visualization',surfCx-65,surfCy-surfR-25);
+
+  drawSurfaceVisualization(surfCx,surfCy,surfR,s.genus);
+
+  // prime genus highlight
+  if(isPrime(s.genus)){
+    ctx.strokeStyle='rgba(255,200,50,'+(0.3+0.2*Math.sin(time*2))+')';
+    ctx.lineWidth=2;
+    ctx.setLineDash([5,5]);
+    ctx.beginPath();
+    ctx.roundRect(surfCx-surfR-20,surfCy-surfR-20,surfR*2+40,surfR*2+40,10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='rgba(255,200,50,0.5)';ctx.font='11px Courier New';
+    ctx.fillText('PRIME GENUS',surfCx-35,surfCy+surfR+30);
+  }
+
+  // Classification theorem text
+  ctx.fillStyle='rgba(238,68,170,0.3)';ctx.font='10px Courier New';
+  const thm='Classification: Every closed surface is homeomorphic to S\u00B2, or a connected sum of tori, or a connected sum of RP\u00B2s';
+  ctx.fillText(thm,W/2-thm.length*3,H-30);
+
+  updateStats();
+  requestAnimationFrame(draw);
+}
+
+updateStats();
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-HASH — Cryptographic Hash Avalanche</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; color: #4f8; }
+canvas { display: block; position: fixed; top: 0; left: 0; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4f8; padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  z-index: 10; min-width: 260px; border-radius: 4px;
+}
+#stats .title { font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #4f8; letter-spacing: 1px; }
+#stats .label { color: #6a7; }
+#stats .val { color: #bfe; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; z-index: 10; display: flex; gap: 8px; flex-wrap: wrap;
+}
+#controls button {
+  background: rgba(6,6,16,0.85); border: 1px solid #4f8; color: #4f8;
+  font-family: 'Courier New', monospace; font-size: 12px; padding: 7px 14px;
+  cursor: pointer; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,255,136,0.15); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-HASH — Avalanche Effect</div>
+  <div><span class="label">Input (hex): </span><span class="val" id="s-input">—</span></div>
+  <div><span class="label">Output (hex): </span><span class="val" id="s-output">—</span></div>
+  <div><span class="label">Bits changed: </span><span class="val" id="s-changed">—</span></div>
+  <div><span class="label">Avalanche %: </span><span class="val" id="s-avalanche">—</span></div>
+  <div><span class="label">Hamming dist: </span><span class="val" id="s-hamming">—</span></div>
+  <div><span class="label">Round: </span><span class="val" id="s-round">—</span></div>
+</div>
+<div id="controls">
+  <button id="btn-flip">Flip Random Bit</button>
+  <button id="btn-new">New Random Input</button>
+  <button id="btn-step">Step Round</button>
+  <button id="btn-auto">Auto-Play</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const INPUT_BITS = 64;
+const OUTPUT_BITS = 64;
+const ROUNDS = 8;
+
+let inputBits = new Uint8Array(INPUT_BITS);
+let prevOutputBits = new Uint8Array(OUTPUT_BITS);
+let outputBits = new Uint8Array(OUTPUT_BITS);
+let roundStates = [];
+let currentRound = 0;
+let autoPlay = false;
+let autoTimer = 0;
+let changedBits = new Uint8Array(OUTPUT_BITS);
+let connections = []; // visual connections for animation
+let animTime = 0;
+let flipAnim = []; // animations for flipping bits
+let lastFlipTime = 0;
+
+// Particle system for visual flair
+let particles = [];
+
+function randomInput() {
+  for (let i = 0; i < INPUT_BITS; i++) inputBits[i] = Math.random() < 0.5 ? 1 : 0;
+  computeHash();
+}
+
+// Simple hash-like function (Feistel-inspired mixing)
+function mixBits(bits, round) {
+  const out = new Uint8Array(bits.length);
+  const n = bits.length;
+  for (let i = 0; i < n; i++) {
+    // Mix with multiple positions based on round
+    let v = bits[i];
+    v ^= bits[(i * 7 + round * 13 + 3) % n];
+    v ^= bits[(i * 11 + round * 5 + 7) % n];
+    v ^= bits[(i + round * 3 + 17) % n];
+    // Additional nonlinear mixing
+    let neighbor = bits[(i + 1) % n] & bits[(i + round + 2) % n];
+    v ^= neighbor;
+    out[i] = v & 1;
+  }
+  return out;
+}
+
+function computeHash() {
+  prevOutputBits = new Uint8Array(outputBits);
+  roundStates = [new Uint8Array(inputBits)];
+  let state = new Uint8Array(inputBits);
+  for (let r = 0; r < ROUNDS; r++) {
+    state = mixBits(state, r);
+    roundStates.push(new Uint8Array(state));
+  }
+  outputBits = state;
+  // Compute changed bits
+  for (let i = 0; i < OUTPUT_BITS; i++) {
+    changedBits[i] = (outputBits[i] !== prevOutputBits[i]) ? 1 : 0;
+  }
+  currentRound = ROUNDS;
+  buildConnections();
+  updateStats();
+}
+
+function computeToRound(targetRound) {
+  let state = new Uint8Array(inputBits);
+  roundStates = [new Uint8Array(state)];
+  for (let r = 0; r < targetRound; r++) {
+    state = mixBits(state, r);
+    roundStates.push(new Uint8Array(state));
+  }
+  prevOutputBits = new Uint8Array(outputBits);
+  outputBits = state;
+  for (let i = 0; i < OUTPUT_BITS; i++) {
+    changedBits[i] = (outputBits[i] !== prevOutputBits[i]) ? 1 : 0;
+  }
+  currentRound = targetRound;
+  buildConnections();
+  updateStats();
+}
+
+function buildConnections() {
+  connections = [];
+  if (roundStates.length < 2) return;
+  const lastIdx = roundStates.length - 1;
+  const input = roundStates[0];
+  const output = roundStates[lastIdx];
+  // Build connections showing which input bits affect output
+  for (let o = 0; o < OUTPUT_BITS; o++) {
+    for (let i = 0; i < INPUT_BITS; i++) {
+      // Show connection if input bit index maps to this output via mixing
+      const r = lastIdx - 1;
+      const n = INPUT_BITS;
+      if ((i * 7 + r * 13 + 3) % n === o || (i * 11 + r * 5 + 7) % n === o ||
+          (i + r * 3 + 17) % n === o || (i + 1) % n === o) {
+        connections.push({ from: i, to: o, active: changedBits[o] });
+      }
+    }
+  }
+}
+
+function bitsToHex(bits) {
+  let hex = '';
+  for (let i = 0; i < bits.length; i += 4) {
+    let nibble = 0;
+    for (let j = 0; j < 4 && i + j < bits.length; j++) {
+      nibble |= (bits[i + j] << (3 - j));
+    }
+    hex += nibble.toString(16);
+  }
+  return hex.toUpperCase();
+}
+
+function updateStats() {
+  const bitsChanged = changedBits.reduce((a, b) => a + b, 0);
+  document.getElementById('s-input').textContent = bitsToHex(inputBits);
+  document.getElementById('s-output').textContent = bitsToHex(outputBits);
+  document.getElementById('s-changed').textContent = bitsChanged + ' / ' + OUTPUT_BITS;
+  document.getElementById('s-avalanche').textContent = (bitsChanged / OUTPUT_BITS * 100).toFixed(1) + '%';
+  document.getElementById('s-hamming').textContent = bitsChanged;
+  document.getElementById('s-round').textContent = currentRound + ' / ' + ROUNDS;
+}
+
+function flipRandomBit() {
+  const idx = Math.floor(Math.random() * INPUT_BITS);
+  inputBits[idx] ^= 1;
+  flipAnim.push({ idx, time: animTime });
+  lastFlipTime = animTime;
+  computeHash();
+  // Spawn particles at the flipped bit
+  const y = getInputBitY(idx);
+  const x = getInputX();
+  for (let p = 0; p < 12; p++) {
+    particles.push({
+      x, y, vx: (Math.random() - 0.3) * 3, vy: (Math.random() - 0.5) * 3,
+      life: 1, decay: 0.015 + Math.random() * 0.01, r: 2 + Math.random() * 3
+    });
+  }
+}
+
+function getInputX() { return W * 0.12; }
+function getOutputX() { return W * 0.88; }
+function getInputBitY(i) {
+  const margin = H * 0.08;
+  return margin + (i / (INPUT_BITS - 1)) * (H - 2 * margin);
+}
+function getOutputBitY(i) {
+  const margin = H * 0.08;
+  return margin + (i / (OUTPUT_BITS - 1)) * (H - 2 * margin);
+}
+
+// Buttons
+document.getElementById('btn-flip').addEventListener('click', flipRandomBit);
+document.getElementById('btn-new').addEventListener('click', () => { randomInput(); });
+document.getElementById('btn-step').addEventListener('click', () => {
+  const next = (currentRound % ROUNDS) + 1;
+  computeToRound(next);
+});
+document.getElementById('btn-auto').addEventListener('click', () => {
+  autoPlay = !autoPlay;
+  document.getElementById('btn-auto').textContent = autoPlay ? 'Stop' : 'Auto-Play';
+});
+
+// Draw
+function draw(t) {
+  animTime = t * 0.001;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background grid
+  ctx.strokeStyle = 'rgba(68,255,136,0.04)';
+  ctx.lineWidth = 1;
+  const gs = 40;
+  for (let x = 0; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  const inX = getInputX();
+  const outX = getOutputX();
+
+  // Draw connections
+  for (const conn of connections) {
+    const y1 = getInputBitY(conn.from);
+    const y2 = getOutputBitY(conn.to);
+    const alpha = conn.active ? 0.25 + 0.15 * Math.sin(animTime * 3) : 0.03;
+    ctx.strokeStyle = conn.active ? `rgba(68,255,136,${alpha})` : `rgba(68,255,136,${alpha})`;
+    ctx.lineWidth = conn.active ? 1.5 : 0.5;
+    ctx.beginPath();
+    const midX = (inX + outX) / 2;
+    ctx.moveTo(inX + 8, y1);
+    ctx.bezierCurveTo(midX, y1, midX, y2, outX - 8, y2);
+    ctx.stroke();
+  }
+
+  // Draw input bits
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < INPUT_BITS; i++) {
+    const y = getInputBitY(i);
+    const isFlipped = flipAnim.some(f => f.idx === i && animTime - f.time < 1.0);
+    const bitColor = inputBits[i] ? '#4f8' : '#1a3020';
+    const glowColor = isFlipped ? `rgba(68,255,136,${0.6 * Math.max(0, 1 - (animTime - (flipAnim.find(f => f.idx === i)?.time || 0)))})` : 'transparent';
+
+    if (isFlipped) {
+      ctx.shadowColor = '#4f8';
+      ctx.shadowBlur = 15;
+    }
+    ctx.fillStyle = bitColor;
+    ctx.fillRect(inX - 5, y - 4, 10, 8);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = inputBits[i] ? '#060610' : '#4f8';
+    ctx.fillText(inputBits[i], inX, y);
+  }
+
+  // Label
+  ctx.fillStyle = '#4f8';
+  ctx.font = '12px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('INPUT', inX, H * 0.03);
+
+  // Draw output bits as 8x8 grid
+  const gridCols = 8;
+  const gridRows = 8;
+  const cellSize = Math.min(22, (H * 0.7) / gridRows);
+  const gridW = gridCols * cellSize;
+  const gridH = gridRows * cellSize;
+  const gridX = outX - gridW / 2;
+  const gridY = H / 2 - gridH / 2;
+
+  ctx.fillStyle = '#4f8';
+  ctx.font = '12px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('OUTPUT HASH', outX, gridY - 16);
+
+  for (let i = 0; i < OUTPUT_BITS; i++) {
+    const col = i % gridCols;
+    const row = Math.floor(i / gridCols);
+    const cx = gridX + col * cellSize;
+    const cy = gridY + row * cellSize;
+
+    const changed = changedBits[i];
+    const pulse = changed ? 0.5 + 0.5 * Math.sin(animTime * 4 + i * 0.3) : 0;
+
+    if (changed) {
+      ctx.shadowColor = '#4f8';
+      ctx.shadowBlur = 8 + pulse * 8;
+    }
+
+    ctx.fillStyle = outputBits[i]
+      ? (changed ? `rgb(${68 + pulse * 40}, ${255}, ${136 + pulse * 40})` : '#4f8')
+      : (changed ? `rgba(255,80,80,${0.5 + pulse * 0.5})` : '#1a1a2a');
+    ctx.fillRect(cx + 1, cy + 1, cellSize - 2, cellSize - 2);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = outputBits[i] ? '#060610' : (changed ? '#f88' : '#333');
+    ctx.font = '9px Courier New';
+    ctx.fillText(outputBits[i], cx + cellSize / 2, cy + cellSize / 2);
+  }
+
+  // Draw round indicator
+  const roundY = H * 0.92;
+  ctx.fillStyle = '#4f8';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'center';
+  for (let r = 0; r <= ROUNDS; r++) {
+    const rx = inX + (outX - inX) * (r / ROUNDS);
+    const isActive = r <= currentRound;
+    ctx.fillStyle = isActive ? '#4f8' : '#1a3020';
+    ctx.beginPath();
+    ctx.arc(rx, roundY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    if (r > 0) {
+      ctx.strokeStyle = isActive ? 'rgba(68,255,136,0.4)' : 'rgba(68,255,136,0.1)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(inX + (outX - inX) * ((r - 1) / ROUNDS) + 6, roundY);
+      ctx.lineTo(rx - 6, roundY);
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#4f8';
+  ctx.fillText('ROUNDS', (inX + outX) / 2, roundY + 18);
+
+  // Center label: avalanche visualization
+  const midX = (inX + outX) / 2;
+  const bitsChanged = changedBits.reduce((a, b) => a + b, 0);
+  const pct = (bitsChanged / OUTPUT_BITS * 100);
+  ctx.font = '28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = `rgba(68,255,136,${0.3 + 0.2 * Math.sin(animTime * 2)})`;
+  ctx.fillText(pct.toFixed(1) + '%', midX, H * 0.15);
+  ctx.font = '11px Courier New';
+  ctx.fillStyle = 'rgba(68,255,136,0.5)';
+  ctx.fillText('AVALANCHE', midX, H * 0.19);
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = '#4f8';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Clean old flipAnims
+  flipAnim = flipAnim.filter(f => animTime - f.time < 2.0);
+
+  // Auto play
+  if (autoPlay) {
+    autoTimer += 1;
+    if (autoTimer > 90) {
+      autoTimer = 0;
+      flipRandomBit();
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+randomInput();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

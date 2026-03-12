@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-TELEPORT — Quantum Teleportation</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;overflow:hidden;font-family:'Courier New',monospace;cursor:crosshair;color:#ccc}
+canvas{display:block;position:fixed;top:0;left:0}
+#stats{position:fixed;top:16px;right:16px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:14px 18px;font-size:13px;line-height:1.7;border-radius:4px;z-index:10;min-width:220px}
+#stats h3{color:#a4f;margin-bottom:6px;font-size:14px;letter-spacing:1px}
+#stats span.val{color:#a4f}
+#controls{position:fixed;bottom:16px;left:16px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:12px 16px;border-radius:4px;z-index:10;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#controls button,#controls select{background:#111;color:#a4f;border:1px solid #a4f;padding:6px 12px;font-family:inherit;font-size:12px;cursor:pointer;border-radius:3px}
+#controls button:hover{background:#a4f;color:#060610}
+#controls label{font-size:12px;color:#888}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+<h3>SHIELD-TELEPORT</h3>
+<div>Protocol Step: <span class="val" id="sStep">0 — Init</span></div>
+<div>Alice Measurement: <span class="val" id="sMeas">—</span></div>
+<div>Correction Gates: <span class="val" id="sGates">—</span></div>
+<div>Fidelity: <span class="val" id="sFid">—</span></div>
+<div>Input State: <span class="val" id="sInput">|+⟩</span></div>
+</div>
+<div id="controls">
+<button id="btnStep">Step</button>
+<button id="btnAuto">Auto-Play</button>
+<button id="btnReset">Reset</button>
+<label>State:
+<select id="selState">
+<option value="plus">|+⟩</option>
+<option value="zero">|0⟩</option>
+<option value="one">|1⟩</option>
+<option value="minus">|−⟩</option>
+<option value="psi">|ψ⟩=0.6|0⟩+0.8|1⟩</option>
+</select>
+</label>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}
+resize();addEventListener('resize',resize);
+
+const ACCENT='#aa44ff',ACCENT_RGB=[170,68,255];
+const STEPS=['Init','Bell Pair Created','Bell Measurement','Classical Bits Sent','Correction Applied','Teleportation Complete'];
+const INPUT_STATES={
+  plus:{label:'|+⟩',alpha:Math.SQRT1_2,beta:Math.SQRT1_2,phase:0},
+  zero:{label:'|0⟩',alpha:1,beta:0,phase:0},
+  one:{label:'|1⟩',alpha:0,beta:1,phase:0},
+  minus:{label:'|−⟩',alpha:Math.SQRT1_2,beta:-Math.SQRT1_2,phase:0},
+  psi:{label:'|ψ⟩',alpha:0.6,beta:0.8,phase:0}
+};
+
+let step=0,autoPlay=false,autoTimer=0,autoDelay=120;
+let measBits=[0,0],corrGates='—',fidelity=0;
+let inputKey='plus';
+let particles=[];
+let t=0;
+let stepProgress=0,stepTarget=0;
+let bellPairAlpha=0,classicalAlpha=0,correctionAlpha=0,teleportAlpha=0;
+
+function getInput(){return INPUT_STATES[inputKey]}
+
+function resetSim(){
+  step=0;stepProgress=0;stepTarget=0;
+  measBits=[0,0];corrGates='—';fidelity=0;
+  bellPairAlpha=0;classicalAlpha=0;correctionAlpha=0;teleportAlpha=0;
+  particles=[];
+  autoPlay=false;
+  document.getElementById('btnAuto').textContent='Auto-Play';
+}
+
+function advanceStep(){
+  if(step>=5)return;
+  step++;
+  stepTarget=step;
+  if(step===2){
+    measBits=[Math.random()<0.5?1:0,Math.random()<0.5?1:0];
+  }
+  if(step===4){
+    let gates=[];
+    if(measBits[1])gates.push('X');
+    if(measBits[0])gates.push('Z');
+    corrGates=gates.length?gates.join(', '):'I (none)';
+  }
+  if(step===5){
+    fidelity=0.97+Math.random()*0.03;
+    for(let i=0;i<60;i++){
+      particles.push(makeTeleportParticle());
+    }
+  }
+}
+
+function makeTeleportParticle(){
+  let bobX=W*0.75,bobY=H*0.45;
+  return{
+    x:bobX+Math.random()*40-20,y:bobY+Math.random()*40-20,
+    vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,
+    life:1,decay:0.008+Math.random()*0.01,
+    size:2+Math.random()*3,
+    hue:270+Math.random()*40
+  };
+}
+
+document.getElementById('btnStep').onclick=advanceStep;
+document.getElementById('btnReset').onclick=resetSim;
+document.getElementById('btnAuto').onclick=function(){
+  autoPlay=!autoPlay;
+  this.textContent=autoPlay?'Pause':'Auto-Play';
+};
+document.getElementById('selState').onchange=function(){
+  inputKey=this.value;
+  resetSim();
+};
+
+function drawQubit(x,y,label,glow,pulsePhase,active){
+  ctx.save();
+  if(active){
+    let g=ctx.createRadialGradient(x,y,5,x,y,40);
+    g.addColorStop(0,'rgba(170,68,255,'+(.3+.15*Math.sin(pulsePhase))+')');
+    g.addColorStop(1,'rgba(170,68,255,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath();ctx.arc(x,y,40,0,Math.PI*2);ctx.fill();
+  }
+  ctx.strokeStyle=active?ACCENT:'#444';
+  ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.stroke();
+  if(glow>0){
+    ctx.shadowColor=ACCENT;ctx.shadowBlur=glow*15;
+    ctx.strokeStyle=ACCENT;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+  ctx.fillStyle=active?'#fff':'#888';
+  ctx.font='12px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(label,x,y);
+  ctx.restore();
+}
+
+function drawEntanglementLine(x1,y1,x2,y2,alpha,wave){
+  if(alpha<=0)return;
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.strokeStyle=ACCENT;ctx.lineWidth=1.5;
+  ctx.setLineDash([4,6]);
+  ctx.lineDashOffset=-t*2;
+  ctx.beginPath();
+  let mx=(x1+x2)/2,my=(y1+y2)/2-30*Math.sin(wave);
+  ctx.moveTo(x1,y1);ctx.quadraticCurveTo(mx,my,x2,y2);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawClassicalBits(x1,y1,x2,y2,alpha,bits){
+  if(alpha<=0)return;
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  let prog=Math.min(1,(t%120)/60);
+  let cx=x1+(x2-x1)*prog,cy=y1+(y2-y1)*prog+40;
+  ctx.strokeStyle='#ff8800';ctx.lineWidth=1;
+  ctx.setLineDash([2,4]);
+  ctx.beginPath();ctx.moveTo(x1,y1+25);ctx.lineTo(x2,y2+25);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#ff8800';
+  ctx.font='bold 14px Courier New';ctx.textAlign='center';
+  ctx.fillText(bits[0]+''+bits[1],cx,cy);
+  ctx.fillStyle='#885500';ctx.font='10px Courier New';
+  ctx.fillText('classical',((x1+x2)/2),y1+55);
+  ctx.restore();
+}
+
+function drawBlochMini(cx,cy,r,theta,phi,alpha){
+  if(alpha<=0)return;
+  ctx.save();
+  ctx.globalAlpha=alpha*0.7;
+  ctx.strokeStyle='#333';ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx-r,cy);ctx.lineTo(cx+r,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-r);ctx.lineTo(cx,cy+r);ctx.stroke();
+  let sx=cx+r*Math.sin(theta)*Math.cos(phi);
+  let sy=cy-r*Math.cos(theta);
+  ctx.strokeStyle=ACCENT;ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(sx,sy);ctx.stroke();
+  ctx.fillStyle=ACCENT;
+  ctx.beginPath();ctx.arc(sx,sy,4,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawGateBox(x,y,label,alpha){
+  if(alpha<=0)return;
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.strokeStyle=ACCENT;ctx.lineWidth=2;
+  ctx.strokeRect(x-18,y-14,36,28);
+  ctx.fillStyle='#fff';ctx.font='bold 13px Courier New';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(label,x,y);
+  ctx.restore();
+}
+
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    let p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+
+function drawParticles(){
+  for(let p of particles){
+    ctx.save();
+    ctx.globalAlpha=p.life*0.8;
+    ctx.fillStyle=`hsl(${p.hue},80%,65%)`;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+}
+
+function updateStats(){
+  document.getElementById('sStep').textContent=step+' — '+STEPS[step];
+  document.getElementById('sMeas').textContent=step>=2?measBits[0]+', '+measBits[1]:'—';
+  document.getElementById('sGates').textContent=step>=4?corrGates:'—';
+  document.getElementById('sFid').textContent=step>=5?fidelity.toFixed(4):'—';
+  document.getElementById('sInput').textContent=getInput().label;
+}
+
+function draw(){
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+  t++;
+
+  // Title
+  ctx.fillStyle=ACCENT;ctx.font='bold 16px Courier New';ctx.textAlign='left';
+  ctx.fillText('SHIELD-TELEPORT — Quantum Teleportation Protocol',20,30);
+  ctx.fillStyle='#555';ctx.font='11px Courier New';
+  ctx.fillText('Three-qubit teleportation: |ψ⟩ ⊗ |Φ+⟩',20,48);
+
+  // Positions
+  let aliceX=W*0.2,aliceY=H*0.35;
+  let eprAX=W*0.2,eprAY=H*0.55;
+  let bobX=W*0.75,bobY=H*0.55;
+
+  // Labels
+  ctx.fillStyle='#666';ctx.font='12px Courier New';ctx.textAlign='center';
+  ctx.fillText("ALICE's SIDE",W*0.2,H*0.2);
+  ctx.fillText("BOB's SIDE",W*0.75,H*0.2);
+
+  // Divider
+  ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.setLineDash([6,6]);
+  ctx.beginPath();ctx.moveTo(W*0.5,H*0.15);ctx.lineTo(W*0.5,H*0.85);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#333';ctx.font='10px Courier New';
+  ctx.fillText('quantum channel',W*0.5,H*0.88);
+
+  // Smooth transitions
+  if(step>=1)bellPairAlpha=Math.min(1,bellPairAlpha+0.02);
+  if(step>=3)classicalAlpha=Math.min(1,classicalAlpha+0.02);
+  if(step>=4)correctionAlpha=Math.min(1,correctionAlpha+0.02);
+  if(step>=5)teleportAlpha=Math.min(1,teleportAlpha+0.02);
+
+  // Step 0-1: qubits
+  let psiActive=step<2;
+  let eprActive=step>=1&&step<3;
+  let bobActive=step>=1;
+
+  drawQubit(aliceX,aliceY,getInput().label,step===0?1:0,t*0.05,psiActive);
+  ctx.fillStyle='#666';ctx.font='10px Courier New';ctx.textAlign='center';
+  ctx.fillText("Alice's qubit",aliceX,aliceY+35);
+
+  drawQubit(eprAX,eprAY,'EPR-A',bellPairAlpha,t*0.06,eprActive);
+  drawQubit(bobX,bobY,'EPR-B',bellPairAlpha,t*0.06,bobActive);
+
+  // Entanglement line
+  if(step>=1&&step<3){
+    drawEntanglementLine(eprAX,eprAY,bobX,bobY,bellPairAlpha,t*0.03);
+  }
+
+  // Step 2: Bell measurement indicator
+  if(step>=2){
+    let bmAlpha=Math.min(1,(step===2?0.5+0.3*Math.sin(t*0.1):0.6));
+    ctx.save();ctx.globalAlpha=bmAlpha;
+    ctx.strokeStyle='#ff4444';ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc((aliceX+eprAX)/2,(aliceY+eprAY)/2,50,0,Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle='#ff4444';ctx.font='11px Courier New';ctx.textAlign='center';
+    ctx.fillText('Bell Measurement',(aliceX+eprAX)/2,(aliceY+eprAY)/2-60);
+    ctx.fillText('Result: '+measBits[0]+measBits[1],(aliceX+eprAX)/2,(aliceY+eprAY)/2+60);
+    ctx.restore();
+
+    // Collapsed qubits
+    drawQubit(aliceX,aliceY,'M',0.3,t*0.05,false);
+    drawQubit(eprAX,eprAY,'M',0.3,t*0.06,false);
+  }
+
+  // Step 3: classical bits
+  if(step>=3){
+    drawClassicalBits(eprAX,eprAY,bobX,bobY,classicalAlpha,measBits);
+  }
+
+  // Step 4: correction gates
+  if(step>=4){
+    let gateY=bobY-45;
+    if(measBits[1])drawGateBox(bobX-25,gateY,'X',correctionAlpha);
+    if(measBits[0])drawGateBox(bobX+25,gateY,'Z',correctionAlpha);
+    if(!measBits[0]&&!measBits[1])drawGateBox(bobX,gateY,'I',correctionAlpha);
+  }
+
+  // Step 5: teleported state
+  if(step>=5){
+    drawQubit(bobX,bobY-90,getInput().label,teleportAlpha*1.5,t*0.08,true);
+    ctx.save();ctx.globalAlpha=teleportAlpha;
+    ctx.fillStyle='#0f0';ctx.font='12px Courier New';ctx.textAlign='center';
+    ctx.fillText('State teleported!',bobX,bobY-130);
+    ctx.fillText('Fidelity: '+fidelity.toFixed(4),bobX,bobY-115);
+    ctx.restore();
+
+    // Mini Bloch spheres
+    let inp=getInput();
+    let theta=Math.acos(inp.alpha)*2;
+    drawBlochMini(W*0.2,H*0.78,40,theta,inp.phase,0.6);
+    ctx.fillStyle='#666';ctx.font='10px Courier New';ctx.textAlign='center';
+    ctx.fillText('Input state',W*0.2,H*0.78+55);
+    drawBlochMini(W*0.75,H*0.78,40,theta,inp.phase,teleportAlpha);
+    ctx.fillText('Received state',W*0.75,H*0.78+55);
+  }
+
+  // Protocol diagram
+  let diagramY=H*0.92;
+  ctx.fillStyle='#333';ctx.font='10px Courier New';ctx.textAlign='center';
+  for(let i=0;i<STEPS.length;i++){
+    let dx=W*0.15+i*(W*0.7/(STEPS.length-1));
+    ctx.fillStyle=i<=step?ACCENT:'#333';
+    ctx.beginPath();ctx.arc(dx,diagramY,6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=i<=step?'#aaa':'#444';
+    ctx.fillText(STEPS[i],dx,diagramY+16);
+    if(i<STEPS.length-1){
+      ctx.strokeStyle=i<step?ACCENT:'#222';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(dx+8,diagramY);ctx.lineTo(dx+(W*0.7/(STEPS.length-1))-8,diagramY);ctx.stroke();
+    }
+  }
+
+  updateParticles();
+  drawParticles();
+  updateStats();
+
+  // Auto-play
+  if(autoPlay){
+    autoTimer++;
+    if(autoTimer>=autoDelay){
+      autoTimer=0;
+      if(step<5)advanceStep();
+      else{autoPlay=false;document.getElementById('btnAuto').textContent='Auto-Play';}
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-HOMOLOGY — Simplicial Complex</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;overflow:hidden;font-family:'Courier New',monospace;cursor:crosshair;color:#e4a}
+canvas{display:block;width:100vw;height:100vh}
+#stats{position:fixed;top:20px;right:20px;background:rgba(6,6,16,0.85);border:1px solid #e4a;padding:16px 22px;font-size:13px;line-height:2;min-width:200px;pointer-events:none;z-index:10}
+#stats h2{font-size:11px;letter-spacing:3px;color:#e4a;border-bottom:1px solid rgba(238,68,170,0.3);padding-bottom:6px;margin-bottom:6px}
+#stats .val{color:#fff}
+#controls{position:fixed;bottom:20px;left:20px;display:flex;flex-direction:column;gap:8px;z-index:10}
+#controls button{background:rgba(6,6,16,0.85);border:1px solid #e4a;color:#e4a;padding:8px 16px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;letter-spacing:1px;transition:background .2s}
+#controls button:hover{background:rgba(238,68,170,0.2)}
+#title{position:fixed;top:20px;left:20px;font-size:11px;letter-spacing:3px;color:#e4a;opacity:0.7;z-index:10}
+</style>
+</head>
+<body>
+<div id="title">SHIELD-HOMOLOGY &mdash; Simplicial Complex</div>
+<div id="stats">
+<h2>HOMOLOGY STATS</h2>
+<div>&#946;&#8320; (components): <span class="val" id="s-b0">0</span></div>
+<div>&#946;&#8321; (holes): <span class="val" id="s-b1">0</span></div>
+<div>&#946;&#8322;: <span class="val" id="s-b2">0</span></div>
+<div>vertices: <span class="val" id="s-v">0</span></div>
+<div>edges: <span class="val" id="s-e">0</span></div>
+<div>faces: <span class="val" id="s-f">0</span></div>
+</div>
+<div id="controls">
+<button onclick="addSimplices()">[ ADD SIMPLICES ]</button>
+<button onclick="removeSimplices()">[ REMOVE SIMPLICES ]</button>
+<button onclick="randomize()">[ RANDOMIZE ]</button>
+<button onclick="computeHomologyBtn()">[ COMPUTE HOMOLOGY ]</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+function isPrime(n){if(n<2)return false;for(let i=2;i*i<=n;i++)if(n%i===0)return false;return true}
+
+let vertices=[],edges=[],faces=[];
+let betti=[0,0,0];
+let cycles=[];
+let time=0;
+
+function generateCluster(cx,cy,count,radius){
+  const pts=[];
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2,r=Math.random()*radius;
+    pts.push({x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r,vx:(Math.random()-0.5)*0.2,vy:(Math.random()-0.5)*0.2});
+  }
+  return pts;
+}
+
+function ddist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+
+function buildComplex(){
+  edges=[];faces=[];
+  const threshold=85;
+  for(let i=0;i<vertices.length;i++){
+    for(let j=i+1;j<vertices.length;j++){
+      if(ddist(vertices[i],vertices[j])<threshold){
+        edges.push([i,j]);
+      }
+    }
+  }
+  const edgeSet=new Set(edges.map(e=>e[0]+','+e[1]));
+  function hasEdge(a,b){return edgeSet.has(Math.min(a,b)+','+Math.max(a,b))}
+  for(let i=0;i<vertices.length;i++){
+    for(let j=i+1;j<vertices.length;j++){
+      if(!hasEdge(i,j))continue;
+      for(let k=j+1;k<vertices.length;k++){
+        if(hasEdge(i,k)&&hasEdge(j,k)){
+          faces.push([i,j,k]);
+          if(faces.length>2000)break;
+        }
+      }
+      if(faces.length>2000)break;
+    }
+    if(faces.length>2000)break;
+  }
+}
+
+function findComponents(){
+  const par=Array.from({length:vertices.length},(_,i)=>i);
+  function find(x){while(par[x]!==x)x=par[x]=par[par[x]];return x}
+  for(const[a,b]of edges)par[find(a)]=find(b);
+  return new Set(Array.from({length:vertices.length},(_,i)=>find(i))).size;
+}
+
+function computeHomologyBtn(){computeH();updateStats()}
+
+function computeH(){
+  const V=vertices.length,E=edges.length,F=faces.length;
+  if(V===0){betti=[0,0,0];cycles=[];return}
+  const b0=findComponents();
+  // boundary matrix rank estimation
+  // rank of d1 = V - b0, rank of d2 estimated from face coverage
+  const rankD1=V-b0;
+  // estimate rank of d2: count independent faces
+  let rankD2=0;
+  const coveredEdges=new Set();
+  for(const[a,b,c]of faces){
+    const e1=Math.min(a,b)+'-'+Math.max(a,b);
+    const e2=Math.min(b,c)+'-'+Math.max(b,c);
+    const e3=Math.min(a,c)+'-'+Math.max(a,c);
+    if(!coveredEdges.has(e1)||!coveredEdges.has(e2)||!coveredEdges.has(e3)){
+      rankD2++;
+      coveredEdges.add(e1);coveredEdges.add(e2);coveredEdges.add(e3);
+    }
+  }
+  const b1=Math.max(0,E-rankD1-rankD2);
+  const b2=Math.max(0,F-rankD2);
+  betti=[b0,b1,b2];
+  findCycles();
+}
+
+function findCycles(){
+  cycles=[];
+  if(vertices.length===0)return;
+  const par=Array.from({length:vertices.length},(_,i)=>i);
+  const rnk=new Array(vertices.length).fill(0);
+  function find(x){while(par[x]!==x)x=par[x]=par[par[x]];return x}
+  const adj=Array.from({length:vertices.length},()=>[]);
+  const nonTree=[];
+  for(const[a,b]of edges){
+    const ra=find(a),rb=find(b);
+    if(ra===rb){nonTree.push([a,b])}
+    else{
+      adj[a].push(b);adj[b].push(a);
+      if(rnk[ra]<rnk[rb])par[ra]=rb;else if(rnk[ra]>rnk[rb])par[rb]=ra;else{par[rb]=ra;rnk[ra]++}
+    }
+  }
+  for(const[s,t]of nonTree.slice(0,30)){
+    const path=bfs(adj,s,t);
+    if(path&&path.length>2){
+      // check if this cycle bounds a filled region
+      let bounded=true;
+      for(let i=0;i<path.length;i++){
+        const a=path[i],b=path[(i+1)%path.length],c=path[(i+2)%path.length];
+        const mn=[a,b,c].sort((x,y)=>x-y);
+        const found=faces.some(f=>f[0]===mn[0]&&f[1]===mn[1]&&f[2]===mn[2]);
+        if(!found){bounded=false;break}
+      }
+      if(!bounded)cycles.push(path);
+    }
+  }
+}
+
+function bfs(adj,s,t){
+  const visited=new Set([s]),prev=new Map();
+  const queue=[s];
+  while(queue.length){
+    const u=queue.shift();
+    if(u===t){const path=[t];let c=t;while(c!==s){c=prev.get(c);path.push(c)}return path}
+    for(const v of adj[u]){if(!visited.has(v)){visited.add(v);prev.set(v,u);queue.push(v)}}
+  }
+  return null;
+}
+
+function initVertices(){
+  vertices=[];
+  const clusters=7,margin=160;
+  const perCluster=Math.ceil(127/clusters);
+  for(let c=0;c<clusters;c++){
+    const cx=margin+Math.random()*(W-2*margin);
+    const cy=margin+Math.random()*(H-2*margin);
+    const count=c===clusters-1?127-vertices.length:perCluster;
+    vertices.push(...generateCluster(cx,cy,count,110));
+  }
+  vertices=vertices.slice(0,127);
+  buildComplex();computeH();updateStats();
+}
+
+function addSimplices(){
+  const cx=W*0.3+Math.random()*W*0.4;
+  const cy=H*0.3+Math.random()*H*0.4;
+  vertices.push(...generateCluster(cx,cy,8,55));
+  buildComplex();computeH();updateStats();
+}
+
+function removeSimplices(){
+  if(vertices.length>10){
+    for(let i=0;i<10&&vertices.length>10;i++){
+      vertices.splice(Math.floor(Math.random()*vertices.length),1);
+    }
+    buildComplex();computeH();updateStats();
+  }
+}
+
+function randomize(){initVertices()}
+
+function updateStats(){
+  document.getElementById('s-b0').textContent=betti[0];
+  document.getElementById('s-b1').textContent=betti[1];
+  document.getElementById('s-b2').textContent=betti[2];
+  document.getElementById('s-v').textContent=vertices.length;
+  document.getElementById('s-e').textContent=edges.length;
+  document.getElementById('s-f').textContent=faces.length;
+}
+
+function draw(){
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+  time+=0.016;
+
+  ctx.strokeStyle='rgba(238,68,170,0.03)';ctx.lineWidth=1;
+  for(let x=0;x<W;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+
+  for(const v of vertices){
+    v.x+=v.vx;v.y+=v.vy;
+    if(v.x<10||v.x>W-10)v.vx*=-1;
+    if(v.y<10||v.y>H-10)v.vy*=-1;
+    v.x=Math.max(5,Math.min(W-5,v.x));
+    v.y=Math.max(5,Math.min(H-5,v.y));
+  }
+
+  // faces
+  for(let i=0;i<faces.length;i++){
+    const[a,b,c]=faces[i];
+    const glow=isPrime(i)?0.22:0.06;
+    ctx.fillStyle='rgba(238,68,170,'+glow+')';
+    ctx.beginPath();
+    ctx.moveTo(vertices[a].x,vertices[a].y);
+    ctx.lineTo(vertices[b].x,vertices[b].y);
+    ctx.lineTo(vertices[c].x,vertices[c].y);
+    ctx.closePath();ctx.fill();
+    if(isPrime(i)){
+      ctx.strokeStyle='rgba(238,68,170,0.35)';ctx.lineWidth=1;ctx.stroke();
+    }
+  }
+
+  // edges
+  for(let i=0;i<edges.length;i++){
+    const[a,b]=edges[i];
+    ctx.strokeStyle='rgba(238,68,170,'+(isPrime(i)?0.6:0.18)+')';
+    ctx.lineWidth=isPrime(i)?1.5:0.8;
+    ctx.beginPath();
+    ctx.moveTo(vertices[a].x,vertices[a].y);
+    ctx.lineTo(vertices[b].x,vertices[b].y);
+    ctx.stroke();
+  }
+
+  // cycles (holes)
+  for(const cycle of cycles){
+    const alpha=0.5+0.3*Math.sin(time*3);
+    ctx.strokeStyle='rgba(255,200,50,'+alpha+')';
+    ctx.lineWidth=3;
+    ctx.shadowColor='rgba(255,200,50,0.5)';ctx.shadowBlur=14;
+    ctx.beginPath();
+    ctx.moveTo(vertices[cycle[0]].x,vertices[cycle[0]].y);
+    for(let i=1;i<cycle.length;i++)ctx.lineTo(vertices[cycle[i]].x,vertices[cycle[i]].y);
+    ctx.closePath();ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  // vertices
+  for(let i=0;i<vertices.length;i++){
+    const v=vertices[i],prime=isPrime(i);
+    const r=prime?4:2.5;
+    const pulse=prime?1+0.3*Math.sin(time*4+i*0.5):1;
+    if(prime){ctx.shadowColor='#e4a';ctx.shadowBlur=15*pulse}
+    ctx.fillStyle=prime?'#fff':'#e4a';
+    ctx.beginPath();ctx.arc(v.x,v.y,r*pulse,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  requestAnimationFrame(draw);
+}
+
+initVertices();
+draw();
+</script>
+</body>
+</html>
