@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-LENS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+.panel{position:fixed;background:rgba(6,6,16,.92);border:1px solid rgba(255,255,0,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+#stats{top:10px;right:10px;min-width:220px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:6px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.label{color:#667}
+.val{color:#ff0;text-align:right}
+#controls{bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;min-width:240px}
+#controls h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:4px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctrl-row label{color:#667;font-size:10px;letter-spacing:1px;min-width:90px}
+.ctrl-row input[type=range]{width:100px;accent-color:#ff0}
+.ctrl-val{color:#ff0;font-size:10px;min-width:50px;text-align:right}
+button{background:rgba(255,255,0,.1);color:#ff0;border:1px solid rgba(255,255,0,.3);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:10px;cursor:pointer;letter-spacing:1px}
+button:hover{background:rgba(255,255,0,.2)}
+button.active{background:rgba(255,255,0,.3);border-color:#ff0}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="stats">
+  <h3>SHIELD-LENS</h3>
+  <div class="row"><span class="label">Lens Type</span><span class="val" id="st-type">Converging</span></div>
+  <div class="row"><span class="label">Focal Length</span><span class="val" id="st-f">150 px</span></div>
+  <div class="row"><span class="label">Object Dist.</span><span class="val" id="st-do">300 px</span></div>
+  <div class="row"><span class="label">Image Dist.</span><span class="val" id="st-di">300 px</span></div>
+  <div class="row"><span class="label">Magnification</span><span class="val" id="st-mag">-1.00x</span></div>
+  <div class="row"><span class="label">Image Type</span><span class="val" id="st-img">Real, Inverted</span></div>
+  <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+</div>
+<div class="panel" id="controls">
+  <h3>CONTROLS</h3>
+  <div class="ctrl-row"><label>FOCAL LENGTH</label><input type="range" id="sl-f" min="50" max="300" step="5" value="150"><span class="ctrl-val" id="v-f">150</span></div>
+  <div class="ctrl-row"><label>OBJECT DIST.</label><input type="range" id="sl-do" min="30" max="500" step="5" value="300"><span class="ctrl-val" id="v-do">300</span></div>
+  <div class="ctrl-row"><label>OBJECT HEIGHT</label><input type="range" id="sl-h" min="20" max="150" step="5" value="80"><span class="ctrl-val" id="v-h">80</span></div>
+  <div class="ctrl-row">
+    <button id="btn-conv" class="active">CONVERGING</button>
+    <button id="btn-div">DIVERGING</button>
+    <button id="btn-anim">ANIMATE</button>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+let focalLen = 150, objDist = 300, objHeight = 80;
+let diverging = false, animating = false, animTime = 0;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+
+function resize() { W = window.innerWidth; H = window.innerHeight; cv.width = W; cv.height = H; }
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('sl-f').oninput = function() { focalLen = +this.value; document.getElementById('v-f').textContent = this.value; };
+document.getElementById('sl-do').oninput = function() { objDist = +this.value; document.getElementById('v-do').textContent = this.value; };
+document.getElementById('sl-h').oninput = function() { objHeight = +this.value; document.getElementById('v-h').textContent = this.value; };
+document.getElementById('btn-conv').onclick = function() { diverging = false; this.classList.add('active'); document.getElementById('btn-div').classList.remove('active'); };
+document.getElementById('btn-div').onclick = function() { diverging = true; this.classList.add('active'); document.getElementById('btn-conv').classList.remove('active'); };
+document.getElementById('btn-anim').onclick = function() { animating = !animating; this.textContent = animating ? 'STOP' : 'ANIMATE'; };
+
+function drawArrow(x1, y1, x2, y2, color, width) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const len = 8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width || 2;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - len * Math.cos(angle - 0.3), y2 - len * Math.sin(angle - 0.3));
+  ctx.lineTo(x2 - len * Math.cos(angle + 0.3), y2 - len * Math.sin(angle + 0.3));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+
+  if (animating) {
+    animTime += 0.008;
+    objDist = 120 + 280 * (0.5 + 0.5 * Math.sin(animTime));
+    document.getElementById('sl-do').value = objDist;
+    document.getElementById('v-do').textContent = Math.round(objDist);
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const lensX = W * 0.45;
+  const axisY = H * 0.5;
+  const f = diverging ? -focalLen : focalLen;
+
+  // Optical axis
+  ctx.strokeStyle = 'rgba(255,255,0,0.1)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(0, axisY);
+  ctx.lineTo(W, axisY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw lens
+  const lensH = Math.min(H * 0.4, 200);
+  ctx.strokeStyle = 'rgba(255,255,0,0.6)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  if (!diverging) {
+    // Converging lens (double convex shape)
+    ctx.moveTo(lensX, axisY - lensH);
+    ctx.quadraticCurveTo(lensX + 15, axisY, lensX, axisY + lensH);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(lensX, axisY - lensH);
+    ctx.quadraticCurveTo(lensX - 15, axisY, lensX, axisY + lensH);
+    ctx.stroke();
+    // Arrows at tips
+    drawArrow(lensX - 6, axisY - lensH + 10, lensX, axisY - lensH, '#ff0', 1.5);
+    drawArrow(lensX + 6, axisY - lensH + 10, lensX, axisY - lensH, '#ff0', 1.5);
+  } else {
+    // Diverging lens (double concave shape)
+    ctx.moveTo(lensX, axisY - lensH);
+    ctx.quadraticCurveTo(lensX - 12, axisY, lensX, axisY + lensH);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(lensX, axisY - lensH);
+    ctx.quadraticCurveTo(lensX + 12, axisY, lensX, axisY + lensH);
+    ctx.stroke();
+    // Arrows at tips pointing outward
+    drawArrow(lensX, axisY - lensH + 5, lensX - 6, axisY - lensH, '#ff0', 1.5);
+    drawArrow(lensX, axisY - lensH + 5, lensX + 6, axisY - lensH, '#ff0', 1.5);
+  }
+
+  // Focal points
+  const f1x = lensX - Math.abs(f), f2x = lensX + Math.abs(f);
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 12px Courier New';
+  ctx.textAlign = 'center';
+
+  ctx.beginPath(); ctx.arc(f1x, axisY, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillText('F', f1x, axisY + 18);
+
+  ctx.beginPath(); ctx.arc(f2x, axisY, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillText("F'", f2x, axisY + 18);
+
+  // 2F points
+  ctx.fillStyle = 'rgba(255,255,0,0.5)';
+  ctx.beginPath(); ctx.arc(lensX - 2 * Math.abs(f), axisY, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillText('2F', lensX - 2 * Math.abs(f), axisY + 18);
+  ctx.beginPath(); ctx.arc(lensX + 2 * Math.abs(f), axisY, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillText("2F'", lensX + 2 * Math.abs(f), axisY + 18);
+
+  // Object (arrow on left)
+  const objX = lensX - objDist;
+  const objTopY = axisY - objHeight;
+  ctx.fillStyle = '#0af';
+  drawArrow(objX, axisY, objX, objTopY, '#0af', 3);
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#0af';
+  ctx.fillText('Object', objX, axisY + 16);
+
+  // Thin lens equation: 1/f = 1/do + 1/di => di = do*f/(do-f)
+  const di = (objDist * f) / (objDist - f);
+  const mag = -di / objDist;
+  const imgHeight = mag * objHeight;
+
+  // Image position
+  const imgX = lensX + di;
+  const imgTopY = axisY - imgHeight;
+
+  // Ray tracing (3 principal rays)
+  const rayColors = ['rgba(255,100,100,0.7)', 'rgba(100,255,100,0.7)', 'rgba(100,150,255,0.7)'];
+
+  // Ray 1: Parallel to axis -> through focal point
+  ctx.strokeStyle = rayColors[0];
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(objX, objTopY);
+  ctx.lineTo(lensX, objTopY);
+  ctx.stroke();
+  if (di > 0) {
+    // Real image: ray goes through F'
+    ctx.beginPath();
+    ctx.moveTo(lensX, objTopY);
+    const extLen = Math.max(W - lensX, 400);
+    const slope1 = (axisY - objTopY) / (f2x - lensX);
+    ctx.lineTo(lensX + extLen, objTopY + slope1 * extLen);
+    ctx.stroke();
+  } else {
+    // Virtual image: ray appears to diverge from F on same side
+    ctx.beginPath();
+    ctx.moveTo(lensX, objTopY);
+    const extLen = Math.max(W - lensX, 400);
+    const slope1 = (objTopY - axisY) / (lensX - f2x);
+    ctx.lineTo(lensX + extLen, objTopY + slope1 * extLen);
+    ctx.stroke();
+    // Virtual ray extension (dashed)
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(255,100,100,0.3)';
+    ctx.beginPath();
+    ctx.moveTo(lensX, objTopY);
+    ctx.lineTo(imgX, imgTopY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Ray 2: Through center (undeviated)
+  ctx.strokeStyle = rayColors[1];
+  ctx.lineWidth = 1.5;
+  const slope2 = (axisY - objTopY) / (lensX - objX);
+  const extLen2 = Math.max(W - objX, 600);
+  ctx.beginPath();
+  ctx.moveTo(objX, objTopY);
+  ctx.lineTo(objX + extLen2, objTopY + slope2 * extLen2);
+  ctx.stroke();
+
+  // Ray 3: Through F -> parallel after lens
+  ctx.strokeStyle = rayColors[2];
+  ctx.lineWidth = 1.5;
+  if (!diverging) {
+    ctx.beginPath();
+    ctx.moveTo(objX, objTopY);
+    ctx.lineTo(lensX, axisY - objHeight * (lensX - f1x) / (objX - f1x));
+    ctx.stroke();
+    const lensY3 = axisY - objHeight * (lensX - f1x) / (objX - f1x);
+    ctx.beginPath();
+    ctx.moveTo(lensX, lensY3);
+    ctx.lineTo(W, lensY3);
+    ctx.stroke();
+  } else {
+    // For diverging: ray aimed at F' on other side -> emerges parallel
+    const slopeToF = (objTopY - axisY) / (objX - f2x);
+    const lensY3 = objTopY + slopeToF * (lensX - objX);
+    ctx.beginPath();
+    ctx.moveTo(objX, objTopY);
+    ctx.lineTo(lensX, lensY3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(lensX, lensY3);
+    ctx.lineTo(W, lensY3);
+    ctx.stroke();
+  }
+
+  // Draw image
+  if (di > 0) {
+    // Real image
+    drawArrow(imgX, axisY, imgX, imgTopY, 'rgba(255,150,0,0.8)', 3);
+    ctx.fillStyle = 'rgba(255,150,0,0.8)';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('Image (Real)', imgX, axisY + 16);
+  } else {
+    // Virtual image (dashed)
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = 'rgba(255,150,0,0.6)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(imgX, axisY);
+    ctx.lineTo(imgX, imgTopY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    drawArrow(imgX, imgTopY + 10, imgX, imgTopY, 'rgba(255,150,0,0.6)', 2);
+    ctx.fillStyle = 'rgba(255,150,0,0.6)';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('Image (Virtual)', imgX, axisY + 16);
+  }
+
+  // Lens equation display
+  ctx.fillStyle = 'rgba(255,255,0,0.5)';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('Thin Lens Equation: 1/f = 1/do + 1/di', 15, H - 60);
+  ctx.fillText(`1/${Math.round(Math.abs(f))} = 1/${Math.round(objDist)} + 1/${Math.round(di)}`, 15, H - 44);
+
+  // Ray legend
+  ctx.fillStyle = rayColors[0]; ctx.fillText('--- Parallel Ray', W - 200, H - 60);
+  ctx.fillStyle = rayColors[1]; ctx.fillText('--- Central Ray', W - 200, H - 44);
+  ctx.fillStyle = rayColors[2]; ctx.fillText('--- Focal Ray', W - 200, H - 28);
+
+  // Title
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-LENS', 15, 25);
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Thin Lens Ray Tracing  |  Converging & Diverging', 15, 42);
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) { fps = Math.round(frameCount * 1000 / (now - lastFps)); frameCount = 0; lastFps = now; }
+  document.getElementById('st-type').textContent = diverging ? 'Diverging' : 'Converging';
+  document.getElementById('st-f').textContent = Math.round(Math.abs(f)) + ' px';
+  document.getElementById('st-do').textContent = Math.round(objDist) + ' px';
+  document.getElementById('st-di').textContent = Math.round(di) + ' px';
+  document.getElementById('st-mag').textContent = mag.toFixed(2) + 'x';
+  document.getElementById('st-img').textContent = di > 0 ? 'Real, Inverted' : 'Virtual, Upright';
+  document.getElementById('st-fps').textContent = fps;
+}
+draw();
+</script>
+</body>
+</html>

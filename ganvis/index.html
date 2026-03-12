@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-GANVIS</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; line-height: 1.7; min-width: 210px; z-index: 10;
+}
+#stats .title { color: #a8f; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .val { color: #a8f; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(170,136,255,0.13); color: #a8f; border: 1px solid #a8f;
+  border-radius: 4px; padding: 6px 14px; font-family: inherit; font-size: 13px;
+  cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(170,136,255,0.3); }
+#controls label { color: #c0c8d8; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+#controls input[type=range] { width: 100px; accent-color: #a8f; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-GANVIS</div>
+  <div>Epoch: <span class="val" id="sEpoch">0</span></div>
+  <div>G Loss: <span class="val" id="sGLoss">0.00</span></div>
+  <div>D Loss: <span class="val" id="sDLoss">0.00</span></div>
+  <div>D Accuracy: <span class="val" id="sDAcc">50%</span></div>
+  <div>G Quality: <span class="val" id="sGQual">0%</span></div>
+  <div>Phase: <span class="val" id="sPhase">-</span></div>
+  <div>State: <span class="val" id="sState">IDLE</span></div>
+</div>
+<div id="controls">
+  <div style="color:#a8f;font-weight:bold;margin-bottom:4px;">Controls</div>
+  <button id="btnTrain">Train</button>
+  <button id="btnPause">Pause</button>
+  <button id="btnReset">Reset</button>
+  <label>Speed <input type="range" id="speedSlider" min="1" max="20" value="5"></label>
+  <label>Latent Dim <input type="range" id="latentSlider" min="2" max="8" value="4"></label>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; });
+
+// GAN simulation parameters
+let epoch = 0;
+let gLoss = 2.0;
+let dLoss = 0.7;
+let dAccuracy = 0.5;
+let gQuality = 0;
+let running = false;
+let speed = 5;
+let latentDim = 4;
+let phase = 'INIT'; // INIT, D_TRAIN, G_TRAIN
+
+// Network architecture
+const genLayers = []; // generator layers
+const disLayers = []; // discriminator layers
+let genNodes = [];
+let disNodes = [];
+
+function buildArchitecture() {
+  const genSizes = [latentDim, 8, 12, 8]; // latent -> output
+  const disSizes = [8, 12, 8, 1]; // input -> real/fake
+
+  genNodes = [];
+  disNodes = [];
+
+  const cx = (W - 220) / 2;
+  const genTop = 80;
+  const disTop = H / 2 + 40;
+  const layerSpacing = 120;
+
+  // Generator nodes
+  for (let l = 0; l < genSizes.length; l++) {
+    const n = genSizes[l];
+    const x = cx - (genSizes.length - 1) * layerSpacing / 2 + l * layerSpacing;
+    for (let i = 0; i < n; i++) {
+      const y = genTop + 60 + (i - (n-1)/2) * 28;
+      genNodes.push({ x, y, layer: l, idx: i, activation: 0, type: l === 0 ? 'latent' : (l === genSizes.length-1 ? 'output' : 'hidden') });
+    }
+  }
+
+  // Discriminator nodes
+  for (let l = 0; l < disSizes.length; l++) {
+    const n = disSizes[l];
+    const x = cx - (disSizes.length - 1) * layerSpacing / 2 + l * layerSpacing;
+    for (let i = 0; i < n; i++) {
+      const y = disTop + 60 + (i - (n-1)/2) * 28;
+      disNodes.push({ x, y, layer: l, idx: i, activation: 0, type: l === disSizes.length-1 ? 'verdict' : (l === 0 ? 'input' : 'hidden') });
+    }
+  }
+}
+buildArchitecture();
+
+// Animated samples
+let fakeSamples = []; // flowing from G to D
+let realSamples = []; // flowing into D
+
+// Loss history
+let gLossHistory = [];
+let dLossHistory = [];
+const histLen = 200;
+
+// Simulated training dynamics
+function trainStep() {
+  epoch++;
+  const t = epoch / 2000;
+  const noise = (Math.random() - 0.5) * 0.3;
+
+  // Simulate GAN training dynamics
+  // D loss oscillates but trends down, G loss decreases
+  if (epoch % 2 === 0) {
+    phase = 'D_TRAIN';
+    dLoss = 0.7 * Math.exp(-t * 2) + 0.15 + noise * 0.1;
+    dAccuracy = 0.5 + 0.4 * (1 - Math.exp(-t * 3)) + (Math.random() - 0.5) * 0.1;
+    dAccuracy = Math.max(0.3, Math.min(0.95, dAccuracy));
+  } else {
+    phase = 'G_TRAIN';
+    gLoss = 2.0 * Math.exp(-t * 1.5) + 0.3 + noise * 0.15;
+    gQuality = Math.min(0.95, (1 - Math.exp(-t * 2)) + (Math.random() - 0.5) * 0.05);
+  }
+
+  gLoss = Math.max(0.1, gLoss);
+  dLoss = Math.max(0.05, dLoss);
+
+  gLossHistory.push(gLoss);
+  dLossHistory.push(dLoss);
+  if (gLossHistory.length > histLen) { gLossHistory.shift(); dLossHistory.shift(); }
+
+  // Update node activations
+  for (const n of genNodes) {
+    n.activation = phase === 'G_TRAIN'
+      ? 0.3 + Math.random() * 0.7
+      : 0.05 + Math.random() * 0.2;
+  }
+  for (const n of disNodes) {
+    n.activation = phase === 'D_TRAIN'
+      ? 0.3 + Math.random() * 0.7
+      : 0.05 + Math.random() * 0.2;
+  }
+
+  // Spawn samples
+  if (epoch % 8 === 0) {
+    const cx = (W - 220) / 2;
+    // Fake sample from G output to D input
+    const gOut = genNodes.filter(n => n.type === 'output');
+    const dIn = disNodes.filter(n => n.type === 'input');
+    if (gOut.length > 0 && dIn.length > 0) {
+      const src = gOut[Math.floor(Math.random() * gOut.length)];
+      const dst = dIn[Math.floor(Math.random() * dIn.length)];
+      fakeSamples.push({ sx: src.x, sy: src.y, tx: dst.x, ty: dst.y, t: 0, max: 60, quality: gQuality });
+    }
+    // Real sample into D
+    const realX = cx + 250;
+    if (dIn.length > 0) {
+      const dst = dIn[Math.floor(Math.random() * dIn.length)];
+      realSamples.push({ sx: realX, sy: dst.y - 100, tx: dst.x, ty: dst.y, t: 0, max: 40 });
+    }
+  }
+}
+
+// Controls
+document.getElementById('btnTrain').addEventListener('click', () => { running = true; });
+document.getElementById('btnPause').addEventListener('click', function() {
+  running = !running;
+  this.textContent = running ? 'Pause' : 'Resume';
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  epoch = 0; gLoss = 2; dLoss = 0.7; dAccuracy = 0.5; gQuality = 0;
+  gLossHistory = []; dLossHistory = [];
+  fakeSamples = []; realSamples = [];
+  running = false; phase = 'INIT';
+  buildArchitecture();
+});
+document.getElementById('speedSlider').addEventListener('input', (e) => { speed = parseInt(e.target.value); });
+document.getElementById('latentSlider').addEventListener('input', (e) => {
+  latentDim = parseInt(e.target.value);
+  buildArchitecture();
+});
+
+// BG particles
+const particles = [];
+for (let i = 0; i < 25; i++) {
+  particles.push({ x: Math.random()*W, y: Math.random()*H, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, r: Math.random()*1.5+0.5 });
+}
+
+let time = 0;
+function draw() {
+  requestAnimationFrame(draw);
+  time++;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  buildArchitecture();
+
+  // BG particles
+  ctx.globalAlpha = 0.08;
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    ctx.fillStyle = '#a8f';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Train
+  if (running) {
+    for (let i = 0; i < speed; i++) trainStep();
+  }
+
+  const cx = (W - 220) / 2;
+
+  // Title
+  ctx.fillStyle = '#a8f';
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillText('SHIELD-GANVIS', 40, 35);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('Generative Adversarial Network Visualization', 40, 52);
+
+  // Section labels
+  ctx.fillStyle = 'rgba(100,200,100,0.6)';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('GENERATOR', cx, 75);
+  ctx.fillStyle = 'rgba(255,100,100,0.6)';
+  ctx.fillText('DISCRIMINATOR', cx, H/2 + 35);
+  ctx.textAlign = 'left';
+
+  // Layer labels for Generator
+  const genLayerNames = ['Latent Z', 'Hidden 1', 'Hidden 2', 'Fake Output'];
+  const genLayerXs = [...new Set(genNodes.map(n => n.x))].sort((a,b) => a-b);
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < genLayerXs.length && i < genLayerNames.length; i++) {
+    ctx.fillText(genLayerNames[i], genLayerXs[i], 90);
+  }
+
+  // Layer labels for Discriminator
+  const disLayerNames = ['Input', 'Hidden 1', 'Hidden 2', 'Real/Fake'];
+  const disLayerXs = [...new Set(disNodes.map(n => n.x))].sort((a,b) => a-b);
+  for (let i = 0; i < disLayerXs.length && i < disLayerNames.length; i++) {
+    ctx.fillText(disLayerNames[i], disLayerXs[i], H/2 + 50);
+  }
+  ctx.textAlign = 'left';
+
+  // Draw Generator connections
+  const genByLayer = {};
+  for (const n of genNodes) {
+    if (!genByLayer[n.layer]) genByLayer[n.layer] = [];
+    genByLayer[n.layer].push(n);
+  }
+  const genLayerKeys = Object.keys(genByLayer).map(Number).sort((a,b) => a-b);
+  for (let li = 0; li < genLayerKeys.length - 1; li++) {
+    const fromNodes = genByLayer[genLayerKeys[li]];
+    const toNodes = genByLayer[genLayerKeys[li + 1]];
+    for (const fn of fromNodes) {
+      for (const tn of toNodes) {
+        const active = phase === 'G_TRAIN' && running;
+        ctx.strokeStyle = active ? 'rgba(100,255,100,0.15)' : 'rgba(100,200,100,0.06)';
+        ctx.lineWidth = active ? 1.2 : 0.5;
+        ctx.beginPath(); ctx.moveTo(fn.x, fn.y); ctx.lineTo(tn.x, tn.y); ctx.stroke();
+
+        // Signal flow animation
+        if (active && time % 3 === 0) {
+          const t = ((time * 0.03 + fn.idx * 0.2 + tn.idx * 0.15) % 1);
+          const sx = fn.x + (tn.x - fn.x) * t;
+          const sy = fn.y + (tn.y - fn.y) * t;
+          ctx.fillStyle = 'rgba(100,255,100,0.5)';
+          ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI*2); ctx.fill();
+        }
+      }
+    }
+  }
+
+  // Draw Discriminator connections
+  const disByLayer = {};
+  for (const n of disNodes) {
+    if (!disByLayer[n.layer]) disByLayer[n.layer] = [];
+    disByLayer[n.layer].push(n);
+  }
+  const disLayerKeys = Object.keys(disByLayer).map(Number).sort((a,b) => a-b);
+  for (let li = 0; li < disLayerKeys.length - 1; li++) {
+    const fromNodes = disByLayer[disLayerKeys[li]];
+    const toNodes = disByLayer[disLayerKeys[li + 1]];
+    for (const fn of fromNodes) {
+      for (const tn of toNodes) {
+        const active = phase === 'D_TRAIN' && running;
+        ctx.strokeStyle = active ? 'rgba(255,100,100,0.15)' : 'rgba(200,100,100,0.06)';
+        ctx.lineWidth = active ? 1.2 : 0.5;
+        ctx.beginPath(); ctx.moveTo(fn.x, fn.y); ctx.lineTo(tn.x, tn.y); ctx.stroke();
+
+        if (active && time % 3 === 0) {
+          const t = ((time * 0.03 + fn.idx * 0.2 + tn.idx * 0.15) % 1);
+          const sx = fn.x + (tn.x - fn.x) * t;
+          const sy = fn.y + (tn.y - fn.y) * t;
+          ctx.fillStyle = 'rgba(255,100,100,0.5)';
+          ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI*2); ctx.fill();
+        }
+      }
+    }
+  }
+
+  // Draw Generator nodes
+  for (const n of genNodes) {
+    const r = 10;
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    const a = n.activation;
+    if (n.type === 'latent') {
+      ctx.fillStyle = `rgba(170,136,255,${0.3 + a * 0.6})`;
+      ctx.shadowColor = '#a8f'; ctx.shadowBlur = a * 12;
+    } else {
+      ctx.fillStyle = `rgba(100,255,100,${0.2 + a * 0.6})`;
+      ctx.shadowColor = '#4f4'; ctx.shadowBlur = a * 12;
+    }
+    ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(100,200,100,0.5)';
+    ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // Draw Discriminator nodes
+  for (const n of disNodes) {
+    const r = n.type === 'verdict' ? 14 : 10;
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    const a = n.activation;
+    if (n.type === 'verdict') {
+      const verdict = dAccuracy > 0.6;
+      ctx.fillStyle = verdict ? 'rgba(100,255,100,0.7)' : 'rgba(255,100,100,0.7)';
+      ctx.shadowColor = verdict ? '#4f4' : '#f44';
+      ctx.shadowBlur = 15;
+    } else {
+      ctx.fillStyle = `rgba(255,100,100,${0.2 + a * 0.6})`;
+      ctx.shadowColor = '#f44'; ctx.shadowBlur = a * 12;
+    }
+    ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(200,100,100,0.5)';
+    ctx.lineWidth = 1; ctx.stroke();
+
+    // Verdict label
+    if (n.type === 'verdict') {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(dAccuracy > 0.6 ? 'REAL' : 'FAKE', n.x, n.y + 3);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // Fake sample flow (G -> D)
+  fakeSamples = fakeSamples.filter(s => s.t < s.max);
+  for (const s of fakeSamples) {
+    const frac = s.t / s.max;
+    const px = s.sx + (s.tx - s.sx) * frac;
+    const py = s.sy + (s.ty - s.sy) * frac;
+    ctx.globalAlpha = 0.7 * (1 - frac * 0.5);
+    // Color based on quality (good fakes are more green)
+    const gVal = Math.floor(100 + s.quality * 155);
+    ctx.fillStyle = `rgb(${255-gVal/2},${gVal},100)`;
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Label
+    ctx.font = '8px Courier New';
+    ctx.fillText('fake', px + 6, py + 3);
+    ctx.globalAlpha = 1;
+    s.t++;
+  }
+
+  // Real sample flow
+  realSamples = realSamples.filter(s => s.t < s.max);
+  for (const s of realSamples) {
+    const frac = s.t / s.max;
+    const px = s.sx + (s.tx - s.sx) * frac;
+    const py = s.sy + (s.ty - s.sy) * frac;
+    ctx.globalAlpha = 0.7 * (1 - frac * 0.5);
+    ctx.fillStyle = 'rgba(100,200,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '8px Courier New';
+    ctx.fillText('real', px + 6, py + 3);
+    ctx.globalAlpha = 1;
+    s.t++;
+  }
+
+  // Arrow from G to D
+  const arrowMidY = (genNodes.length > 0 && disNodes.length > 0)
+    ? (Math.max(...genNodes.map(n=>n.y)) + Math.min(...disNodes.map(n=>n.y))) / 2
+    : H / 2;
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath(); ctx.moveTo(cx - 50, arrowMidY); ctx.lineTo(cx + 50, arrowMidY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#a8f';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('Sample Flow', cx, arrowMidY - 8);
+  // Arrow heads
+  ctx.beginPath(); ctx.moveTo(cx+50, arrowMidY); ctx.lineTo(cx+42, arrowMidY-5); ctx.lineTo(cx+42, arrowMidY+5); ctx.fill();
+  ctx.textAlign = 'left';
+
+  // Loss convergence graph
+  const gx = 40, gy = H - 170, gw = 220, gh = 120;
+  ctx.fillStyle = 'rgba(6,6,16,0.85)';
+  ctx.fillRect(gx, gy, gw, gh);
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.strokeRect(gx, gy, gw, gh);
+  ctx.fillStyle = '#888';
+  ctx.font = '11px Courier New';
+  ctx.fillText('Loss Convergence', gx + 5, gy - 5);
+
+  if (gLossHistory.length > 1) {
+    const allVals = [...gLossHistory, ...dLossHistory];
+    const minV = Math.min(...allVals);
+    const maxV = Math.max(...allVals);
+    const range = maxV - minV || 1;
+
+    // G loss (green)
+    ctx.strokeStyle = 'rgba(100,255,100,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < gLossHistory.length; i++) {
+      const px = gx + (i / histLen) * gw;
+      const py = gy + gh - ((gLossHistory[i] - minV) / range) * (gh - 10) - 5;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // D loss (red)
+    ctx.strokeStyle = 'rgba(255,100,100,0.7)';
+    ctx.beginPath();
+    for (let i = 0; i < dLossHistory.length; i++) {
+      const px = gx + (i / histLen) * gw;
+      const py = gy + gh - ((dLossHistory[i] - minV) / range) * (gh - 10) - 5;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Legend
+  ctx.fillStyle = 'rgba(100,255,100,0.8)'; ctx.fillRect(gx + gw - 100, gy + 8, 10, 3);
+  ctx.fillStyle = '#888'; ctx.font = '10px Courier New'; ctx.fillText('G Loss', gx + gw - 85, gy + 13);
+  ctx.fillStyle = 'rgba(255,100,100,0.8)'; ctx.fillRect(gx + gw - 45, gy + 8, 10, 3);
+  ctx.fillStyle = '#888'; ctx.fillText('D Loss', gx + gw - 30, gy + 13);
+
+  // Quality meter
+  const qx = gx + gw + 30, qy = gy, qw = 80, qh = gh;
+  ctx.fillStyle = 'rgba(6,6,16,0.85)';
+  ctx.fillRect(qx, qy, qw, qh);
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.strokeRect(qx, qy, qw, qh);
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Courier New';
+  ctx.fillText('G Quality', qx + 5, qy - 5);
+  const qFill = gQuality * (qh - 10);
+  const qGrad = ctx.createLinearGradient(0, qy + qh, 0, qy);
+  qGrad.addColorStop(0, 'rgba(255,50,50,0.6)');
+  qGrad.addColorStop(0.5, 'rgba(255,200,50,0.6)');
+  qGrad.addColorStop(1, 'rgba(50,255,50,0.6)');
+  ctx.fillStyle = qGrad;
+  ctx.fillRect(qx + 5, qy + qh - 5 - qFill, qw - 10, qFill);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.floor(gQuality * 100) + '%', qx + qw/2, qy + qh/2 + 4);
+  ctx.textAlign = 'left';
+
+  // Stats
+  document.getElementById('sEpoch').textContent = epoch;
+  document.getElementById('sGLoss').textContent = gLoss.toFixed(3);
+  document.getElementById('sDLoss').textContent = dLoss.toFixed(3);
+  document.getElementById('sDAcc').textContent = (dAccuracy * 100).toFixed(1) + '%';
+  document.getElementById('sGQual').textContent = (gQuality * 100).toFixed(1) + '%';
+  document.getElementById('sPhase').textContent = phase;
+  document.getElementById('sState').textContent = running ? 'TRAINING' : 'IDLE';
+}
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-BARNSLEY</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  min-width: 250px; z-index: 10; border-radius: 4px;
+}
+#stats .title { color: #f84; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #888; }
+#stats .val { color: #f84; }
+#stats .prob { font-size: 11px; margin-top: 6px; border-top: 1px solid #222; padding-top: 6px; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; z-index: 10; border-radius: 4px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+#controls button {
+  background: rgba(255,136,68,0.15); border: 1px solid #f84; color: #f84;
+  padding: 5px 14px; margin: 3px 4px 3px 0; cursor: pointer; font-family: inherit;
+  font-size: 12px; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(255,136,68,0.35); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-BARNSLEY</div>
+  <div><span class="label">Category:</span> <span class="val">Fractals</span></div>
+  <div><span class="label">Points:</span> <span class="val" id="sPoints">0</span></div>
+  <div><span class="label">Rate:</span> <span class="val" id="sRate">300/frame</span></div>
+  <div><span class="label">FPS:</span> <span class="val" id="sFps">0</span></div>
+  <div class="prob">
+    <div><span class="label">Transformations:</span></div>
+    <div><span class="label">f1 (stem):</span> <span class="val">1%</span></div>
+    <div><span class="label">f2 (small L):</span> <span class="val">7%</span></div>
+    <div><span class="label">f3 (small R):</span> <span class="val">7%</span></div>
+    <div><span class="label">f4 (main):</span> <span class="val">85%</span></div>
+  </div>
+</div>
+<div id="controls">
+  <div class="title">Controls</div>
+  <div style="margin-top:4px;">
+    <button id="btnClear">Clear</button>
+    <button id="btnFaster">Faster</button>
+    <button id="btnSlower">Slower</button>
+    <button id="btnPause">Pause</button>
+  </div>
+  <div style="margin-top:4px;">
+    <button id="btnColor1" class="active">Green</button>
+    <button id="btnColor2">Orange</button>
+    <button id="btnColor3">Autumn</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; clear(); }
+window.addEventListener('resize', resize);
+
+let x = 0, y = 0;
+let totalPoints = 0;
+let rate = 300;
+let paused = false;
+let colorMode = 0;
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
+
+// Barnsley fern IFS
+function step() {
+  const r = Math.random();
+  let nx, ny;
+  if (r < 0.01) {
+    // f1: stem
+    nx = 0;
+    ny = 0.16 * y;
+  } else if (r < 0.08) {
+    // f2: smaller left leaflet
+    nx = 0.2 * x - 0.26 * y;
+    ny = 0.23 * x + 0.22 * y + 1.6;
+  } else if (r < 0.15) {
+    // f3: smaller right leaflet
+    nx = -0.15 * x + 0.28 * y;
+    ny = 0.26 * x + 0.24 * y + 0.44;
+  } else {
+    // f4: main branch
+    nx = 0.85 * x + 0.04 * y;
+    ny = -0.04 * x + 0.85 * y + 1.6;
+  }
+  x = nx; y = ny;
+}
+
+function clear() {
+  x = 0; y = 0; totalPoints = 0;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+  drawTitle();
+}
+
+function drawTitle() {
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillText('SHIELD-BARNSLEY', 16, 30);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText('Fractals', 16, 48);
+}
+
+function getColor(py) {
+  const t = py / H;
+  if (colorMode === 0) {
+    // Green fern
+    const g = Math.floor(100 + t * 155);
+    return `rgba(30,${g},40,0.6)`;
+  } else if (colorMode === 1) {
+    // Orange
+    return `rgba(255,${Math.floor(100+t*56)},${Math.floor(30+t*38)},0.6)`;
+  } else {
+    // Autumn gradient
+    const r = Math.floor(200 + t * 55);
+    const g = Math.floor(80 + (1-t) * 120);
+    return `rgba(${r},${g},20,0.6)`;
+  }
+}
+
+function plotPoint() {
+  step();
+  // Map fern coords to screen: x in [-2.2, 2.7], y in [0, 10]
+  const margin = 60;
+  const scale = Math.min((W - margin * 2) / 5.0, (H - margin * 2) / 10.0);
+  const px = W / 2 + x * scale;
+  const py = H - margin - y * scale;
+  ctx.fillStyle = getColor(py);
+  ctx.fillRect(px, py, 1.5, 1.5);
+  totalPoints++;
+}
+
+document.getElementById('btnClear').onclick = clear;
+document.getElementById('btnFaster').onclick = () => { rate = Math.min(3000, rate + 200); };
+document.getElementById('btnSlower').onclick = () => { rate = Math.max(50, rate - 100); };
+document.getElementById('btnPause').onclick = function() { paused = !paused; this.textContent = paused ? 'Resume' : 'Pause'; };
+document.getElementById('btnColor1').onclick = () => { colorMode = 0; clear(); };
+document.getElementById('btnColor2').onclick = () => { colorMode = 1; clear(); };
+document.getElementById('btnColor3').onclick = () => { colorMode = 2; clear(); };
+
+function updateStats() {
+  document.getElementById('sPoints').textContent = totalPoints.toLocaleString();
+  document.getElementById('sRate').textContent = rate + '/frame';
+  document.getElementById('sFps').textContent = fps;
+}
+
+function loop() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) { fps = frameCount; frameCount = 0; lastFpsTime = now; }
+  if (!paused) {
+    for (let i = 0; i < rate; i++) plotPoint();
+  }
+  updateStats();
+  requestAnimationFrame(loop);
+}
+
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

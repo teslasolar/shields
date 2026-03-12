@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SPIROGRAPH</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 10px; right: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; font-size: 13px; line-height: 1.7;
+  border-radius: 4px; min-width: 200px; z-index: 10;
+}
+#stats .label { color: #888; }
+#stats .value { color: #f0a; }
+#controls {
+  position: fixed; bottom: 10px; left: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; border-radius: 4px; z-index: 10;
+}
+#controls button {
+  background: transparent; color: #f0a; border: 1px solid #f0a;
+  padding: 6px 14px; margin: 3px; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 12px; border-radius: 3px; transition: all 0.2s;
+}
+#controls button:hover { background: #f0a; color: #060610; }
+#controls .row { margin: 4px 0; }
+#controls .ctrl-label { color: #888; font-size: 11px; margin-bottom: 2px; }
+input[type=range] {
+  -webkit-appearance: none; width: 140px; height: 4px; background: #333;
+  border-radius: 2px; outline: none; margin: 0 8px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; background: #f0a;
+  border-radius: 50%; cursor: pointer;
+}
+.slider-row { display: flex; align-items: center; margin: 4px 0; }
+.slider-row .ctrl-label { width: 30px; }
+.slider-row .val { color: #f0a; width: 35px; text-align: right; font-size: 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div><span class="label">SHIELD-SPIROGRAPH</span></div>
+  <div><span class="label">type: </span><span class="value" id="s-type">hypotrochoid</span></div>
+  <div><span class="label">R: </span><span class="value" id="s-R">5</span></div>
+  <div><span class="label">r: </span><span class="value" id="s-r">3</span></div>
+  <div><span class="label">d: </span><span class="value" id="s-d">5</span></div>
+  <div><span class="label">points: </span><span class="value" id="s-pts">0</span></div>
+  <div><span class="label">fps: </span><span class="value" id="s-fps">0</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-label">PARAMETERS</div>
+  <div class="slider-row">
+    <span class="ctrl-label">R</span>
+    <input type="range" id="slR" min="2" max="12" value="5" step="1" oninput="paramChange()">
+    <span class="val" id="vR">5</span>
+  </div>
+  <div class="slider-row">
+    <span class="ctrl-label">r</span>
+    <input type="range" id="slr" min="1" max="10" value="3" step="1" oninput="paramChange()">
+    <span class="val" id="vr">3</span>
+  </div>
+  <div class="slider-row">
+    <span class="ctrl-label">d</span>
+    <input type="range" id="sld" min="1" max="10" value="5" step="0.5" oninput="paramChange()">
+    <span class="val" id="vd">5</span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button onclick="toggleType()">HYPO/EPI</button>
+    <button onclick="trails=Math.max(1,(trails%5)+1)">TRAILS</button>
+    <button onclick="resetCurve()">RESET</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; resetCurve(); }
+window.addEventListener('resize', resize);
+resize();
+
+let R = 5, r = 3, d = 5;
+let isHypo = true;
+let trails = 3;
+let t = 0;
+let points = [];
+let maxPoints = 8000;
+let fps = 0, frameCount = 0, fpsTime = 0;
+
+function paramChange() {
+  R = +document.getElementById('slR').value;
+  r = +document.getElementById('slr').value;
+  d = +document.getElementById('sld').value;
+  document.getElementById('vR').textContent = R;
+  document.getElementById('vr').textContent = r;
+  document.getElementById('vd').textContent = d;
+  resetCurve();
+}
+
+function toggleType() {
+  isHypo = !isHypo;
+  document.getElementById('s-type').textContent = isHypo ? 'hypotrochoid' : 'epitrochoid';
+  resetCurve();
+}
+
+function resetCurve() {
+  points = [];
+  t = 0;
+}
+
+function getPoint(t, R, r, d, hypo) {
+  if (hypo) {
+    return [
+      (R - r) * Math.cos(t) + d * Math.cos((R - r) / r * t),
+      (R - r) * Math.sin(t) - d * Math.sin((R - r) / r * t)
+    ];
+  } else {
+    return [
+      (R + r) * Math.cos(t) - d * Math.cos((R + r) / r * t),
+      (R + r) * Math.sin(t) - d * Math.sin((R + r) / r * t)
+    ];
+  }
+}
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  frameCount++;
+  if (time - fpsTime > 1000) { fps = frameCount; frameCount = 0; fpsTime = time; }
+
+  ctx.fillStyle = 'rgba(6,6,16,0.05)';
+  ctx.fillRect(0, 0, W, H);
+
+  const scale = Math.min(W, H) * 0.035;
+  const cx = W / 2, cy = H / 2;
+
+  // Add new points
+  for (let i = 0; i < 8; i++) {
+    t += 0.02;
+    const p = getPoint(t, R, r, d, isHypo);
+    points.push([p[0], p[1], t]);
+    if (points.length > maxPoints) points.shift();
+  }
+
+  // Full redraw periodically
+  if (frameCount % 60 === 0) {
+    ctx.fillStyle = '#060610';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Draw trails
+  for (let trail = 0; trail < trails; trail++) {
+    const hueBase = (trail * 360 / trails + 300) % 360;
+    const offset = trail * Math.PI * 2 / trails;
+
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i++) {
+      const p = getPoint(points[i][2] + offset, R, r, d + trail * 0.3, isHypo);
+      const sx = cx + p[0] * scale;
+      const sy = cy + p[1] * scale;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    const alpha = 0.6 + 0.4 * (trail === 0 ? 1 : 0);
+    ctx.strokeStyle = `hsla(${hueBase}, 100%, 60%, ${alpha})`;
+    ctx.lineWidth = trail === 0 ? 2 : 1;
+    ctx.stroke();
+  }
+
+  // Draw current position
+  if (points.length > 0) {
+    const last = points[points.length - 1];
+    const p = getPoint(last[2], R, r, d, isHypo);
+    ctx.beginPath();
+    ctx.arc(cx + p[0] * scale, cy + p[1] * scale, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + p[0] * scale, cy + p[1] * scale, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f0a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Title
+  ctx.fillStyle = '#f0a';
+  ctx.font = 'bold 14px Courier New';
+  ctx.fillText('SHIELD-SPIROGRAPH', 15, 25);
+
+  document.getElementById('s-R').textContent = R;
+  document.getElementById('s-r').textContent = r;
+  document.getElementById('s-d').textContent = d;
+  document.getElementById('s-pts').textContent = points.length;
+  document.getElementById('s-fps').textContent = fps;
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

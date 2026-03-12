@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-BOLTZMANN</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; line-height: 1.7; min-width: 200px; z-index: 10;
+}
+#stats .title { color: #a8f; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .val { color: #a8f; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(170,136,255,0.13); color: #a8f; border: 1px solid #a8f;
+  border-radius: 4px; padding: 6px 14px; font-family: inherit; font-size: 13px;
+  cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(170,136,255,0.3); }
+#controls label { color: #c0c8d8; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+#controls input[type=range] { width: 100px; accent-color: #a8f; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-BOLTZMANN</div>
+  <div>Visible Units: <span class="val" id="sVis">6</span></div>
+  <div>Hidden Units: <span class="val" id="sHid">4</span></div>
+  <div>Temperature: <span class="val" id="sTemp">1.00</span></div>
+  <div>Energy: <span class="val" id="sEnergy">0.00</span></div>
+  <div>Step: <span class="val" id="sStep">0</span></div>
+  <div>State: <span class="val" id="sState">IDLE</span></div>
+  <div>Annealing: <span class="val" id="sAnneal">OFF</span></div>
+</div>
+<div id="controls">
+  <div style="color:#a8f;font-weight:bold;margin-bottom:4px;">Controls</div>
+  <div style="color:#888;font-size:11px;">Click neurons to toggle state</div>
+  <label>Temperature <input type="range" id="tempSlider" min="1" max="200" value="100"></label>
+  <button id="btnRun">Run Sampling</button>
+  <button id="btnStop">Stop</button>
+  <button id="btnAnneal">Start Annealing</button>
+  <button id="btnRandomize">Randomize Weights</button>
+  <button id="btnReset">Reset States</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; });
+
+const nVisible = 6;
+const nHidden = 4;
+const nTotal = nVisible + nHidden;
+
+let states = new Array(nTotal).fill(0); // 0 or 1
+let temperature = 1.0;
+let weights = [];
+let biases = new Array(nTotal).fill(0);
+let running = false;
+let annealing = false;
+let annealStart = 5.0;
+let step = 0;
+
+// Node positions
+let nodePositions = [];
+function layoutNodes() {
+  const cx = (W - 220) / 2;
+  const cy = H / 2;
+  nodePositions = [];
+  // Visible layer (bottom arc)
+  for (let i = 0; i < nVisible; i++) {
+    const angle = Math.PI * 0.15 + (Math.PI * 0.7) * i / (nVisible - 1);
+    nodePositions.push({ x: cx + Math.cos(angle) * 180, y: cy + Math.sin(angle) * 120 + 40, type: 'visible' });
+  }
+  // Hidden layer (top arc)
+  for (let i = 0; i < nHidden; i++) {
+    const angle = Math.PI + Math.PI * 0.15 + (Math.PI * 0.7) * i / (nHidden - 1);
+    nodePositions.push({ x: cx + Math.cos(angle) * 140, y: cy + Math.sin(angle) * 100 - 20, type: 'hidden' });
+  }
+}
+layoutNodes();
+
+// Initialize weights
+function initWeights() {
+  weights = [];
+  for (let i = 0; i < nTotal; i++) {
+    weights[i] = new Float32Array(nTotal);
+    for (let j = 0; j < nTotal; j++) {
+      if (i < j) {
+        const w = (Math.random() - 0.5) * 2;
+        weights[i][j] = w;
+      }
+    }
+  }
+  // Symmetrize
+  for (let i = 0; i < nTotal; i++)
+    for (let j = 0; j < i; j++)
+      weights[i][j] = weights[j][i];
+  for (let i = 0; i < nTotal; i++) biases[i] = (Math.random() - 0.5) * 0.5;
+}
+initWeights();
+
+// Randomize initial states
+for (let i = 0; i < nTotal; i++) states[i] = Math.random() > 0.5 ? 1 : 0;
+
+// Energy
+function computeEnergy() {
+  let e = 0;
+  for (let i = 0; i < nTotal; i++) {
+    for (let j = i + 1; j < nTotal; j++) {
+      e -= weights[i][j] * states[i] * states[j];
+    }
+    e -= biases[i] * states[i];
+  }
+  return e;
+}
+
+// Gibbs sampling step
+function gibbsStep() {
+  const idx = Math.floor(Math.random() * nTotal);
+  let activation = biases[idx];
+  for (let j = 0; j < nTotal; j++) {
+    if (j !== idx) activation += weights[idx][j] * states[j];
+  }
+  const prob = 1.0 / (1.0 + Math.exp(-activation / temperature));
+  states[idx] = Math.random() < prob ? 1 : 0;
+}
+
+// Click handler
+canvas.addEventListener('click', (e) => {
+  for (let i = 0; i < nTotal; i++) {
+    const n = nodePositions[i];
+    const dx = e.clientX - n.x, dy = e.clientY - n.y;
+    if (dx*dx + dy*dy < 25*25) {
+      states[i] = 1 - states[i];
+      return;
+    }
+  }
+});
+
+// Controls
+document.getElementById('tempSlider').addEventListener('input', (e) => {
+  temperature = e.target.value / 100;
+  annealing = false;
+});
+document.getElementById('btnRun').addEventListener('click', () => { running = true; });
+document.getElementById('btnStop').addEventListener('click', () => { running = false; annealing = false; });
+document.getElementById('btnAnneal').addEventListener('click', () => {
+  running = true; annealing = true; temperature = annealStart; step = 0;
+});
+document.getElementById('btnRandomize').addEventListener('click', () => { initWeights(); });
+document.getElementById('btnReset').addEventListener('click', () => {
+  for (let i = 0; i < nTotal; i++) states[i] = 0;
+  step = 0; running = false; annealing = false; temperature = 1.0;
+  document.getElementById('tempSlider').value = 100;
+});
+
+// Energy history
+let energyHistory = [];
+
+// Particles
+const particles = [];
+for (let i = 0; i < 30; i++) {
+  particles.push({ x: Math.random()*W, y: Math.random()*H, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, r: Math.random()*1.5+0.5 });
+}
+
+// Transition flashes
+let flashes = [];
+
+let time = 0;
+function draw() {
+  requestAnimationFrame(draw);
+  time++;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  layoutNodes();
+
+  // Particles
+  ctx.globalAlpha = 0.1;
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    ctx.fillStyle = '#a8f';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Title
+  ctx.fillStyle = '#a8f';
+  ctx.font = 'bold 18px Courier New';
+  const cx = (W - 220) / 2;
+  ctx.fillText('SHIELD-BOLTZMANN', cx - 180, 50);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('Stochastic Neural Network with Energy Landscape', cx - 180, 68);
+
+  // Layer labels
+  ctx.fillStyle = 'rgba(170,136,255,0.4)';
+  ctx.font = '12px Courier New';
+  ctx.fillText('VISIBLE LAYER', cx - 40, H/2 + 200);
+  ctx.fillText('HIDDEN LAYER', cx - 35, H/2 - 160);
+
+  // Draw connections
+  for (let i = 0; i < nTotal; i++) {
+    for (let j = i + 1; j < nTotal; j++) {
+      const w = weights[i][j];
+      const absW = Math.abs(w);
+      if (absW < 0.05) continue;
+      const n1 = nodePositions[i], n2 = nodePositions[j];
+      const active = states[i] && states[j];
+      ctx.strokeStyle = w > 0
+        ? `rgba(100,200,255,${active ? 0.6 : 0.15})`
+        : `rgba(255,100,100,${active ? 0.6 : 0.15})`;
+      ctx.lineWidth = absW * 2 + (active ? 1.5 : 0);
+      ctx.beginPath();
+      ctx.moveTo(n1.x, n1.y);
+      ctx.lineTo(n2.x, n2.y);
+      ctx.stroke();
+
+      // Animated signal along active connections
+      if (active && running) {
+        const t = (time * 0.02 + i * 0.3) % 1;
+        const sx = n1.x + (n2.x - n1.x) * t;
+        const sy = n1.y + (n2.y - n1.y) * t;
+        ctx.fillStyle = w > 0 ? 'rgba(100,200,255,0.8)' : 'rgba(255,100,100,0.8)';
+        ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  }
+
+  // Draw nodes
+  for (let i = 0; i < nTotal; i++) {
+    const n = nodePositions[i];
+    const on = states[i] === 1;
+    const radius = n.type === 'visible' ? 22 : 18;
+
+    // Glow
+    if (on) {
+      ctx.shadowColor = '#a8f';
+      ctx.shadowBlur = 20;
+    }
+
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, radius, 0, Math.PI * 2);
+    if (on) {
+      ctx.fillStyle = n.type === 'visible' ? 'rgba(170,136,255,0.8)' : 'rgba(136,200,255,0.8)';
+    } else {
+      ctx.fillStyle = 'rgba(30,30,60,0.8)';
+    }
+    ctx.fill();
+    ctx.strokeStyle = n.type === 'visible' ? '#a8f' : '#8cf';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Label
+    ctx.fillStyle = on ? '#fff' : '#666';
+    ctx.font = 'bold 11px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.type === 'visible' ? 'V' + i : 'H' + (i - nVisible), n.x, n.y + 4);
+    ctx.textAlign = 'left';
+  }
+
+  // Flashes
+  flashes = flashes.filter(f => { f.life--; return f.life > 0; });
+  for (const f of flashes) {
+    ctx.globalAlpha = f.life / 20;
+    ctx.fillStyle = '#a8f';
+    ctx.beginPath(); ctx.arc(f.x, f.y, 30 - f.life, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Energy landscape graph
+  const gx = 40, gy = 80, gw = 180, gh = 120;
+  ctx.fillStyle = 'rgba(6,6,16,0.8)';
+  ctx.fillRect(gx, gy, gw, gh);
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.strokeRect(gx, gy, gw, gh);
+  ctx.fillStyle = '#888';
+  ctx.font = '11px Courier New';
+  ctx.fillText('Energy Over Time', gx + 5, gy - 5);
+
+  if (energyHistory.length > 1) {
+    const minE = Math.min(...energyHistory);
+    const maxE = Math.max(...energyHistory);
+    const range = maxE - minE || 1;
+    ctx.strokeStyle = '#a8f';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < energyHistory.length; i++) {
+      const px = gx + (i / (energyHistory.length - 1)) * gw;
+      const py = gy + gh - ((energyHistory[i] - minE) / range) * (gh - 10) - 5;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Temperature bar
+  const tbx = gx, tby = gy + gh + 20, tbw = gw, tbh = 12;
+  ctx.fillStyle = 'rgba(30,30,60,0.8)';
+  ctx.fillRect(tbx, tby, tbw, tbh);
+  const tFrac = Math.min(temperature / 5, 1);
+  const tGrad = ctx.createLinearGradient(tbx, 0, tbx + tbw * tFrac, 0);
+  tGrad.addColorStop(0, 'rgba(100,100,255,0.6)');
+  tGrad.addColorStop(1, 'rgba(255,100,100,0.8)');
+  ctx.fillStyle = tGrad;
+  ctx.fillRect(tbx, tby, tbw * tFrac, tbh);
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.strokeRect(tbx, tby, tbw, tbh);
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Temperature: ' + temperature.toFixed(2), tbx, tby - 3);
+
+  // Simulation
+  if (running) {
+    const prevStates = [...states];
+    for (let i = 0; i < 5; i++) gibbsStep();
+    step += 5;
+
+    // Flash on state transitions
+    for (let i = 0; i < nTotal; i++) {
+      if (states[i] !== prevStates[i]) {
+        flashes.push({ x: nodePositions[i].x, y: nodePositions[i].y, life: 15 });
+      }
+    }
+
+    // Annealing
+    if (annealing) {
+      temperature = annealStart * Math.exp(-step * 0.001);
+      if (temperature < 0.01) { temperature = 0.01; annealing = false; }
+      document.getElementById('tempSlider').value = Math.round(temperature * 100);
+    }
+
+    const e = computeEnergy();
+    energyHistory.push(e);
+    if (energyHistory.length > 200) energyHistory.shift();
+  }
+
+  // Stats
+  document.getElementById('sTemp').textContent = temperature.toFixed(2);
+  document.getElementById('sEnergy').textContent = computeEnergy().toFixed(2);
+  document.getElementById('sStep').textContent = step;
+  document.getElementById('sState').textContent = running ? (annealing ? 'ANNEALING' : 'SAMPLING') : 'IDLE';
+  document.getElementById('sAnneal').textContent = annealing ? 'ON' : 'OFF';
+}
+draw();
+</script>
+</body>
+</html>

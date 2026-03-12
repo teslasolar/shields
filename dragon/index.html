@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-DRAGON</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  min-width: 220px; z-index: 10; border-radius: 4px;
+}
+#stats .title { color: #f84; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #888; }
+#stats .val { color: #f84; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; z-index: 10; border-radius: 4px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+#controls button {
+  background: rgba(255,136,68,0.15); border: 1px solid #f84; color: #f84;
+  padding: 5px 14px; margin: 3px 4px 3px 0; cursor: pointer; font-family: inherit;
+  font-size: 12px; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(255,136,68,0.35); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-DRAGON</div>
+  <div><span class="label">Category:</span> <span class="val">Fractals</span></div>
+  <div><span class="label">Depth:</span> <span class="val" id="sDepth">12</span></div>
+  <div><span class="label">Segments:</span> <span class="val" id="sSegs">0</span></div>
+  <div><span class="label">Drawn:</span> <span class="val" id="sDrawn">0</span></div>
+  <div><span class="label">FPS:</span> <span class="val" id="sFps">0</span></div>
+</div>
+<div id="controls">
+  <div class="title">Controls</div>
+  <div style="margin-top:4px;">
+    <button id="btnDepthUp">Depth +</button>
+    <button id="btnDepthDn">Depth −</button>
+  </div>
+  <div style="margin-top:4px;">
+    <button id="btnAnimate">Restart</button>
+    <button id="btnInstant">Instant</button>
+    <button id="btnSpeed">Speed +</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; generate(); }
+window.addEventListener('resize', resize);
+
+let depth = 12;
+let segments = [];
+let drawIdx = 0;
+let drawSpeed = 50;
+let instant = false;
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
+
+function generateSequence(n) {
+  // Dragon curve turn sequence
+  let turns = [];
+  for (let i = 0; i < n; i++) {
+    let newTurns = [];
+    for (let j = 0; j < turns.length; j++) newTurns.push(turns[j]);
+    newTurns.push(1); // right turn
+    for (let j = turns.length - 1; j >= 0; j--) newTurns.push(turns[j] === 1 ? 0 : 1);
+    turns = newTurns;
+  }
+  return turns;
+}
+
+function generate() {
+  const turns = generateSequence(depth);
+  const totalSegs = turns.length + 1;
+
+  // Compute points
+  let dx = 1, dy = 0;
+  let points = [{x: 0, y: 0}];
+  for (let i = 0; i < turns.length; i++) {
+    if (turns[i] === 1) { // right
+      let tmp = dx; dx = -dy; dy = tmp;
+    } else { // left
+      let tmp = dx; dx = dy; dy = -tmp;
+    }
+    points.push({x: points[points.length-1].x + dx, y: points[points.length-1].y + dy});
+  }
+
+  // Find bounds
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+
+  // Scale to fit
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
+  const margin = 80;
+  const scale = Math.min((W - margin * 2) / rangeX, (H - margin * 2) / rangeY);
+  const offX = (W - rangeX * scale) / 2 - minX * scale;
+  const offY = (H - rangeY * scale) / 2 - minY * scale;
+
+  segments = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    segments.push({
+      x1: points[i].x * scale + offX,
+      y1: points[i].y * scale + offY,
+      x2: points[i+1].x * scale + offX,
+      y2: points[i+1].y * scale + offY
+    });
+  }
+  drawIdx = 0;
+  instant = false;
+}
+
+document.getElementById('btnDepthUp').onclick = () => { depth = Math.min(18, depth + 1); generate(); };
+document.getElementById('btnDepthDn').onclick = () => { depth = Math.max(1, depth - 1); generate(); };
+document.getElementById('btnAnimate').onclick = () => { generate(); };
+document.getElementById('btnInstant').onclick = () => { instant = true; drawIdx = segments.length; };
+document.getElementById('btnSpeed').onclick = () => { drawSpeed = Math.min(500, drawSpeed + 30); };
+
+function hslStr(h, s, l) {
+  return `hsl(${Math.floor(h)},${Math.floor(s)}%,${Math.floor(l)}%)`;
+}
+
+function render() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) { fps = frameCount; frameCount = 0; lastFpsTime = now; }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillText('SHIELD-DRAGON', 16, 30);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText('Fractals', 16, 48);
+
+  if (!instant && drawIdx < segments.length) {
+    drawIdx = Math.min(segments.length, drawIdx + drawSpeed);
+  }
+
+  const count = instant ? segments.length : drawIdx;
+  ctx.lineWidth = depth > 14 ? 0.5 : depth > 10 ? 1 : 2;
+  for (let i = 0; i < count; i++) {
+    const t = i / segments.length;
+    const hue = 15 + t * 30; // orange range
+    ctx.strokeStyle = hslStr(hue, 90, 45 + t * 20);
+    ctx.beginPath();
+    ctx.moveTo(segments[i].x1, segments[i].y1);
+    ctx.lineTo(segments[i].x2, segments[i].y2);
+    ctx.stroke();
+  }
+
+  document.getElementById('sDepth').textContent = depth;
+  document.getElementById('sSegs').textContent = segments.length.toLocaleString();
+  document.getElementById('sDrawn').textContent = count.toLocaleString();
+  document.getElementById('sFps').textContent = fps;
+
+  requestAnimationFrame(render);
+}
+
+resize();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

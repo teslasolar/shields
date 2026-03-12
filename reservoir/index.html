@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-RESERVOIR</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; line-height: 1.7; min-width: 210px; z-index: 10;
+}
+#stats .title { color: #a8f; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .val { color: #a8f; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(170,136,255,0.13); color: #a8f; border: 1px solid #a8f;
+  border-radius: 4px; padding: 6px 14px; font-family: inherit; font-size: 13px;
+  cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(170,136,255,0.3); }
+#controls label { color: #c0c8d8; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+#controls input[type=range] { width: 100px; accent-color: #a8f; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-RESERVOIR</div>
+  <div>Reservoir Size: <span class="val" id="sSize">30</span></div>
+  <div>Spectral Radius: <span class="val" id="sSpectral">0.90</span></div>
+  <div>Input Signal: <span class="val" id="sSignal">Sine</span></div>
+  <div>Input Value: <span class="val" id="sInput">0.00</span></div>
+  <div>Output Value: <span class="val" id="sOutput">0.00</span></div>
+  <div>MSE: <span class="val" id="sMSE">-</span></div>
+  <div>Step: <span class="val" id="sStep">0</span></div>
+  <div>State: <span class="val" id="sState">RUNNING</span></div>
+</div>
+<div id="controls">
+  <div style="color:#a8f;font-weight:bold;margin-bottom:4px;">Controls</div>
+  <button id="btnSignal">Signal: Sine</button>
+  <label>Leak Rate <input type="range" id="leakSlider" min="1" max="100" value="30"></label>
+  <label>Input Scale <input type="range" id="inputSlider" min="1" max="100" value="50"></label>
+  <button id="btnPause">Pause</button>
+  <button id="btnReset">Reset Network</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; });
+
+const N = 30; // reservoir size
+const sparsity = 0.2;
+let leakRate = 0.3;
+let inputScale = 0.5;
+let spectralRadius = 0.9;
+
+// Reservoir state
+let state = new Float32Array(N);
+let Wres = []; // NxN recurrent weights
+let Win = new Float32Array(N); // input weights
+let Wout = new Float32Array(N); // output weights (learned)
+
+// Signal
+let signalType = 0;
+const signalNames = ['Sine', 'Square', 'Sawtooth', 'Mixed'];
+let step = 0;
+let paused = false;
+
+// History for plotting
+let inputHistory = [];
+let outputHistory = [];
+let targetHistory = [];
+const histLen = 200;
+
+// Node layout
+let nodePositions = [];
+function layoutNodes() {
+  const cx = (W - 220) / 2;
+  const cy = H / 2 - 60;
+  nodePositions = [];
+  // Arrange in a circular layout
+  for (let i = 0; i < N; i++) {
+    const angle = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const r = 130 + (i % 3) * 20;
+    nodePositions.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+  }
+}
+layoutNodes();
+
+// Initialize reservoir
+function initReservoir() {
+  state = new Float32Array(N);
+  Wres = [];
+  for (let i = 0; i < N; i++) {
+    Wres[i] = new Float32Array(N);
+    for (let j = 0; j < N; j++) {
+      if (Math.random() < sparsity) {
+        Wres[i][j] = (Math.random() - 0.5) * 2;
+      }
+    }
+  }
+  // Scale to spectral radius (approximate)
+  let maxEig = 0;
+  for (let i = 0; i < N; i++) {
+    let rowSum = 0;
+    for (let j = 0; j < N; j++) rowSum += Math.abs(Wres[i][j]);
+    maxEig = Math.max(maxEig, rowSum);
+  }
+  if (maxEig > 0) {
+    const scale = spectralRadius / maxEig;
+    for (let i = 0; i < N; i++)
+      for (let j = 0; j < N; j++)
+        Wres[i][j] *= scale;
+  }
+  // Input weights
+  for (let i = 0; i < N; i++) Win[i] = (Math.random() - 0.5) * 2 * inputScale;
+  // Random output weights (would be trained in real ESN)
+  for (let i = 0; i < N; i++) Wout[i] = (Math.random() - 0.5) * 0.2;
+
+  step = 0;
+  inputHistory = []; outputHistory = []; targetHistory = [];
+}
+initReservoir();
+
+// Generate input signal
+function getInput(t) {
+  const f = 0.02;
+  if (signalType === 0) return Math.sin(t * f * Math.PI * 2);
+  if (signalType === 1) return Math.sin(t * f * Math.PI * 2) > 0 ? 1 : -1;
+  if (signalType === 2) return ((t * f) % 1) * 2 - 1;
+  return Math.sin(t * f * Math.PI * 2) * 0.5 + Math.sin(t * f * Math.PI * 4) * 0.3 + Math.sin(t * f * Math.PI * 7) * 0.2;
+}
+
+// Target: predict next value
+function getTarget(t) { return getInput(t + 5); }
+
+// Update reservoir
+function updateReservoir(input) {
+  const newState = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    let sum = Win[i] * input;
+    for (let j = 0; j < N; j++) sum += Wres[i][j] * state[j];
+    newState[i] = (1 - leakRate) * state[i] + leakRate * Math.tanh(sum);
+  }
+  state = newState;
+}
+
+// Readout
+function readout() {
+  let out = 0;
+  for (let i = 0; i < N; i++) out += Wout[i] * state[i];
+  return Math.tanh(out);
+}
+
+// Simple online learning for output weights
+function learnStep(target) {
+  const out = readout();
+  const err = target - out;
+  const lr = 0.001;
+  for (let i = 0; i < N; i++) {
+    Wout[i] += lr * err * state[i];
+  }
+}
+
+// Connection strengths for drawing
+function getConnectionStrength(i, j) { return Wres[i][j]; }
+
+// Controls
+document.getElementById('btnSignal').addEventListener('click', function() {
+  signalType = (signalType + 1) % signalNames.length;
+  this.textContent = 'Signal: ' + signalNames[signalType];
+});
+document.getElementById('leakSlider').addEventListener('input', (e) => { leakRate = e.target.value / 100; });
+document.getElementById('inputSlider').addEventListener('input', (e) => {
+  inputScale = e.target.value / 100;
+  for (let i = 0; i < N; i++) Win[i] = (Math.random() - 0.5) * 2 * inputScale;
+});
+document.getElementById('btnPause').addEventListener('click', function() {
+  paused = !paused;
+  this.textContent = paused ? 'Resume' : 'Pause';
+});
+document.getElementById('btnReset').addEventListener('click', () => { initReservoir(); });
+
+// Particles
+const bgParticles = [];
+for (let i = 0; i < 25; i++) {
+  bgParticles.push({ x: Math.random()*W, y: Math.random()*H, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, r: Math.random()*1.5+0.5 });
+}
+
+// Signal pulses for animation
+let signalPulses = [];
+
+let time = 0;
+function draw() {
+  requestAnimationFrame(draw);
+  time++;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  layoutNodes();
+
+  // BG particles
+  ctx.globalAlpha = 0.1;
+  for (const p of bgParticles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    ctx.fillStyle = '#a8f';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const cx = (W - 220) / 2;
+  const cy = H / 2 - 60;
+
+  // Title
+  ctx.fillStyle = '#a8f';
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillText('SHIELD-RESERVOIR', 40, 50);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('Echo State Network / Reservoir Computing', 40, 68);
+
+  // Simulation step
+  if (!paused) {
+    const input = getInput(step);
+    const target = getTarget(step);
+    updateReservoir(input);
+    learnStep(target);
+    const output = readout();
+
+    inputHistory.push(input);
+    outputHistory.push(output);
+    targetHistory.push(target);
+    if (inputHistory.length > histLen) { inputHistory.shift(); outputHistory.shift(); targetHistory.shift(); }
+
+    // Create signal pulse from input node
+    if (step % 3 === 0) {
+      const targetNode = Math.floor(Math.random() * N);
+      signalPulses.push({ x: cx - 220, y: cy, tx: nodePositions[targetNode].x, ty: nodePositions[targetNode].y, t: 0, max: 30 });
+    }
+    step++;
+  }
+
+  // Draw connections (only strong ones)
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const w = Wres[i][j];
+      if (Math.abs(w) < 0.05) continue;
+      const n1 = nodePositions[i], n2 = nodePositions[j];
+      const intensity = Math.min(Math.abs(w) * 0.5, 0.3);
+      ctx.strokeStyle = w > 0 ? `rgba(100,180,255,${intensity})` : `rgba(255,100,130,${intensity})`;
+      ctx.lineWidth = Math.abs(w) * 1.5;
+      ctx.beginPath(); ctx.moveTo(n1.x, n1.y); ctx.lineTo(n2.x, n2.y); ctx.stroke();
+    }
+  }
+
+  // Draw nodes
+  for (let i = 0; i < N; i++) {
+    const n = nodePositions[i];
+    const activation = state[i];
+    const absA = Math.abs(activation);
+
+    const r = 8 + absA * 6;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+
+    if (activation > 0) {
+      ctx.fillStyle = `rgba(100,180,255,${0.3 + absA * 0.7})`;
+      ctx.shadowColor = '#68f';
+      ctx.shadowBlur = absA * 15;
+    } else {
+      ctx.fillStyle = `rgba(255,100,170,${0.3 + absA * 0.7})`;
+      ctx.shadowColor = '#f6a';
+      ctx.shadowBlur = absA * 15;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = 'rgba(170,136,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Input node
+  ctx.fillStyle = '#4f4';
+  ctx.shadowColor = '#4f4';
+  ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(cx - 220, cy, 14, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('IN', cx - 220, cy + 4);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Courier New';
+  ctx.fillText('INPUT', cx - 235, cy - 22);
+
+  // Output node
+  ctx.fillStyle = '#fa0';
+  ctx.shadowColor = '#fa0';
+  ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(cx + 220, cy, 14, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('OUT', cx + 220, cy + 4);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Courier New';
+  ctx.fillText('OUTPUT', cx + 205, cy - 22);
+
+  // Output connections
+  ctx.strokeStyle = 'rgba(255,170,0,0.15)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < N; i++) {
+    if (Math.abs(Wout[i]) > 0.02) {
+      ctx.strokeStyle = `rgba(255,170,0,${Math.min(Math.abs(Wout[i])*2, 0.4)})`;
+      ctx.beginPath(); ctx.moveTo(nodePositions[i].x, nodePositions[i].y); ctx.lineTo(cx+220, cy); ctx.stroke();
+    }
+  }
+
+  // Signal pulses animation
+  signalPulses = signalPulses.filter(p => p.t < p.max);
+  for (const p of signalPulses) {
+    const frac = p.t / p.max;
+    const px = p.x + (p.tx - p.x) * frac;
+    const py = p.y + (p.ty - p.y) * frac;
+    ctx.globalAlpha = 1 - frac;
+    ctx.fillStyle = '#4f4';
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    p.t++;
+  }
+
+  // Signal graph
+  const gx = 40, gy = H - 200, gw = W - 300, gh = 130;
+  ctx.fillStyle = 'rgba(6,6,16,0.8)';
+  ctx.fillRect(gx, gy, gw, gh);
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.strokeRect(gx, gy, gw, gh);
+
+  // Labels
+  ctx.fillStyle = '#888';
+  ctx.font = '11px Courier New';
+  ctx.fillText('Signal Timeline', gx + 5, gy - 5);
+
+  // Draw zero line
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath(); ctx.moveTo(gx, gy + gh/2); ctx.lineTo(gx + gw, gy + gh/2); ctx.stroke();
+
+  // Input signal (green)
+  if (inputHistory.length > 1) {
+    ctx.strokeStyle = 'rgba(80,255,80,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < inputHistory.length; i++) {
+      const px = gx + (i / histLen) * gw;
+      const py = gy + gh/2 - inputHistory[i] * gh * 0.4;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Target (dim white)
+  if (targetHistory.length > 1) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let i = 0; i < targetHistory.length; i++) {
+      const px = gx + (i / histLen) * gw;
+      const py = gy + gh/2 - targetHistory[i] * gh * 0.4;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Output (orange)
+  if (outputHistory.length > 1) {
+    ctx.strokeStyle = 'rgba(255,170,0,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < outputHistory.length; i++) {
+      const px = gx + (i / histLen) * gw;
+      const py = gy + gh/2 - outputHistory[i] * gh * 0.4;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Legend
+  ctx.fillStyle = 'rgba(80,255,80,0.8)'; ctx.fillRect(gx + gw - 180, gy + 8, 10, 3);
+  ctx.fillStyle = '#888'; ctx.font = '10px Courier New'; ctx.fillText('Input', gx + gw - 165, gy + 13);
+  ctx.fillStyle = 'rgba(255,170,0,0.8)'; ctx.fillRect(gx + gw - 110, gy + 8, 10, 3);
+  ctx.fillStyle = '#888'; ctx.fillText('Output', gx + gw - 95, gy + 13);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(gx + gw - 45, gy + 8, 10, 3);
+  ctx.fillStyle = '#888'; ctx.fillText('Target', gx + gw - 30, gy + 13);
+
+  // Compute MSE
+  let mse = 0;
+  if (outputHistory.length > 20) {
+    for (let i = outputHistory.length - 20; i < outputHistory.length; i++) {
+      mse += (outputHistory[i] - targetHistory[i]) ** 2;
+    }
+    mse /= 20;
+  }
+
+  // Stats
+  const curInput = inputHistory.length > 0 ? inputHistory[inputHistory.length-1] : 0;
+  const curOutput = outputHistory.length > 0 ? outputHistory[outputHistory.length-1] : 0;
+  document.getElementById('sSignal').textContent = signalNames[signalType];
+  document.getElementById('sInput').textContent = curInput.toFixed(3);
+  document.getElementById('sOutput').textContent = curOutput.toFixed(3);
+  document.getElementById('sMSE').textContent = outputHistory.length > 20 ? mse.toFixed(5) : '-';
+  document.getElementById('sStep').textContent = step;
+  document.getElementById('sState').textContent = paused ? 'PAUSED' : 'RUNNING';
+}
+draw();
+</script>
+</body>
+</html>

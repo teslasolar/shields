@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FLOCKING</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.7; min-width: 180px; z-index: 10;
+}
+#stats .title { color: #4af; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #8090a8; }
+#stats .val { color: #c0c8d8; float: right; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(68,170,255,0.15); color: #4af; border: 1px solid #4af;
+  border-radius: 3px; padding: 6px 14px; font-family: 'Courier New', monospace;
+  font-size: 13px; cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,170,255,0.3); }
+#controls label { color: #8090a8; display: flex; align-items: center; gap: 8px; }
+#controls input[type=range] { width: 120px; accent-color: #4af; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-FLOCKING</div>
+  <div><span class="label">Boids</span><span class="val" id="sBoids">—</span></div>
+  <div><span class="label">FPS</span><span class="val" id="sFps">—</span></div>
+  <div><span class="label">Avg Speed</span><span class="val" id="sSpeed">—</span></div>
+  <div><span class="label">Alignment</span><span class="val" id="sAlign">—</span></div>
+</div>
+<div id="controls">
+  <label>Separation <input type="range" id="rSep" min="0" max="100" value="50"></label>
+  <label>Alignment <input type="range" id="rAlign" min="0" max="100" value="50"></label>
+  <label>Cohesion <input type="range" id="rCoh" min="0" max="100" value="50"></label>
+  <label>Max Speed <input type="range" id="rMax" min="1" max="10" value="4"></label>
+  <button id="bAdd">Add 50 Boids</button>
+  <button id="bReset">Reset</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+let sepWeight = 1.5;
+let alignWeight = 1.0;
+let cohWeight = 1.0;
+let maxSpeed = 4;
+const maxForce = 0.15;
+const perceptRadius = 50;
+const sepRadius = 25;
+
+class Boid {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    const a = Math.random() * Math.PI * 2;
+    this.vx = Math.cos(a) * 2;
+    this.vy = Math.sin(a) * 2;
+  }
+  update(boids) {
+    let sx = 0, sy = 0, sc = 0;
+    let ax = 0, ay = 0, ac = 0;
+    let cx = 0, cy = 0, cc = 0;
+    for (const b of boids) {
+      if (b === this) continue;
+      const dx = b.x - this.x, dy = b.y - this.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < sepRadius && d > 0) {
+        sx -= dx / d; sy -= dy / d; sc++;
+      }
+      if (d < perceptRadius) {
+        ax += b.vx; ay += b.vy; ac++;
+        cx += b.x; cy += b.y; cc++;
+      }
+    }
+    let fx = 0, fy = 0;
+    if (sc > 0) { sx /= sc; sy /= sc; const m = Math.sqrt(sx*sx+sy*sy)||1; fx += sx/m * maxSpeed * sepWeight; fy += sy/m * maxSpeed * sepWeight; }
+    if (ac > 0) { ax /= ac; ay /= ac; const m = Math.sqrt(ax*ax+ay*ay)||1; const dx = ax/m*maxSpeed-this.vx, dy = ay/m*maxSpeed-this.vy; fx += dx * alignWeight; fy += dy * alignWeight; }
+    if (cc > 0) { cx = cx/cc - this.x; cy = cy/cc - this.y; const m = Math.sqrt(cx*cx+cy*cy)||1; const dx = cx/m*maxSpeed-this.vx, dy = cy/m*maxSpeed-this.vy; fx += dx * cohWeight; fy += dy * cohWeight; }
+    // Clamp force
+    const fm = Math.sqrt(fx*fx+fy*fy);
+    if (fm > maxForce) { fx = fx/fm*maxForce; fy = fy/fm*maxForce; }
+    this.vx += fx; this.vy += fy;
+    const sm = Math.sqrt(this.vx*this.vx+this.vy*this.vy);
+    if (sm > maxSpeed) { this.vx = this.vx/sm*maxSpeed; this.vy = this.vy/sm*maxSpeed; }
+    this.x += this.vx; this.y += this.vy;
+    // Wrap
+    if (this.x < 0) this.x += W; if (this.x > W) this.x -= W;
+    if (this.y < 0) this.y += H; if (this.y > H) this.y -= H;
+  }
+}
+
+let boids = [];
+
+function initBoids(n) {
+  boids = [];
+  for (let i = 0; i < n; i++) boids.push(new Boid());
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+let lastTime = performance.now(), fps = 60;
+
+function render() {
+  const now = performance.now();
+  fps = fps * 0.95 + 0.05 * (1000 / (now - lastTime));
+  lastTime = now;
+
+  for (const b of boids) b.update(boids);
+
+  ctx.fillStyle = 'rgba(6,6,16,0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  let totalSpeed = 0;
+  for (const b of boids) {
+    const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+    totalSpeed += speed;
+    const angle = Math.atan2(b.vy, b.vx);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(angle);
+    ctx.fillStyle = `rgba(68,170,255,${0.5 + speed / maxSpeed * 0.5})`;
+    ctx.beginPath();
+    ctx.moveTo(6, 0);
+    ctx.lineTo(-4, 3);
+    ctx.lineTo(-2, 0);
+    ctx.lineTo(-4, -3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.fillStyle = 'rgba(68,170,255,0.3)';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SHIELD-FLOCKING', 16, 30);
+
+  const avgSpeed = boids.length ? (totalSpeed / boids.length) : 0;
+  document.getElementById('sBoids').textContent = boids.length;
+  document.getElementById('sFps').textContent = fps.toFixed(1);
+  document.getElementById('sSpeed').textContent = avgSpeed.toFixed(2);
+  document.getElementById('sAlign').textContent = alignWeight.toFixed(2);
+
+  requestAnimationFrame(render);
+}
+
+document.getElementById('rSep').addEventListener('input', e => sepWeight = e.target.value / 100 * 3);
+document.getElementById('rAlign').addEventListener('input', e => alignWeight = e.target.value / 100 * 2);
+document.getElementById('rCoh').addEventListener('input', e => cohWeight = e.target.value / 100 * 2);
+document.getElementById('rMax').addEventListener('input', e => maxSpeed = parseFloat(e.target.value));
+document.getElementById('bAdd').addEventListener('click', () => { for (let i = 0; i < 50; i++) boids.push(new Boid()); });
+document.getElementById('bReset').addEventListener('click', () => initBoids(300));
+
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 10; i++) boids.push(new Boid(e.clientX + (Math.random()-0.5)*30, e.clientY + (Math.random()-0.5)*30));
+});
+
+window.addEventListener('resize', resize);
+resize();
+initBoids(300);
+render();
+</script>
+</body>
+</html>

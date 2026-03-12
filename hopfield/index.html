@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-HOPFIELD</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; line-height: 1.7; min-width: 200px; z-index: 10;
+}
+#stats .title { color: #a8f; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .val { color: #a8f; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.92);
+  border: 1px solid #a8f; border-radius: 6px; padding: 14px 18px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(170,136,255,0.13); color: #a8f; border: 1px solid #a8f;
+  border-radius: 4px; padding: 6px 14px; font-family: inherit; font-size: 13px;
+  cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(170,136,255,0.3); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-HOPFIELD</div>
+  <div>Grid: <span class="val" id="sGrid">10x10</span></div>
+  <div>Stored Patterns: <span class="val" id="sPatterns">0</span></div>
+  <div>Energy: <span class="val" id="sEnergy">0.00</span></div>
+  <div>Iterations: <span class="val" id="sIter">0</span></div>
+  <div>Converged: <span class="val" id="sConv">-</span></div>
+  <div>State: <span class="val" id="sState">IDLE</span></div>
+</div>
+<div id="controls">
+  <div style="color:#a8f;font-weight:bold;margin-bottom:4px;">Controls</div>
+  <div style="color:#888;font-size:11px;">Click grid cells to flip neurons</div>
+  <button id="btnStore">Store Current Pattern</button>
+  <button id="btnRecall">Recall (Async Update)</button>
+  <button id="btnNoise">Add 20% Noise</button>
+  <button id="btnClear">Clear Grid</button>
+  <button id="btnReset">Reset Network</button>
+  <button id="btnDemo">Load Demo Patterns</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; });
+
+const N = 10; // grid size
+const total = N * N;
+let neurons = new Array(total).fill(-1);
+let weights = [];
+let storedPatterns = [];
+let iterations = 0;
+let recalling = false;
+let converged = false;
+let energy = 0;
+
+// Initialize weight matrix
+function initWeights() {
+  weights = new Array(total);
+  for (let i = 0; i < total; i++) {
+    weights[i] = new Float32Array(total);
+  }
+}
+initWeights();
+
+// Hebbian learning
+function storePattern(pattern) {
+  storedPatterns.push([...pattern]);
+  // Recompute weights from all stored patterns
+  initWeights();
+  for (const pat of storedPatterns) {
+    for (let i = 0; i < total; i++) {
+      for (let j = 0; j < total; j++) {
+        if (i !== j) {
+          weights[i][j] += pat[i] * pat[j] / total;
+        }
+      }
+    }
+  }
+}
+
+// Energy function
+function computeEnergy() {
+  let e = 0;
+  for (let i = 0; i < total; i++) {
+    for (let j = i + 1; j < total; j++) {
+      e -= weights[i][j] * neurons[i] * neurons[j];
+    }
+  }
+  return e;
+}
+
+// Asynchronous update
+function asyncUpdate() {
+  const idx = Math.floor(Math.random() * total);
+  let h = 0;
+  for (let j = 0; j < total; j++) {
+    h += weights[idx][j] * neurons[j];
+  }
+  neurons[idx] = h >= 0 ? 1 : -1;
+}
+
+// Grid rendering
+function gridArea() {
+  const size = Math.min(W - 300, H - 160);
+  const s = Math.max(200, Math.min(size, 500));
+  const cx = (W - 200) / 2;
+  const cy = H / 2;
+  return { x: cx - s/2, y: cy - s/2, w: s, h: s, cellW: s/N, cellH: s/N };
+}
+
+function canvasToCell(mx, my) {
+  const a = gridArea();
+  const col = Math.floor((mx - a.x) / a.cellW);
+  const row = Math.floor((my - a.y) / a.cellH);
+  if (col >= 0 && col < N && row >= 0 && row < N) return row * N + col;
+  return -1;
+}
+
+canvas.addEventListener('click', (e) => {
+  const idx = canvasToCell(e.clientX, e.clientY);
+  if (idx >= 0) {
+    neurons[idx] *= -1;
+  }
+});
+
+// Controls
+document.getElementById('btnStore').addEventListener('click', () => {
+  storePattern(neurons);
+  recalling = false;
+});
+document.getElementById('btnRecall').addEventListener('click', () => {
+  recalling = true; converged = false; iterations = 0;
+});
+document.getElementById('btnNoise').addEventListener('click', () => {
+  for (let i = 0; i < total; i++) {
+    if (Math.random() < 0.2) neurons[i] *= -1;
+  }
+});
+document.getElementById('btnClear').addEventListener('click', () => {
+  neurons.fill(-1); recalling = false; iterations = 0;
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  neurons.fill(-1); initWeights(); storedPatterns = []; recalling = false; iterations = 0;
+});
+document.getElementById('btnDemo').addEventListener('click', () => {
+  // Store a few simple patterns
+  initWeights(); storedPatterns = [];
+  // Pattern 1: horizontal stripes
+  const p1 = new Array(total);
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) p1[r*N+c] = r % 2 === 0 ? 1 : -1;
+  storePattern(p1);
+  // Pattern 2: vertical stripes
+  const p2 = new Array(total);
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) p2[r*N+c] = c % 2 === 0 ? 1 : -1;
+  storePattern(p2);
+  // Pattern 3: checkerboard
+  const p3 = new Array(total);
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) p3[r*N+c] = (r+c) % 2 === 0 ? 1 : -1;
+  storePattern(p3);
+  neurons = [...p1];
+  // Add noise
+  for (let i = 0; i < total; i++) if (Math.random() < 0.25) neurons[i] *= -1;
+});
+
+// Particles
+const particles = [];
+for (let i = 0; i < 35; i++) {
+  particles.push({ x: Math.random()*W, y: Math.random()*H, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, r: Math.random()*1.5+0.5 });
+}
+
+let time = 0;
+let prevNeurons = [...neurons];
+function draw() {
+  requestAnimationFrame(draw);
+  time++;
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Particles
+  ctx.globalAlpha = 0.12;
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    ctx.fillStyle = '#a8f';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const area = gridArea();
+
+  // Title
+  ctx.fillStyle = '#a8f';
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillText('SHIELD-HOPFIELD', area.x, area.y - 26);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('Associative Memory Network', area.x, area.y - 10);
+
+  // Draw stored pattern thumbnails
+  if (storedPatterns.length > 0) {
+    ctx.fillStyle = '#888';
+    ctx.font = '11px Courier New';
+    ctx.fillText('Stored Patterns:', area.x, area.y + area.h + 20);
+    for (let pi = 0; pi < storedPatterns.length; pi++) {
+      const pat = storedPatterns[pi];
+      const thumbSize = 40;
+      const cs = thumbSize / N;
+      const tx = area.x + pi * (thumbSize + 10);
+      const ty = area.y + area.h + 30;
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          ctx.fillStyle = pat[r*N+c] === 1 ? 'rgba(170,136,255,0.7)' : 'rgba(30,30,50,0.8)';
+          ctx.fillRect(tx + c*cs, ty + r*cs, cs-0.5, cs-0.5);
+        }
+      }
+      ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+      ctx.strokeRect(tx, ty, thumbSize, thumbSize);
+    }
+  }
+
+  // Draw grid
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const idx = r * N + c;
+      const x = area.x + c * area.cellW;
+      const y = area.y + r * area.cellH;
+      const on = neurons[idx] === 1;
+      if (on) {
+        const glow = 0.6 + 0.2 * Math.sin(time * 0.05 + idx * 0.3);
+        ctx.fillStyle = `rgba(170,136,255,${glow})`;
+        ctx.shadowColor = '#a8f';
+        ctx.shadowBlur = 8;
+      } else {
+        ctx.fillStyle = 'rgba(20,20,40,0.8)';
+        ctx.shadowBlur = 0;
+      }
+      ctx.fillRect(x + 1, y + 1, area.cellW - 2, area.cellH - 2);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Grid border
+  ctx.strokeStyle = '#a8f';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(area.x, area.y, area.w, area.h);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(170,136,255,0.1)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < N; i++) {
+    ctx.beginPath(); ctx.moveTo(area.x + i*area.cellW, area.y); ctx.lineTo(area.x + i*area.cellW, area.y+area.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(area.x, area.y + i*area.cellH); ctx.lineTo(area.x+area.w, area.y + i*area.cellH); ctx.stroke();
+  }
+
+  // Recall animation
+  if (recalling) {
+    prevNeurons = [...neurons];
+    for (let i = 0; i < 10; i++) asyncUpdate();
+    iterations += 10;
+    energy = computeEnergy();
+    // Check convergence
+    let same = true;
+    for (let i = 0; i < total; i++) { if (neurons[i] !== prevNeurons[i]) { same = false; break; } }
+    if (same && iterations > 20) {
+      converged = true;
+      recalling = false;
+    }
+    if (iterations > 5000) {
+      converged = true;
+      recalling = false;
+    }
+  } else {
+    energy = computeEnergy();
+  }
+
+  // Energy graph (small bar)
+  const barX = area.x + area.w + 20;
+  const barW = 16;
+  const barH = area.h;
+  ctx.fillStyle = 'rgba(170,136,255,0.1)';
+  ctx.fillRect(barX, area.y, barW, barH);
+  const eNorm = Math.min(1, Math.max(0, (energy + 50) / 100));
+  const fillH = eNorm * barH;
+  ctx.fillStyle = 'rgba(170,136,255,0.5)';
+  ctx.fillRect(barX, area.y + barH - fillH, barW, fillH);
+  ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+  ctx.strokeRect(barX, area.y, barW, barH);
+  ctx.save();
+  ctx.translate(barX + barW + 12, area.y + barH/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillStyle = '#888';
+  ctx.font = '11px Courier New';
+  ctx.fillText('ENERGY', -20, 0);
+  ctx.restore();
+
+  // Update stats
+  document.getElementById('sPatterns').textContent = storedPatterns.length;
+  document.getElementById('sEnergy').textContent = energy.toFixed(2);
+  document.getElementById('sIter').textContent = iterations;
+  document.getElementById('sConv').textContent = converged ? 'YES' : (recalling ? 'RUNNING' : '-');
+  document.getElementById('sState').textContent = recalling ? 'RECALLING' : 'IDLE';
+}
+draw();
+</script>
+</body>
+</html>

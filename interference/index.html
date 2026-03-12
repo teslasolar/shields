@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-INTERFERENCE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+.panel{position:fixed;background:rgba(6,6,16,.92);border:1px solid rgba(255,255,0,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+#stats{top:10px;right:10px;min-width:210px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:6px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.label{color:#667}
+.val{color:#ff0;text-align:right}
+#controls{bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;min-width:220px}
+#controls h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:4px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+#controls label{color:#667;font-size:10px;letter-spacing:1px}
+#controls input[type=range]{width:140px;accent-color:#ff0;vertical-align:middle}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctrl-val{color:#ff0;font-size:10px;min-width:40px;text-align:right}
+button{background:rgba(255,255,0,.1);color:#ff0;border:1px solid rgba(255,255,0,.3);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:10px;cursor:pointer;letter-spacing:1px}
+button:hover{background:rgba(255,255,0,.2)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="stats">
+  <h3>SHIELD-INTERFERENCE</h3>
+  <div class="row"><span class="label">Sources</span><span class="val" id="st-sources">2</span></div>
+  <div class="row"><span class="label">Wavelength</span><span class="val" id="st-wl">40.0</span></div>
+  <div class="row"><span class="label">Peak Amplitude</span><span class="val" id="st-peak">0.00</span></div>
+  <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+  <div class="row"><span class="label">Time</span><span class="val" id="st-time">0.0</span></div>
+</div>
+<div class="panel" id="controls">
+  <h3>CONTROLS</h3>
+  <div class="ctrl-row"><label>WAVELENGTH</label><input type="range" id="sl-wl" min="15" max="80" step="1" value="40"><span class="ctrl-val" id="v-wl">40</span></div>
+  <div class="ctrl-row"><label>AMPLITUDE</label><input type="range" id="sl-amp" min="0.2" max="2" step="0.1" value="1"><span class="ctrl-val" id="v-amp">1.0</span></div>
+  <div class="ctrl-row"><label>SPEED</label><input type="range" id="sl-spd" min="0.1" max="3" step="0.1" value="1"><span class="ctrl-val" id="v-spd">1.0</span></div>
+  <div class="ctrl-row"><label>RESOLUTION</label><input type="range" id="sl-res" min="2" max="6" step="1" value="3"><span class="ctrl-val" id="v-res">3</span></div>
+  <div class="ctrl-row">
+    <button id="btn-add">+ SOURCE</button>
+    <button id="btn-remove">- SOURCE</button>
+    <button id="btn-reset">RESET</button>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+let time = 0;
+let wavelength = 40, amplitude = 1, speed = 1, res = 3;
+let sources = [{x: 0.35, y: 0.5}, {x: 0.65, y: 0.5}];
+let peakAmp = 0;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+let dragging = -1;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W; cv.height = H;
+}
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('sl-wl').oninput = function() { wavelength = +this.value; document.getElementById('v-wl').textContent = this.value; };
+document.getElementById('sl-amp').oninput = function() { amplitude = +this.value; document.getElementById('v-amp').textContent = (+this.value).toFixed(1); };
+document.getElementById('sl-spd').oninput = function() { speed = +this.value; document.getElementById('v-spd').textContent = (+this.value).toFixed(1); };
+document.getElementById('sl-res').oninput = function() { res = +this.value; document.getElementById('v-res').textContent = this.value; };
+
+document.getElementById('btn-add').onclick = function() {
+  if (sources.length < 8) sources.push({x: 0.3 + Math.random()*0.4, y: 0.3 + Math.random()*0.4});
+};
+document.getElementById('btn-remove').onclick = function() {
+  if (sources.length > 1) sources.pop();
+};
+document.getElementById('btn-reset').onclick = function() {
+  sources = [{x: 0.35, y: 0.5}, {x: 0.65, y: 0.5}];
+  time = 0;
+};
+
+cv.addEventListener('mousedown', function(e) {
+  for (let i = 0; i < sources.length; i++) {
+    let sx = sources[i].x * W, sy = sources[i].y * H;
+    if (Math.hypot(e.clientX - sx, e.clientY - sy) < 20) { dragging = i; return; }
+  }
+});
+cv.addEventListener('mousemove', function(e) {
+  if (dragging >= 0) { sources[dragging].x = e.clientX / W; sources[dragging].y = e.clientY / H; }
+});
+cv.addEventListener('mouseup', function() { dragging = -1; });
+
+function draw() {
+  requestAnimationFrame(draw);
+  time += 0.05 * speed;
+
+  const imgData = ctx.createImageData(W, H);
+  const d = imgData.data;
+  const step = res;
+  let peak = 0;
+
+  for (let y = 0; y < H; y += step) {
+    for (let x = 0; x < W; x += step) {
+      let sum = 0;
+      for (let s = 0; s < sources.length; s++) {
+        const sx = sources[s].x * W, sy = sources[s].y * H;
+        const dist = Math.hypot(x - sx, y - sy);
+        sum += amplitude * Math.sin(2 * Math.PI * (dist / wavelength - time));
+      }
+      const norm = sum / sources.length;
+      if (Math.abs(norm) > peak) peak = Math.abs(norm);
+
+      // Map to color: constructive = bright yellow, destructive = dark blue
+      const pos = (norm + amplitude) / (2 * amplitude);
+      const r = Math.floor(pos * 255);
+      const g = Math.floor(pos * 240);
+      const b = Math.floor((1 - pos) * 80 + 20);
+
+      for (let dy = 0; dy < step && y + dy < H; dy++) {
+        for (let dx = 0; dx < step && x + dx < W; dx++) {
+          const idx = ((y + dy) * W + (x + dx)) * 4;
+          d[idx] = r; d[idx+1] = g; d[idx+2] = b; d[idx+3] = 255;
+        }
+      }
+    }
+  }
+  peakAmp = peak;
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // Draw source markers
+  for (let i = 0; i < sources.length; i++) {
+    const sx = sources[i].x * W, sy = sources[i].y * H;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff0';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#060610';
+    ctx.font = 'bold 9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(i + 1, sx, sy);
+  }
+
+  // Title
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-INTERFERENCE', 15, 25);
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Wave Interference Patterns  |  Drag sources to reposition', 15, 42);
+
+  // Update stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) { fps = Math.round(frameCount * 1000 / (now - lastFps)); frameCount = 0; lastFps = now; }
+  document.getElementById('st-sources').textContent = sources.length;
+  document.getElementById('st-wl').textContent = wavelength.toFixed(1);
+  document.getElementById('st-peak').textContent = peakAmp.toFixed(2);
+  document.getElementById('st-fps').textContent = fps;
+  document.getElementById('st-time').textContent = time.toFixed(1);
+}
+draw();
+</script>
+</body>
+</html>

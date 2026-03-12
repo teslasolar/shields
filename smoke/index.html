@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SMOKE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.7; min-width: 180px; z-index: 10;
+}
+#stats .title { color: #4af; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #8090a8; }
+#stats .val { color: #c0c8d8; float: right; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(68,170,255,0.15); color: #4af; border: 1px solid #4af;
+  border-radius: 3px; padding: 6px 14px; font-family: 'Courier New', monospace;
+  font-size: 13px; cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,170,255,0.3); }
+#controls label { color: #8090a8; display: flex; align-items: center; gap: 8px; }
+#controls input[type=range] { width: 120px; accent-color: #4af; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-SMOKE</div>
+  <div><span class="label">Grid</span><span class="val" id="sGrid">—</span></div>
+  <div><span class="label">FPS</span><span class="val" id="sFps">—</span></div>
+  <div><span class="label">Diffusion</span><span class="val" id="sDiff">—</span></div>
+  <div><span class="label">Viscosity</span><span class="val" id="sVisc">—</span></div>
+</div>
+<div id="controls">
+  <label>Diffusion <input type="range" id="rDiff" min="0" max="100" value="20"></label>
+  <label>Viscosity <input type="range" id="rVisc" min="0" max="100" value="10"></label>
+  <label>Radius <input type="range" id="rRad" min="2" max="30" value="10"></label>
+  <button id="bClear">Clear</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, N, size, dens, densPrev, velX, velY, velXPrev, velYPrev;
+const SCALE = 4;
+let diffusion = 0.0002;
+let viscosity = 0.0001;
+let dt = 0.1;
+let addRadius = 10;
+
+let mouseDown = false, mouseX = 0, mouseY = 0, pmouseX = 0, pmouseY = 0;
+
+function init() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  N = Math.floor(Math.min(W, H) / SCALE);
+  size = (N + 2) * (N + 2);
+  dens = new Float32Array(size);
+  densPrev = new Float32Array(size);
+  velX = new Float32Array(size);
+  velY = new Float32Array(size);
+  velXPrev = new Float32Array(size);
+  velYPrev = new Float32Array(size);
+}
+
+function IX(x, y) { return x + (N + 2) * y; }
+
+function addSource(x, s, dt_) {
+  for (let i = 0; i < size; i++) x[i] += dt_ * s[i];
+}
+
+function setBnd(b, x) {
+  const n = N;
+  for (let i = 1; i <= n; i++) {
+    x[IX(0, i)]     = b === 1 ? -x[IX(1, i)] : x[IX(1, i)];
+    x[IX(n + 1, i)] = b === 1 ? -x[IX(n, i)] : x[IX(n, i)];
+    x[IX(i, 0)]     = b === 2 ? -x[IX(i, 1)] : x[IX(i, 1)];
+    x[IX(i, n + 1)] = b === 2 ? -x[IX(i, n)] : x[IX(i, n)];
+  }
+  x[IX(0, 0)]         = 0.5 * (x[IX(1, 0)] + x[IX(0, 1)]);
+  x[IX(0, n + 1)]     = 0.5 * (x[IX(1, n + 1)] + x[IX(0, n)]);
+  x[IX(n + 1, 0)]     = 0.5 * (x[IX(n, 0)] + x[IX(n + 1, 1)]);
+  x[IX(n + 1, n + 1)] = 0.5 * (x[IX(n, n + 1)] + x[IX(n + 1, n)]);
+}
+
+function diffuse(b, x, x0, diff, dt_) {
+  const a = dt_ * diff * N * N;
+  for (let k = 0; k < 4; k++) {
+    for (let j = 1; j <= N; j++) {
+      for (let i = 1; i <= N; i++) {
+        x[IX(i, j)] = (x0[IX(i, j)] + a * (
+          x[IX(i - 1, j)] + x[IX(i + 1, j)] +
+          x[IX(i, j - 1)] + x[IX(i, j + 1)]
+        )) / (1 + 4 * a);
+      }
+    }
+    setBnd(b, x);
+  }
+}
+
+function advect(b, d, d0, u, v, dt_) {
+  const dt0 = dt_ * N;
+  for (let j = 1; j <= N; j++) {
+    for (let i = 1; i <= N; i++) {
+      let x = i - dt0 * u[IX(i, j)];
+      let y = j - dt0 * v[IX(i, j)];
+      if (x < 0.5) x = 0.5; if (x > N + 0.5) x = N + 0.5;
+      if (y < 0.5) y = 0.5; if (y > N + 0.5) y = N + 0.5;
+      const i0 = Math.floor(x), i1 = i0 + 1;
+      const j0 = Math.floor(y), j1 = j0 + 1;
+      const s1 = x - i0, s0 = 1 - s1;
+      const t1 = y - j0, t0 = 1 - t1;
+      d[IX(i, j)] = s0 * (t0 * d0[IX(i0, j0)] + t1 * d0[IX(i0, j1)]) +
+                     s1 * (t0 * d0[IX(i1, j0)] + t1 * d0[IX(i1, j1)]);
+    }
+  }
+  setBnd(b, d);
+}
+
+function project(u, v, p, div) {
+  const h = 1.0 / N;
+  for (let j = 1; j <= N; j++) {
+    for (let i = 1; i <= N; i++) {
+      div[IX(i, j)] = -0.5 * h * (u[IX(i + 1, j)] - u[IX(i - 1, j)] +
+                                    v[IX(i, j + 1)] - v[IX(i, j - 1)]);
+      p[IX(i, j)] = 0;
+    }
+  }
+  setBnd(0, div); setBnd(0, p);
+  for (let k = 0; k < 4; k++) {
+    for (let j = 1; j <= N; j++) {
+      for (let i = 1; i <= N; i++) {
+        p[IX(i, j)] = (div[IX(i, j)] +
+          p[IX(i - 1, j)] + p[IX(i + 1, j)] +
+          p[IX(i, j - 1)] + p[IX(i, j + 1)]) / 4;
+      }
+    }
+    setBnd(0, p);
+  }
+  for (let j = 1; j <= N; j++) {
+    for (let i = 1; i <= N; i++) {
+      u[IX(i, j)] -= 0.5 * N * (p[IX(i + 1, j)] - p[IX(i - 1, j)]);
+      v[IX(i, j)] -= 0.5 * N * (p[IX(i, j + 1)] - p[IX(i, j - 1)]);
+    }
+  }
+  setBnd(1, u); setBnd(2, v);
+}
+
+function velStep() {
+  addSource(velX, velXPrev, dt);
+  addSource(velY, velYPrev, dt);
+  [velXPrev, velX] = [velX, velXPrev];
+  diffuse(1, velX, velXPrev, viscosity, dt);
+  [velYPrev, velY] = [velY, velYPrev];
+  diffuse(2, velY, velYPrev, viscosity, dt);
+  project(velX, velY, velXPrev, velYPrev);
+  [velXPrev, velX] = [velX, velXPrev];
+  [velYPrev, velY] = [velY, velYPrev];
+  advect(1, velX, velXPrev, velXPrev, velYPrev, dt);
+  advect(2, velY, velYPrev, velXPrev, velYPrev, dt);
+  project(velX, velY, velXPrev, velYPrev);
+}
+
+function densStep() {
+  addSource(dens, densPrev, dt);
+  [densPrev, dens] = [dens, densPrev];
+  diffuse(0, dens, densPrev, diffusion, dt);
+  [densPrev, dens] = [dens, densPrev];
+  advect(0, dens, densPrev, velX, velY, dt);
+}
+
+function addInteraction() {
+  densPrev.fill(0);
+  velXPrev.fill(0);
+  velYPrev.fill(0);
+  if (!mouseDown) return;
+  const cx = Math.floor(mouseX / W * N);
+  const cy = Math.floor(mouseY / H * N);
+  const dx = (mouseX - pmouseX) * 0.3;
+  const dy = (mouseY - pmouseY) * 0.3;
+  for (let j = -addRadius; j <= addRadius; j++) {
+    for (let i = -addRadius; i <= addRadius; i++) {
+      if (i * i + j * j > addRadius * addRadius) continue;
+      const x = cx + i, y = cy + j;
+      if (x < 1 || x > N || y < 1 || y > N) continue;
+      const idx = IX(x, y);
+      densPrev[idx] = 80;
+      velXPrev[idx] = dx;
+      velYPrev[idx] = dy;
+    }
+  }
+}
+
+let lastTime = performance.now(), fps = 60;
+const imgData = ctx.createImageData(1, 1);
+
+function render() {
+  const now = performance.now();
+  fps = fps * 0.95 + 0.05 * (1000 / (now - lastTime));
+  lastTime = now;
+
+  addInteraction();
+  velStep();
+  densStep();
+
+  // Decay density
+  for (let i = 0; i < size; i++) dens[i] *= 0.995;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const img = ctx.createImageData(N, N);
+  for (let j = 1; j <= N; j++) {
+    for (let i = 1; i <= N; i++) {
+      const d = Math.min(dens[IX(i, j)], 1);
+      const idx = ((j - 1) * N + (i - 1)) * 4;
+      const r = Math.floor(d * 68);
+      const g = Math.floor(d * 170);
+      const b = Math.floor(d * 255);
+      img.data[idx] = r;
+      img.data[idx + 1] = g;
+      img.data[idx + 2] = b;
+      img.data[idx + 3] = Math.floor(d * 255);
+    }
+  }
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = N; tmpCanvas.height = N;
+  tmpCanvas.getContext('2d').putImageData(img, 0, 0);
+  ctx.drawImage(tmpCanvas, 0, 0, W, H);
+  ctx.restore();
+
+  // Title
+  ctx.fillStyle = 'rgba(68,170,255,0.3)';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SHIELD-SMOKE', 16, 30);
+
+  document.getElementById('sGrid').textContent = N + 'x' + N;
+  document.getElementById('sFps').textContent = fps.toFixed(1);
+  document.getElementById('sDiff').textContent = diffusion.toFixed(5);
+  document.getElementById('sVisc').textContent = viscosity.toFixed(5);
+
+  requestAnimationFrame(render);
+}
+
+canvas.addEventListener('mousedown', e => { mouseDown = true; mouseX = pmouseX = e.clientX; mouseY = pmouseY = e.clientY; });
+canvas.addEventListener('mousemove', e => { pmouseX = mouseX; pmouseY = mouseY; mouseX = e.clientX; mouseY = e.clientY; });
+canvas.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('mouseleave', () => mouseDown = false);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); mouseDown = true; const t = e.touches[0]; mouseX = pmouseX = t.clientX; mouseY = pmouseY = t.clientY; });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; pmouseX = mouseX; pmouseY = mouseY; mouseX = t.clientX; mouseY = t.clientY; });
+canvas.addEventListener('touchend', () => mouseDown = false);
+
+document.getElementById('rDiff').addEventListener('input', e => diffusion = e.target.value / 100 * 0.001);
+document.getElementById('rVisc').addEventListener('input', e => viscosity = e.target.value / 100 * 0.001);
+document.getElementById('rRad').addEventListener('input', e => addRadius = parseInt(e.target.value));
+document.getElementById('bClear').addEventListener('click', () => { dens.fill(0); velX.fill(0); velY.fill(0); });
+
+window.addEventListener('resize', init);
+init();
+render();
+</script>
+</body>
+</html>

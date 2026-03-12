@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-GEODESIC</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 10px; right: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; font-size: 13px; line-height: 1.7;
+  border-radius: 4px; min-width: 210px; z-index: 10;
+}
+#stats .label { color: #888; }
+#stats .value { color: #f0a; }
+#controls {
+  position: fixed; bottom: 10px; left: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; border-radius: 4px; z-index: 10;
+}
+#controls button {
+  background: transparent; color: #f0a; border: 1px solid #f0a;
+  padding: 6px 14px; margin: 3px; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 12px; border-radius: 3px; transition: all 0.2s;
+}
+#controls button:hover, #controls button.active { background: #f0a; color: #060610; }
+#controls .row { margin: 4px 0; }
+#controls .ctrl-label { color: #888; font-size: 11px; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div><span class="label">SHIELD-GEODESIC</span></div>
+  <div><span class="label">subdivision: </span><span class="value" id="s-sub">2</span></div>
+  <div><span class="label">vertices: </span><span class="value" id="s-verts">0</span></div>
+  <div><span class="label">triangles: </span><span class="value" id="s-tris">0</span></div>
+  <div><span class="label">edges: </span><span class="value" id="s-edges">0</span></div>
+  <div><span class="label">fps: </span><span class="value" id="s-fps">0</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-label">SUBDIVISION LEVEL</div>
+  <div class="row">
+    <button onclick="setSubdiv(0,this)">V0</button>
+    <button onclick="setSubdiv(1,this)">V1</button>
+    <button class="active" onclick="setSubdiv(2,this)">V2</button>
+    <button onclick="setSubdiv(3,this)">V3</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button onclick="autoRot=!autoRot">AUTO-ROTATE</button>
+    <button onclick="showFill=!showFill">FILL</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const PHI = (1 + Math.sqrt(5)) / 2;
+let subdivLevel = 2;
+let autoRot = true;
+let showFill = true;
+let rotX = 0.3, rotY = 0;
+let dragging = false, lastMX = 0, lastMY = 0;
+let fps = 0, frameCount = 0, fpsTime = 0;
+
+let vertices = [], faces = [], edges = [];
+
+function normalize(v) {
+  const len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+  return [v[0]/len, v[1]/len, v[2]/len];
+}
+
+function midpoint(a, b) {
+  return normalize([(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]);
+}
+
+function buildGeodesic(level) {
+  // Start with icosahedron
+  const t = PHI;
+  let verts = [
+    [-1, t, 0],[1, t, 0],[-1,-t, 0],[1,-t, 0],
+    [0,-1, t],[0, 1, t],[0,-1,-t],[0, 1,-t],
+    [ t, 0,-1],[ t, 0, 1],[-t, 0,-1],[-t, 0, 1]
+  ].map(normalize);
+
+  let tris = [
+    [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
+    [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+    [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
+    [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]
+  ];
+
+  for (let s = 0; s < level; s++) {
+    const midCache = {};
+    const newTris = [];
+
+    function getMid(i, j) {
+      const key = Math.min(i,j) + '_' + Math.max(i,j);
+      if (midCache[key] !== undefined) return midCache[key];
+      const m = midpoint(verts[i], verts[j]);
+      verts.push(m);
+      midCache[key] = verts.length - 1;
+      return midCache[key];
+    }
+
+    for (const [a, b, c] of tris) {
+      const ab = getMid(a, b);
+      const bc = getMid(b, c);
+      const ca = getMid(c, a);
+      newTris.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]);
+    }
+    tris = newTris;
+  }
+
+  // Build edges
+  const edgeSet = new Set();
+  const edgeList = [];
+  for (const [a, b, c] of tris) {
+    [[a,b],[b,c],[c,a]].forEach(([i,j]) => {
+      const key = Math.min(i,j) + '_' + Math.max(i,j);
+      if (!edgeSet.has(key)) { edgeSet.add(key); edgeList.push([i,j]); }
+    });
+  }
+
+  vertices = verts;
+  faces = tris;
+  edges = edgeList;
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('s-sub').textContent = subdivLevel;
+  document.getElementById('s-verts').textContent = vertices.length;
+  document.getElementById('s-tris').textContent = faces.length;
+  document.getElementById('s-edges').textContent = edges.length;
+}
+
+function setSubdiv(level, btn) {
+  subdivLevel = level;
+  document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  buildGeodesic(level);
+}
+
+canvas.addEventListener('mousedown', e => { dragging = true; lastMX = e.clientX; lastMY = e.clientY; });
+canvas.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  rotY += (e.clientX - lastMX) * 0.01;
+  rotX += (e.clientY - lastMY) * 0.01;
+  lastMX = e.clientX; lastMY = e.clientY;
+});
+canvas.addEventListener('mouseup', () => dragging = false);
+
+function rotatePoint(p, rx, ry) {
+  let [x, y, z] = p;
+  let y1 = y * Math.cos(rx) - z * Math.sin(rx);
+  let z1 = y * Math.sin(rx) + z * Math.cos(rx);
+  let x2 = x * Math.cos(ry) + z1 * Math.sin(ry);
+  let z2 = -x * Math.sin(ry) + z1 * Math.cos(ry);
+  return [x2, y1, z2];
+}
+
+function project(p, scale) {
+  const d = 4;
+  const f = d / (d + p[2]);
+  return [W/2 + p[0] * scale * f, H/2 + p[1] * scale * f, p[2]];
+}
+
+buildGeodesic(subdivLevel);
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  frameCount++;
+  if (time - fpsTime > 1000) { fps = frameCount; frameCount = 0; fpsTime = time; }
+
+  if (autoRot && !dragging) { rotY += 0.005; rotX += 0.002; }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const scale = Math.min(W, H) * 0.35;
+  const rotated = vertices.map(v => rotatePoint(v, rotX, rotY));
+  const projected = rotated.map(v => project(v, scale));
+
+  // Sort faces by depth for painter's algorithm
+  if (showFill) {
+    const sortedFaces = faces.map((face, i) => {
+      const avgZ = (rotated[face[0]][2] + rotated[face[1]][2] + rotated[face[2]][2]) / 3;
+      return { face, depth: avgZ };
+    }).sort((a, b) => a.depth - b.depth);
+
+    sortedFaces.forEach(({ face, depth }) => {
+      const brightness = Math.max(8, Math.min(30, 18 + depth * 12));
+      ctx.fillStyle = `hsla(330, 70%, ${brightness}%, 0.6)`;
+      ctx.beginPath();
+      ctx.moveTo(projected[face[0]][0], projected[face[0]][1]);
+      ctx.lineTo(projected[face[1]][0], projected[face[1]][1]);
+      ctx.lineTo(projected[face[2]][0], projected[face[2]][1]);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  // Draw edges with depth shading
+  edges.forEach(([a, b]) => {
+    const avgZ = (rotated[a][2] + rotated[b][2]) / 2;
+    const brightness = Math.max(25, Math.min(75, 50 + avgZ * 30));
+    const alpha = Math.max(0.15, Math.min(0.9, 0.5 + avgZ * 0.4));
+    ctx.strokeStyle = `hsla(330, 100%, ${brightness}%, ${alpha})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(projected[a][0], projected[a][1]);
+    ctx.lineTo(projected[b][0], projected[b][1]);
+    ctx.stroke();
+  });
+
+  // Title
+  ctx.fillStyle = '#f0a';
+  ctx.font = 'bold 14px Courier New';
+  ctx.fillText('SHIELD-GEODESIC', 15, 25);
+
+  document.getElementById('s-fps').textContent = fps;
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

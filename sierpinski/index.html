@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SIERPINSKI</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  min-width: 220px; z-index: 10; border-radius: 4px;
+}
+#stats .title { color: #f84; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #888; }
+#stats .val { color: #f84; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; z-index: 10; border-radius: 4px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+#controls button {
+  background: rgba(255,136,68,0.15); border: 1px solid #f84; color: #f84;
+  padding: 5px 14px; margin: 3px 4px 3px 0; cursor: pointer; font-family: inherit;
+  font-size: 12px; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(255,136,68,0.35); }
+#controls button.active { background: rgba(255,136,68,0.45); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-SIERPINSKI</div>
+  <div><span class="label">Category:</span> <span class="val">Fractals</span></div>
+  <div><span class="label">Mode:</span> <span class="val" id="sMode">Triangle</span></div>
+  <div><span class="label">Points:</span> <span class="val" id="sPoints">0</span></div>
+  <div><span class="label">Rate:</span> <span class="val" id="sRate">500/frame</span></div>
+  <div><span class="label">FPS:</span> <span class="val" id="sFps">0</span></div>
+</div>
+<div id="controls">
+  <div class="title">Controls</div>
+  <div style="margin-top:4px;">
+    <button id="btnTriangle" class="active">Triangle</button>
+    <button id="btnCarpet">Carpet</button>
+  </div>
+  <div style="margin-top:4px;">
+    <button id="btnClear">Clear</button>
+    <button id="btnFaster">Faster</button>
+    <button id="btnSlower">Slower</button>
+    <button id="btnPause">Pause</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight;
+  ctx.fillStyle = '#060610'; ctx.fillRect(0, 0, W, H);
+  drawTitle();
+  resetGame();
+}
+window.addEventListener('resize', resize);
+
+let mode = 'triangle'; // triangle or carpet
+let px, py, totalPoints = 0;
+let rate = 500;
+let paused = false;
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
+
+// Triangle vertices
+function getTriVerts() {
+  const s = Math.min(W, H) * 0.85;
+  const cx2 = W / 2, cy2 = H / 2;
+  return [
+    [cx2, cy2 - s * 0.5],
+    [cx2 - s * 0.5, cy2 + s * 0.4],
+    [cx2 + s * 0.5, cy2 + s * 0.4]
+  ];
+}
+
+// Carpet vertices (8 surrounding + center)
+function getCarpetVerts() {
+  const s = Math.min(W, H) * 0.42;
+  const cx2 = W / 2, cy2 = H / 2;
+  return [
+    [cx2 - s, cy2 - s], [cx2, cy2 - s], [cx2 + s, cy2 - s],
+    [cx2 - s, cy2],                       [cx2 + s, cy2],
+    [cx2 - s, cy2 + s], [cx2, cy2 + s], [cx2 + s, cy2 + s]
+  ];
+}
+
+function resetGame() {
+  totalPoints = 0;
+  ctx.fillStyle = '#060610'; ctx.fillRect(0, 0, W, H);
+  drawTitle();
+  if (mode === 'triangle') {
+    const v = getTriVerts();
+    px = v[0][0]; py = v[0][1];
+  } else {
+    px = W / 2; py = H / 2;
+  }
+}
+
+function drawTitle() {
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillText('SHIELD-SIERPINSKI', 16, 30);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText('Fractals', 16, 48);
+}
+
+function stepTriangle() {
+  const verts = getTriVerts();
+  const vi = Math.floor(Math.random() * 3);
+  px = (px + verts[vi][0]) / 2;
+  py = (py + verts[vi][1]) / 2;
+  const brightness = 0.4 + (vi / 3) * 0.6;
+  const r = Math.floor(255 * brightness);
+  const g = Math.floor(136 * brightness);
+  const b = Math.floor(68 * brightness);
+  ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
+  ctx.fillRect(px, py, 1, 1);
+}
+
+function stepCarpet() {
+  const verts = getCarpetVerts();
+  const vi = Math.floor(Math.random() * 8);
+  px = px + (verts[vi][0] - px) * (2 / 3);
+  py = py + (verts[vi][1] - py) * (2 / 3);
+  const brightness = 0.4 + (vi / 8) * 0.6;
+  const r = Math.floor(255 * brightness);
+  const g = Math.floor(136 * brightness);
+  const b = Math.floor(68 * brightness);
+  ctx.fillStyle = `rgba(${r},${g},${b},0.7)`;
+  ctx.fillRect(px, py, 1, 1);
+}
+
+document.getElementById('btnTriangle').onclick = () => {
+  mode = 'triangle';
+  document.getElementById('btnTriangle').classList.add('active');
+  document.getElementById('btnCarpet').classList.remove('active');
+  resetGame();
+};
+document.getElementById('btnCarpet').onclick = () => {
+  mode = 'carpet';
+  document.getElementById('btnCarpet').classList.add('active');
+  document.getElementById('btnTriangle').classList.remove('active');
+  resetGame();
+};
+document.getElementById('btnClear').onclick = resetGame;
+document.getElementById('btnFaster').onclick = () => { rate = Math.min(5000, rate + 200); };
+document.getElementById('btnSlower').onclick = () => { rate = Math.max(50, rate - 200); };
+document.getElementById('btnPause').onclick = function() {
+  paused = !paused;
+  this.textContent = paused ? 'Resume' : 'Pause';
+};
+
+function updateStats() {
+  document.getElementById('sMode').textContent = mode === 'triangle' ? 'Triangle' : 'Carpet';
+  document.getElementById('sPoints').textContent = totalPoints.toLocaleString();
+  document.getElementById('sRate').textContent = rate + '/frame';
+  document.getElementById('sFps').textContent = fps;
+}
+
+function loop() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    fps = frameCount; frameCount = 0; lastFpsTime = now;
+  }
+  if (!paused) {
+    for (let i = 0; i < rate; i++) {
+      if (mode === 'triangle') stepTriangle();
+      else stepCarpet();
+      totalPoints++;
+    }
+  }
+  updateStats();
+  requestAnimationFrame(loop);
+}
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

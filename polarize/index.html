@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-POLARIZE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+.panel{position:fixed;background:rgba(6,6,16,.92);border:1px solid rgba(255,255,0,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+#stats{top:10px;right:10px;min-width:220px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:6px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.label{color:#667}
+.val{color:#ff0;text-align:right}
+#controls{bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;min-width:260px}
+#controls h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:4px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctrl-row label{color:#667;font-size:10px;letter-spacing:1px;min-width:100px}
+.ctrl-row input[type=range]{width:100px;accent-color:#ff0}
+.ctrl-val{color:#ff0;font-size:10px;min-width:40px;text-align:right}
+button{background:rgba(255,255,0,.1);color:#ff0;border:1px solid rgba(255,255,0,.3);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:10px;cursor:pointer;letter-spacing:1px}
+button:hover{background:rgba(255,255,0,.2)}
+button.active{background:rgba(255,255,0,.3);border-color:#ff0}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="stats">
+  <h3>SHIELD-POLARIZE</h3>
+  <div class="row"><span class="label">Polarization</span><span class="val" id="st-pol">Linear</span></div>
+  <div class="row"><span class="label">Polarizer Angle</span><span class="val" id="st-pang">0.0°</span></div>
+  <div class="row"><span class="label">Analyzer Angle</span><span class="val" id="st-aang">0.0°</span></div>
+  <div class="row"><span class="label">Malus Intensity</span><span class="val" id="st-int">100.0%</span></div>
+  <div class="row"><span class="label">Phase Diff (delta)</span><span class="val" id="st-phase">0°</span></div>
+  <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+</div>
+<div class="panel" id="controls">
+  <h3>CONTROLS</h3>
+  <div class="ctrl-row"><label>POLARIZER</label><input type="range" id="sl-pol" min="0" max="360" step="1" value="0"><span class="ctrl-val" id="v-pol">0°</span></div>
+  <div class="ctrl-row"><label>ANALYZER</label><input type="range" id="sl-ana" min="0" max="360" step="1" value="0"><span class="ctrl-val" id="v-ana">0°</span></div>
+  <div class="ctrl-row"><label>PHASE DIFF</label><input type="range" id="sl-phase" min="0" max="360" step="1" value="0"><span class="ctrl-val" id="v-phase">0°</span></div>
+  <div class="ctrl-row"><label>WAVE SPEED</label><input type="range" id="sl-spd" min="0.1" max="3" step="0.1" value="1"><span class="ctrl-val" id="v-spd">1.0</span></div>
+  <div class="ctrl-row">
+    <button id="btn-linear" class="active">LINEAR</button>
+    <button id="btn-circular">CIRCULAR</button>
+    <button id="btn-elliptical">ELLIPTICAL</button>
+  </div>
+  <div class="ctrl-row">
+    <button id="btn-rotate">AUTO ROTATE</button>
+    <button id="btn-reset">RESET</button>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+let polAngle = 0, anaAngle = 0, phaseDiff = 0, waveSpeed = 1;
+let mode = 'linear'; // linear, circular, elliptical
+let autoRotate = false, time = 0;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+
+function resize() { W = window.innerWidth; H = window.innerHeight; cv.width = W; cv.height = H; }
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('sl-pol').oninput = function() { polAngle = +this.value; document.getElementById('v-pol').textContent = this.value + '°'; };
+document.getElementById('sl-ana').oninput = function() { anaAngle = +this.value; document.getElementById('v-ana').textContent = this.value + '°'; };
+document.getElementById('sl-phase').oninput = function() { phaseDiff = +this.value; document.getElementById('v-phase').textContent = this.value + '°'; };
+document.getElementById('sl-spd').oninput = function() { waveSpeed = +this.value; document.getElementById('v-spd').textContent = (+this.value).toFixed(1); };
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-linear').classList.toggle('active', m === 'linear');
+  document.getElementById('btn-circular').classList.toggle('active', m === 'circular');
+  document.getElementById('btn-elliptical').classList.toggle('active', m === 'elliptical');
+  if (m === 'circular') { phaseDiff = 90; document.getElementById('sl-phase').value = 90; document.getElementById('v-phase').textContent = '90°'; }
+  else if (m === 'elliptical') { phaseDiff = 45; document.getElementById('sl-phase').value = 45; document.getElementById('v-phase').textContent = '45°'; }
+  else { phaseDiff = 0; document.getElementById('sl-phase').value = 0; document.getElementById('v-phase').textContent = '0°'; }
+}
+document.getElementById('btn-linear').onclick = function() { setMode('linear'); };
+document.getElementById('btn-circular').onclick = function() { setMode('circular'); };
+document.getElementById('btn-elliptical').onclick = function() { setMode('elliptical'); };
+document.getElementById('btn-rotate').onclick = function() { autoRotate = !autoRotate; this.textContent = autoRotate ? 'STOP ROTATE' : 'AUTO ROTATE'; };
+document.getElementById('btn-reset').onclick = function() {
+  polAngle = 0; anaAngle = 0; phaseDiff = 0; waveSpeed = 1; mode = 'linear'; time = 0; autoRotate = false;
+  document.getElementById('sl-pol').value = 0; document.getElementById('v-pol').textContent = '0°';
+  document.getElementById('sl-ana').value = 0; document.getElementById('v-ana').textContent = '0°';
+  document.getElementById('sl-phase').value = 0; document.getElementById('v-phase').textContent = '0°';
+  document.getElementById('sl-spd').value = 1; document.getElementById('v-spd').textContent = '1.0';
+  setMode('linear');
+  document.getElementById('btn-rotate').textContent = 'AUTO ROTATE';
+};
+
+function drawPolarizationEllipse(cx, cy, radius, angle, delta, t, label) {
+  const aRad = angle * Math.PI / 180;
+  const dRad = delta * Math.PI / 180;
+
+  // Draw circle frame
+  ctx.strokeStyle = 'rgba(255,255,0,0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Cross hairs
+  ctx.strokeStyle = 'rgba(255,255,0,0.08)';
+  ctx.beginPath();
+  ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
+  ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
+  ctx.stroke();
+
+  // Draw polarization trace
+  ctx.strokeStyle = 'rgba(255,255,0,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= 100; i++) {
+    const phase = (i / 100) * Math.PI * 2;
+    const ex = Math.cos(phase) * Math.cos(aRad) - Math.sin(phase + dRad) * Math.sin(aRad);
+    const ey = Math.cos(phase) * Math.sin(aRad) + Math.sin(phase + dRad) * Math.cos(aRad);
+    const px = cx + ex * radius * 0.8;
+    const py = cy - ey * radius * 0.8;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Animated E-field vector
+  const phase = t * 3;
+  const ex = Math.cos(phase) * Math.cos(aRad) - Math.sin(phase + dRad) * Math.sin(aRad);
+  const ey = Math.cos(phase) * Math.sin(aRad) + Math.sin(phase + dRad) * Math.cos(aRad);
+  const vx = cx + ex * radius * 0.8;
+  const vy = cy - ey * radius * 0.8;
+
+  ctx.strokeStyle = '#ff0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(vx, vy);
+  ctx.stroke();
+
+  // Arrow tip
+  const ang = Math.atan2(vy - cy, vx - cx);
+  ctx.fillStyle = '#ff0';
+  ctx.beginPath();
+  ctx.moveTo(vx, vy);
+  ctx.lineTo(vx - 8 * Math.cos(ang - 0.4), vy - 8 * Math.sin(ang - 0.4));
+  ctx.lineTo(vx - 8 * Math.cos(ang + 0.4), vy - 8 * Math.sin(ang + 0.4));
+  ctx.closePath();
+  ctx.fill();
+
+  // Dot at tip
+  ctx.beginPath();
+  ctx.arc(vx, vy, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Label
+  ctx.fillStyle = '#ff0';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, cx, cy + radius + 20);
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  time += 0.02 * waveSpeed;
+
+  if (autoRotate) {
+    anaAngle = (anaAngle + 0.5) % 360;
+    document.getElementById('sl-ana').value = anaAngle;
+    document.getElementById('v-ana').textContent = Math.round(anaAngle) + '°';
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const midY = H * 0.4;
+  const ellipseR = Math.min(W * 0.1, H * 0.15, 80);
+
+  // Section 1: Polarization state visualization (top)
+  const sec1X = W * 0.2;
+  drawPolarizationEllipse(sec1X, midY - 30, ellipseR, polAngle, phaseDiff, time, 'AFTER POLARIZER');
+
+  // Polarizer disc
+  const polDiscX = W * 0.4;
+  ctx.save();
+  ctx.translate(polDiscX, midY - 30);
+  ctx.rotate(polAngle * Math.PI / 180);
+  ctx.strokeStyle = 'rgba(255,255,0,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, ellipseR * 0.8, ellipseR * 0.3, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Grid lines
+  for (let i = -3; i <= 3; i++) {
+    ctx.strokeStyle = 'rgba(255,255,0,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const offset = i * ellipseR * 0.2;
+    const h = Math.sqrt(Math.max(0, 1 - (offset / (ellipseR * 0.8)) ** 2)) * ellipseR * 0.3;
+    ctx.moveTo(offset, -h);
+    ctx.lineTo(offset, h);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('POLARIZER', polDiscX, midY - 30 + ellipseR + 20);
+  ctx.fillText(polAngle.toFixed(0) + '°', polDiscX, midY - 30 + ellipseR + 34);
+
+  // Analyzer disc
+  const anaDiscX = W * 0.6;
+  ctx.save();
+  ctx.translate(anaDiscX, midY - 30);
+  ctx.rotate(anaAngle * Math.PI / 180);
+  ctx.strokeStyle = 'rgba(100,200,255,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, ellipseR * 0.8, ellipseR * 0.3, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  for (let i = -3; i <= 3; i++) {
+    ctx.strokeStyle = 'rgba(100,200,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const offset = i * ellipseR * 0.2;
+    const h = Math.sqrt(Math.max(0, 1 - (offset / (ellipseR * 0.8)) ** 2)) * ellipseR * 0.3;
+    ctx.moveTo(offset, -h);
+    ctx.lineTo(offset, h);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('ANALYZER', anaDiscX, midY - 30 + ellipseR + 20);
+  ctx.fillText(anaAngle.toFixed(0) + '°', anaDiscX, midY - 30 + ellipseR + 34);
+
+  // After analyzer
+  const sec3X = W * 0.8;
+  const angleDiff = (anaAngle - polAngle) * Math.PI / 180;
+  const malusIntensity = Math.cos(angleDiff) * Math.cos(angleDiff);
+  drawPolarizationEllipse(sec3X, midY - 30, ellipseR, anaAngle, 0, time * Math.sqrt(malusIntensity), 'AFTER ANALYZER');
+
+  // Intensity indicator
+  ctx.fillStyle = `rgba(255,255,0,${malusIntensity})`;
+  ctx.beginPath();
+  ctx.arc(sec3X, midY - 30, ellipseR * 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Connecting arrows
+  ctx.strokeStyle = 'rgba(255,255,0,0.2)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(sec1X + ellipseR + 10, midY - 30);
+  ctx.lineTo(polDiscX - ellipseR, midY - 30);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(polDiscX + ellipseR, midY - 30);
+  ctx.lineTo(anaDiscX - ellipseR, midY - 30);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(anaDiscX + ellipseR, midY - 30);
+  ctx.lineTo(sec3X - ellipseR - 10, midY - 30);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Section 2: Malus's Law graph (bottom)
+  const graphY = H * 0.65;
+  const graphH = H * 0.25;
+  const graphX = W * 0.15;
+  const graphW = W * 0.7;
+
+  // Graph frame
+  ctx.strokeStyle = 'rgba(255,255,0,0.2)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(graphX, graphY, graphW, graphH);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,0,0.05)';
+  for (let i = 1; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(graphX, graphY + graphH * i / 4);
+    ctx.lineTo(graphX + graphW, graphY + graphH * i / 4);
+    ctx.stroke();
+  }
+  for (let i = 1; i < 8; i++) {
+    ctx.beginPath();
+    ctx.moveTo(graphX + graphW * i / 8, graphY);
+    ctx.lineTo(graphX + graphW * i / 8, graphY + graphH);
+    ctx.stroke();
+  }
+
+  // Malus's law curve: I = I0 * cos^2(theta)
+  ctx.strokeStyle = '#ff0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= graphW; i++) {
+    const theta = (i / graphW) * Math.PI * 2;
+    const intensity = Math.cos(theta) * Math.cos(theta);
+    const px = graphX + i;
+    const py = graphY + graphH - intensity * graphH;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Current position marker
+  const currentTheta = ((anaAngle - polAngle) % 360 + 360) % 360;
+  const markerX = graphX + (currentTheta / 360) * graphW;
+  const markerY = graphY + graphH - malusIntensity * graphH;
+  ctx.fillStyle = '#ff0';
+  ctx.beginPath();
+  ctx.arc(markerX, markerY, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,0,0.3)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(markerX, graphY);
+  ctx.lineTo(markerX, graphY + graphH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Graph labels
+  ctx.fillStyle = '#667';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText("MALUS'S LAW:  I = I₀ cos²(θ)", graphX + graphW / 2, graphY - 8);
+  ctx.fillText('0°', graphX, graphY + graphH + 14);
+  ctx.fillText('90°', graphX + graphW / 4, graphY + graphH + 14);
+  ctx.fillText('180°', graphX + graphW / 2, graphY + graphH + 14);
+  ctx.fillText('270°', graphX + graphW * 3 / 4, graphY + graphH + 14);
+  ctx.fillText('360°', graphX + graphW, graphY + graphH + 14);
+  ctx.textAlign = 'right';
+  ctx.fillText('1.0', graphX - 5, graphY + 4);
+  ctx.fillText('0.5', graphX - 5, graphY + graphH / 2 + 4);
+  ctx.fillText('0.0', graphX - 5, graphY + graphH + 4);
+
+  // Intensity bar
+  const barX = graphX + graphW + 20;
+  const barW = 20;
+  const barH = graphH;
+  const grad = ctx.createLinearGradient(0, graphY, 0, graphY + barH);
+  grad.addColorStop(0, '#ff0');
+  grad.addColorStop(1, '#060610');
+  ctx.fillStyle = grad;
+  ctx.fillRect(barX, graphY, barW, barH);
+  ctx.strokeStyle = 'rgba(255,255,0,0.3)';
+  ctx.strokeRect(barX, graphY, barW, barH);
+
+  // Intensity level
+  const levelY = graphY + barH * (1 - malusIntensity);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(barX - 3, levelY - 1, barW + 6, 2);
+  ctx.fillStyle = '#ff0';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText((malusIntensity * 100).toFixed(1) + '%', barX + barW + 6, levelY + 4);
+
+  // Title
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-POLARIZE', 15, 25);
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Light Polarization  |  Malus\'s Law  |  Polarization States', 15, 42);
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) { fps = Math.round(frameCount * 1000 / (now - lastFps)); frameCount = 0; lastFps = now; }
+  document.getElementById('st-pol').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+  document.getElementById('st-pang').textContent = polAngle.toFixed(1) + '°';
+  document.getElementById('st-aang').textContent = anaAngle.toFixed(1) + '°';
+  document.getElementById('st-int').textContent = (malusIntensity * 100).toFixed(1) + '%';
+  document.getElementById('st-phase').textContent = phaseDiff + '°';
+  document.getElementById('st-fps').textContent = fps;
+}
+draw();
+</script>
+</body>
+</html>

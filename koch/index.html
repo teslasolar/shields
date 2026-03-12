@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-KOCH</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  min-width: 240px; z-index: 10; border-radius: 4px;
+}
+#stats .title { color: #f84; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #888; }
+#stats .val { color: #f84; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; z-index: 10; border-radius: 4px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+#controls button {
+  background: rgba(255,136,68,0.15); border: 1px solid #f84; color: #f84;
+  padding: 5px 14px; margin: 3px 4px 3px 0; cursor: pointer; font-family: inherit;
+  font-size: 12px; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(255,136,68,0.35); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-KOCH</div>
+  <div><span class="label">Category:</span> <span class="val">Fractals</span></div>
+  <div><span class="label">Level:</span> <span class="val" id="sLevel">0</span></div>
+  <div><span class="label">Segments:</span> <span class="val" id="sSegs">3</span></div>
+  <div><span class="label">Perimeter:</span> <span class="val" id="sPerim">—</span></div>
+  <div><span class="label">Area:</span> <span class="val" id="sArea">—</span></div>
+  <div><span class="label">FPS:</span> <span class="val" id="sFps">0</span></div>
+</div>
+<div id="controls">
+  <div class="title">Controls</div>
+  <div style="margin-top:4px;">
+    <button id="btnLevelUp">Level +</button>
+    <button id="btnLevelDn">Level −</button>
+    <button id="btnAnimate">Animate</button>
+    <button id="btnReset">Reset</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+let level = 0;
+let maxLevel = 6;
+let animating = false;
+let animLevel = 0;
+let animT = 0;
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
+
+function kochPoints(p1, p2, depth) {
+  if (depth === 0) return [p1];
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const a = {x: p1.x + dx/3, y: p1.y + dy/3};
+  const b = {x: p1.x + dx*2/3, y: p1.y + dy*2/3};
+  const peak = {
+    x: (p1.x + p2.x)/2 + Math.sqrt(3)/6 * (p1.y - p2.y),
+    y: (p1.y + p2.y)/2 + Math.sqrt(3)/6 * (p2.x - p1.x)
+  };
+  return [
+    ...kochPoints(p1, a, depth-1),
+    ...kochPoints(a, peak, depth-1),
+    ...kochPoints(peak, b, depth-1),
+    ...kochPoints(b, p2, depth-1)
+  ];
+}
+
+function getSnowflakePoints(lvl) {
+  const cx = W/2, cy = H/2;
+  const r = Math.min(W, H) * 0.35;
+  // Equilateral triangle vertices
+  const v = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = -Math.PI/2 + i * 2*Math.PI/3;
+    v.push({x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle)});
+  }
+  let pts = [];
+  for (let i = 0; i < 3; i++) {
+    pts.push(...kochPoints(v[i], v[(i+1)%3], lvl));
+  }
+  pts.push(pts[0]); // close
+  return pts;
+}
+
+function calcPerimeter(lvl) {
+  const sideLen = Math.min(W, H) * 0.7;
+  // Perimeter = 3 * s * (4/3)^n
+  return 3 * sideLen * Math.pow(4/3, lvl);
+}
+
+function calcArea(lvl) {
+  const s = Math.min(W, H) * 0.7;
+  // Area of Koch snowflake
+  const a0 = (Math.sqrt(3)/4) * s * s;
+  // A = a0 * (8/5 - 3/5 * (4/9)^n)  -- closed form
+  return a0 * (8/5 - (3/5) * Math.pow(4/9, lvl));
+}
+
+function lerpPoints(pts1, pts2, t) {
+  // Interpolate between point arrays of same length
+  const maxLen = Math.max(pts1.length, pts2.length);
+  const result = [];
+  for (let i = 0; i < maxLen; i++) {
+    const i1 = Math.floor(i * (pts1.length-1) / (maxLen-1));
+    const i2 = Math.floor(i * (pts2.length-1) / (maxLen-1));
+    const p1 = pts1[Math.min(i1, pts1.length-1)];
+    const p2 = pts2[Math.min(i2, pts2.length-1)];
+    result.push({
+      x: p1.x + (p2.x - p1.x) * t,
+      y: p1.y + (p2.y - p1.y) * t
+    });
+  }
+  return result;
+}
+
+document.getElementById('btnLevelUp').onclick = () => { level = Math.min(maxLevel, level + 1); animating = false; };
+document.getElementById('btnLevelDn').onclick = () => { level = Math.max(0, level - 1); animating = false; };
+document.getElementById('btnAnimate').onclick = () => { animating = true; animLevel = 0; animT = 0; level = 0; };
+document.getElementById('btnReset').onclick = () => { level = 0; animating = false; };
+
+function render() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) { fps = frameCount; frameCount = 0; lastFpsTime = now; }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillText('SHIELD-KOCH', 16, 30);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText('Fractals', 16, 48);
+
+  let drawLevel = level;
+  let pts;
+
+  if (animating) {
+    animT += 0.012;
+    if (animT >= 1) {
+      animT = 0;
+      animLevel++;
+      if (animLevel >= maxLevel) { animating = false; level = maxLevel; }
+    }
+    const fromPts = getSnowflakePoints(animLevel);
+    const toPts = getSnowflakePoints(Math.min(animLevel + 1, maxLevel));
+    pts = lerpPoints(fromPts, toPts, animT);
+    drawLevel = animLevel;
+  } else {
+    pts = getSnowflakePoints(level);
+  }
+
+  // Draw snowflake
+  if (pts.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = '#f84';
+    ctx.lineWidth = level > 4 ? 0.5 : 1;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,136,68,0.06)';
+    ctx.fill();
+  }
+
+  // Stats
+  const numSegs = 3 * Math.pow(4, level);
+  const perim = calcPerimeter(level);
+  const area = calcArea(level);
+  document.getElementById('sLevel').textContent = level;
+  document.getElementById('sSegs').textContent = numSegs.toLocaleString();
+  document.getElementById('sPerim').textContent = perim.toFixed(1) + ' px';
+  document.getElementById('sArea').textContent = Math.floor(area).toLocaleString() + ' px²';
+  document.getElementById('sFps').textContent = fps;
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

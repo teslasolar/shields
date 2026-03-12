@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PENROSE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 10px; right: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; font-size: 13px; line-height: 1.7;
+  border-radius: 4px; min-width: 210px; z-index: 10;
+}
+#stats .label { color: #888; }
+#stats .value { color: #f0a; }
+#controls {
+  position: fixed; bottom: 10px; left: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; border-radius: 4px; z-index: 10;
+}
+#controls button {
+  background: transparent; color: #f0a; border: 1px solid #f0a;
+  padding: 6px 14px; margin: 3px; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 12px; border-radius: 3px; transition: all 0.2s;
+}
+#controls button:hover { background: #f0a; color: #060610; }
+#controls .row { margin: 4px 0; }
+#controls .ctrl-label { color: #888; font-size: 11px; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div><span class="label">SHIELD-PENROSE</span></div>
+  <div><span class="label">generation: </span><span class="value" id="s-gen">5</span></div>
+  <div><span class="label">kites: </span><span class="value" id="s-kites">0</span></div>
+  <div><span class="label">darts: </span><span class="value" id="s-darts">0</span></div>
+  <div><span class="label">total tiles: </span><span class="value" id="s-total">0</span></div>
+  <div><span class="label">zoom: </span><span class="value" id="s-zoom">1.0</span></div>
+  <div><span class="label">fps: </span><span class="value" id="s-fps">0</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-label">GENERATION</div>
+  <div class="row">
+    <button onclick="setGen(3)">GEN 3</button>
+    <button onclick="setGen(4)">GEN 4</button>
+    <button onclick="setGen(5)">GEN 5</button>
+    <button onclick="setGen(6)">GEN 6</button>
+  </div>
+  <div class="ctrl-label" style="margin-top:8px">VIEW</div>
+  <div class="row">
+    <button onclick="zoomIn()">ZOOM +</button>
+    <button onclick="zoomOut()">ZOOM -</button>
+    <button onclick="resetView()">RESET</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const PHI = (1 + Math.sqrt(5)) / 2;
+let generation = 5;
+let tiles = [];
+let zoom = 1;
+let panX = 0, panY = 0;
+let dragging = false, lastMX = 0, lastMY = 0;
+let hueOffset = 0;
+let fps = 0, frameCount = 0, fpsTime = 0;
+
+// Penrose P2 (kite and dart) via Robinson triangle decomposition
+// Triangle types: 0 = acute (part of kite), 1 = obtuse (part of dart)
+// Each triangle: [type, A, B, C] where A,B,C are [x,y] points
+
+function subdivide(triangles) {
+  const result = [];
+  for (const [type, A, B, C] of triangles) {
+    if (type === 0) {
+      // Acute triangle -> split
+      const P = [A[0] + (B[0] - A[0]) / PHI, A[1] + (B[1] - A[1]) / PHI];
+      result.push([0, C, P, B]);
+      result.push([1, P, C, A]);
+    } else {
+      // Obtuse triangle -> split
+      const Q = [B[0] + (A[0] - B[0]) / PHI, B[1] + (A[1] - B[1]) / PHI];
+      const R = [B[0] + (C[0] - B[0]) / PHI, B[1] + (C[1] - B[1]) / PHI];
+      result.push([1, R, C, A]);
+      result.push([1, Q, R, B]);
+      result.push([0, R, Q, A]);
+    }
+  }
+  return result;
+}
+
+function generatePenrose(gen) {
+  // Start with a wheel of 10 acute triangles
+  let triangles = [];
+  for (let i = 0; i < 10; i++) {
+    const angle1 = (2 * Math.PI * i) / 10;
+    const angle2 = (2 * Math.PI * (i + 1)) / 10;
+    const A = [0, 0];
+    const B = [Math.cos(angle1), Math.sin(angle1)];
+    const C = [Math.cos(angle2), Math.sin(angle2)];
+    if (i % 2 === 0) {
+      triangles.push([0, A, B, C]);
+    } else {
+      triangles.push([0, A, C, B]);
+    }
+  }
+
+  for (let g = 0; g < gen; g++) {
+    triangles = subdivide(triangles);
+  }
+
+  tiles = triangles;
+  updateStats();
+}
+
+function updateStats() {
+  let kites = 0, darts = 0;
+  tiles.forEach(t => { if (t[0] === 0) kites++; else darts++; });
+  // Each kite/dart is made of 2 Robinson triangles
+  document.getElementById('s-gen').textContent = generation;
+  document.getElementById('s-kites').textContent = Math.floor(kites / 2);
+  document.getElementById('s-darts').textContent = Math.floor(darts / 2);
+  document.getElementById('s-total').textContent = tiles.length;
+}
+
+function setGen(g) { generation = g; generatePenrose(g); }
+function zoomIn() { zoom *= 1.5; }
+function zoomOut() { zoom /= 1.5; }
+function resetView() { zoom = 1; panX = 0; panY = 0; }
+
+canvas.addEventListener('mousedown', e => { dragging = true; lastMX = e.clientX; lastMY = e.clientY; });
+canvas.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX += e.clientX - lastMX;
+  panY += e.clientY - lastMY;
+  lastMX = e.clientX; lastMY = e.clientY;
+});
+canvas.addEventListener('mouseup', () => dragging = false);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+}, { passive: false });
+
+generatePenrose(generation);
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  frameCount++;
+  if (time - fpsTime > 1000) { fps = frameCount; frameCount = 0; fpsTime = time; }
+
+  hueOffset += 0.3;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const scale = Math.min(W, H) * 0.35 * zoom;
+  const cx = W / 2 + panX;
+  const cy = H / 2 + panY;
+
+  tiles.forEach(([type, A, B, C], i) => {
+    const ax = cx + A[0] * scale, ay = cy + A[1] * scale;
+    const bx = cx + B[0] * scale, by = cy + B[1] * scale;
+    const ccx = cx + C[0] * scale, ccy = cy + C[1] * scale;
+
+    const centX = (ax + bx + ccx) / 3;
+    const centY = (ay + by + ccy) / 3;
+
+    const hue = type === 0
+      ? (320 + Math.sin(centX * 0.005 + hueOffset * 0.01) * 30) % 360
+      : (260 + Math.cos(centY * 0.005 + hueOffset * 0.01) * 30) % 360;
+
+    const lightness = type === 0 ? 25 : 18;
+
+    ctx.fillStyle = `hsla(${hue}, 65%, ${lightness}%, 0.85)`;
+    ctx.strokeStyle = `hsla(${hue}, 80%, 55%, 0.5)`;
+    ctx.lineWidth = 0.5;
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.lineTo(ccx, ccy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  // Title
+  ctx.fillStyle = '#f0a';
+  ctx.font = 'bold 14px Courier New';
+  ctx.fillText('SHIELD-PENROSE', 15, 25);
+
+  document.getElementById('s-zoom').textContent = zoom.toFixed(1);
+  document.getElementById('s-fps').textContent = fps;
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

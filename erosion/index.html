@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-EROSION</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.7; min-width: 200px; z-index: 10;
+}
+#stats .title { color: #4af; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #8090a8; }
+#stats .val { color: #c0c8d8; float: right; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(68,170,255,0.15); color: #4af; border: 1px solid #4af;
+  border-radius: 3px; padding: 6px 14px; font-family: 'Courier New', monospace;
+  font-size: 13px; cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,170,255,0.3); }
+#controls label { color: #8090a8; display: flex; align-items: center; gap: 8px; }
+#controls input[type=range] { width: 120px; accent-color: #4af; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-EROSION</div>
+  <div><span class="label">Grid</span><span class="val" id="sGrid">—</span></div>
+  <div><span class="label">FPS</span><span class="val" id="sFps">—</span></div>
+  <div><span class="label">Droplets</span><span class="val" id="sDrops">—</span></div>
+  <div><span class="label">Erosion Cycles</span><span class="val" id="sCycles">—</span></div>
+</div>
+<div id="controls">
+  <label>Erosion Rate <input type="range" id="rErosion" min="1" max="100" value="30"></label>
+  <label>Deposition <input type="range" id="rDeposit" min="1" max="100" value="30"></label>
+  <label>Inertia <input type="range" id="rInertia" min="0" max="100" value="30"></label>
+  <button id="bErode">Erode (1000 drops)</button>
+  <button id="bReset">Reset Terrain</button>
+  <button id="bAuto">Auto Erode: OFF</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+const N = 256;
+let heightmap = new Float32Array(N * N);
+let water = new Float32Array(N * N);
+let totalDroplets = 0;
+let erosionCycles = 0;
+let autoErode = false;
+
+let erosionRate = 0.03;
+let depositionRate = 0.03;
+let inertia = 0.3;
+let gravity = 4;
+let maxLifetime = 80;
+let startSpeed = 1;
+let startWater = 1;
+let evaporateSpeed = 0.01;
+
+function generateTerrain() {
+  // Multi-octave noise using simple value noise
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) perm[i] = i;
+  for (let i = 255; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+
+  function noise2d(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x), yf = y - Math.floor(y);
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = perm[X] + Y, b = perm[X + 1] + Y;
+    const aa = perm[a] / 255, ba = perm[b] / 255;
+    const ab = perm[a + 1] / 255, bb = perm[b + 1] / 255;
+    return aa + u * (ba - aa) + v * (ab - aa) + u * v * (aa - ba - ab + bb);
+  }
+
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      let h = 0;
+      h += noise2d(x / 60, y / 60) * 0.5;
+      h += noise2d(x / 30, y / 30) * 0.25;
+      h += noise2d(x / 15, y / 15) * 0.125;
+      h += noise2d(x / 7, y / 7) * 0.0625;
+      // Center peak
+      const cx = (x / N - 0.5) * 2, cy = (y / N - 0.5) * 2;
+      const dist = Math.sqrt(cx * cx + cy * cy);
+      h += Math.max(0, 0.4 - dist * 0.4);
+      heightmap[y * N + x] = h;
+    }
+  }
+  water.fill(0);
+  totalDroplets = 0;
+  erosionCycles = 0;
+}
+
+function getGradient(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  if (ix < 0 || ix >= N - 1 || iy < 0 || iy >= N - 1) return { gx: 0, gy: 0, h: 0 };
+  const i00 = heightmap[iy * N + ix];
+  const i10 = heightmap[iy * N + ix + 1];
+  const i01 = heightmap[(iy + 1) * N + ix];
+  const i11 = heightmap[(iy + 1) * N + ix + 1];
+  const gx = (i10 - i00) * (1 - fy) + (i11 - i01) * fy;
+  const gy = (i01 - i00) * (1 - fx) + (i11 - i10) * fx;
+  const h = i00 * (1 - fx) * (1 - fy) + i10 * fx * (1 - fy) + i01 * (1 - fx) * fy + i11 * fx * fy;
+  return { gx, gy, h };
+}
+
+function erodeDroplet() {
+  let x = Math.random() * (N - 2) + 1;
+  let y = Math.random() * (N - 2) + 1;
+  let dx = 0, dy = 0;
+  let speed = startSpeed;
+  let w = startWater;
+  let sediment = 0;
+
+  for (let life = 0; life < maxLifetime; life++) {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    if (ix < 1 || ix >= N - 1 || iy < 1 || iy >= N - 1) break;
+
+    const g = getGradient(x, y);
+    dx = dx * inertia - g.gx * (1 - inertia);
+    dy = dy * inertia - g.gy * (1 - inertia);
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 0) { dx /= len; dy /= len; }
+
+    const nx = x + dx, ny = y + dy;
+    if (nx < 1 || nx >= N - 1 || ny < 1 || ny >= N - 1) break;
+
+    const gn = getGradient(nx, ny);
+    const dh = gn.h - g.h;
+
+    if (dh > 0) {
+      // Going uphill - deposit
+      const dep = Math.min(sediment, dh);
+      heightmap[iy * N + ix] += dep;
+      sediment -= dep;
+    } else {
+      // Going downhill - erode
+      const capacity = Math.max(-dh, 0.01) * speed * w * gravity;
+      if (sediment > capacity) {
+        const dep = (sediment - capacity) * depositionRate;
+        heightmap[iy * N + ix] += dep;
+        sediment -= dep;
+      } else {
+        const ero = Math.min((capacity - sediment) * erosionRate, -dh);
+        // Erode in radius
+        for (let ey = -1; ey <= 1; ey++) {
+          for (let ex = -1; ex <= 1; ex++) {
+            const px = ix + ex, py = iy + ey;
+            if (px >= 0 && px < N && py >= 0 && py < N) {
+              const we = (ex === 0 && ey === 0) ? 0.5 : 0.0625;
+              heightmap[py * N + px] -= ero * we;
+            }
+          }
+        }
+        sediment += ero;
+      }
+    }
+
+    speed = Math.sqrt(Math.max(0, speed * speed + dh * gravity));
+    w *= (1 - evaporateSpeed);
+    water[iy * N + ix] += 0.01;
+    x = nx; y = ny;
+  }
+  totalDroplets++;
+}
+
+function erodeN(n) {
+  for (let i = 0; i < n; i++) erodeDroplet();
+  erosionCycles++;
+  // Decay water
+  for (let i = 0; i < N * N; i++) water[i] *= 0.95;
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+let lastTime = performance.now(), fps = 60;
+
+function render() {
+  const now = performance.now();
+  fps = fps * 0.95 + 0.05 * (1000 / (now - lastTime));
+  lastTime = now;
+
+  if (autoErode) erodeN(200);
+
+  // Find min/max height for normalization
+  let hmin = Infinity, hmax = -Infinity;
+  for (let i = 0; i < N * N; i++) {
+    if (heightmap[i] < hmin) hmin = heightmap[i];
+    if (heightmap[i] > hmax) hmax = heightmap[i];
+  }
+  const hrange = hmax - hmin || 1;
+
+  const img = ctx.createImageData(N, N);
+  for (let i = 0; i < N * N; i++) {
+    const h = (heightmap[i] - hmin) / hrange;
+    const w = Math.min(water[i], 1);
+    const idx = i * 4;
+    // Terrain: warm brown/gray tones
+    const tr = Math.floor(h * 180 + 20);
+    const tg = Math.floor(h * 160 + 15);
+    const tb = Math.floor(h * 120 + 10);
+    // Water overlay: blue
+    img.data[idx]     = Math.floor(tr * (1 - w * 0.7) + 68 * w * 0.7);
+    img.data[idx + 1] = Math.floor(tg * (1 - w * 0.7) + 170 * w * 0.7);
+    img.data[idx + 2] = Math.floor(tb * (1 - w * 0.7) + 255 * w * 0.7);
+    img.data[idx + 3] = 255;
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+  const tmp = document.createElement('canvas');
+  tmp.width = N; tmp.height = N;
+  tmp.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  const side = Math.min(W, H) - 40;
+  const ox = (W - side) / 2, oy = (H - side) / 2;
+  ctx.drawImage(tmp, ox, oy, side, side);
+
+  // Border
+  ctx.strokeStyle = 'rgba(68,170,255,0.2)';
+  ctx.strokeRect(ox, oy, side, side);
+
+  ctx.fillStyle = 'rgba(68,170,255,0.3)';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SHIELD-EROSION', 16, 30);
+
+  document.getElementById('sGrid').textContent = N + 'x' + N;
+  document.getElementById('sFps').textContent = fps.toFixed(1);
+  document.getElementById('sDrops').textContent = totalDroplets;
+  document.getElementById('sCycles').textContent = erosionCycles;
+
+  requestAnimationFrame(render);
+}
+
+document.getElementById('rErosion').addEventListener('input', e => erosionRate = e.target.value / 1000);
+document.getElementById('rDeposit').addEventListener('input', e => depositionRate = e.target.value / 1000);
+document.getElementById('rInertia').addEventListener('input', e => inertia = e.target.value / 100);
+document.getElementById('bErode').addEventListener('click', () => erodeN(1000));
+document.getElementById('bReset').addEventListener('click', generateTerrain);
+document.getElementById('bAuto').addEventListener('click', function() {
+  autoErode = !autoErode;
+  this.textContent = 'Auto Erode: ' + (autoErode ? 'ON' : 'OFF');
+});
+
+canvas.addEventListener('click', e => {
+  // Drop water at click position
+  const side = Math.min(W, H) - 40;
+  const ox = (W - side) / 2, oy = (H - side) / 2;
+  const mx = Math.floor((e.clientX - ox) / side * N);
+  const my = Math.floor((e.clientY - oy) / side * N);
+  if (mx >= 0 && mx < N && my >= 0 && my < N) {
+    // Create a dip at click for water to flow from
+    for (let dy = -5; dy <= 5; dy++) {
+      for (let dx = -5; dx <= 5; dx++) {
+        const px = mx + dx, py = my + dy;
+        if (px >= 0 && px < N && py >= 0 && py < N) {
+          const d = Math.sqrt(dx*dx+dy*dy);
+          if (d <= 5) water[py * N + px] += 0.5 * (1 - d / 5);
+        }
+      }
+    }
+    // Drop erosion droplets from that point
+    for (let i = 0; i < 100; i++) {
+      let x = mx + (Math.random() - 0.5) * 6;
+      let y = my + (Math.random() - 0.5) * 6;
+      x = Math.max(1, Math.min(N - 2, x));
+      y = Math.max(1, Math.min(N - 2, y));
+      // Run droplet from this point (inline simplified)
+      erodeDroplet();
+    }
+  }
+});
+
+window.addEventListener('resize', resize);
+resize();
+generateTerrain();
+render();
+</script>
+</body>
+</html>

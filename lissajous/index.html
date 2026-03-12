@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-LISSAJOUS</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 10px; right: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; font-size: 13px; line-height: 1.7;
+  border-radius: 4px; min-width: 200px; z-index: 10;
+}
+#stats .label { color: #888; }
+#stats .value { color: #f0a; }
+#controls {
+  position: fixed; bottom: 10px; left: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; border-radius: 4px; z-index: 10;
+}
+#controls button {
+  background: transparent; color: #f0a; border: 1px solid #f0a;
+  padding: 6px 14px; margin: 3px; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 12px; border-radius: 3px; transition: all 0.2s;
+}
+#controls button:hover { background: #f0a; color: #060610; }
+#controls .row { margin: 4px 0; }
+#controls .ctrl-label { color: #888; font-size: 11px; margin-bottom: 2px; }
+input[type=range] {
+  -webkit-appearance: none; width: 130px; height: 4px; background: #333;
+  border-radius: 2px; outline: none; margin: 0 8px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; background: #f0a;
+  border-radius: 50%; cursor: pointer;
+}
+.slider-row { display: flex; align-items: center; margin: 5px 0; }
+.slider-row .ctrl-label { width: 45px; font-size: 12px; }
+.slider-row .val { color: #f0a; width: 40px; text-align: right; font-size: 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div><span class="label">SHIELD-LISSAJOUS</span></div>
+  <div><span class="label">a: </span><span class="value" id="s-a">3</span></div>
+  <div><span class="label">b: </span><span class="value" id="s-b">2</span></div>
+  <div><span class="label">delta: </span><span class="value" id="s-delta">0.00</span></div>
+  <div><span class="label">points: </span><span class="value" id="s-pts">0</span></div>
+  <div><span class="label">fps: </span><span class="value" id="s-fps">0</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-label">PARAMETERS</div>
+  <div class="slider-row">
+    <span class="ctrl-label">a</span>
+    <input type="range" id="slA" min="1" max="10" value="3" step="1" oninput="paramChange()">
+    <span class="val" id="vA">3</span>
+  </div>
+  <div class="slider-row">
+    <span class="ctrl-label">b</span>
+    <input type="range" id="slB" min="1" max="10" value="2" step="1" oninput="paramChange()">
+    <span class="val" id="vB">2</span>
+  </div>
+  <div class="slider-row">
+    <span class="ctrl-label">delta</span>
+    <input type="range" id="slD" min="0" max="6.28" value="0" step="0.05" oninput="paramChange()">
+    <span class="val" id="vD">0.00</span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button onclick="animDelta=!animDelta">ANIMATE \u03b4</button>
+    <button onclick="resetCurve()">RESET</button>
+  </div>
+  <div class="row">
+    <button onclick="setPreset(3,2,Math.PI/2)">3:2</button>
+    <button onclick="setPreset(5,4,Math.PI/4)">5:4</button>
+    <button onclick="setPreset(7,6,0)">7:6</button>
+    <button onclick="setPreset(1,1,Math.PI/4)">CIRCLE</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+let a = 3, b = 2, delta = 0;
+let animDelta = false;
+let t = 0;
+let trail = [];
+let maxTrail = 5000;
+let fps = 0, frameCount = 0, fpsTime = 0;
+
+function paramChange() {
+  a = +document.getElementById('slA').value;
+  b = +document.getElementById('slB').value;
+  delta = +document.getElementById('slD').value;
+  document.getElementById('vA').textContent = a;
+  document.getElementById('vB').textContent = b;
+  document.getElementById('vD').textContent = delta.toFixed(2);
+  resetCurve();
+}
+
+function setPreset(na, nb, nd) {
+  a = na; b = nb; delta = nd;
+  document.getElementById('slA').value = a;
+  document.getElementById('slB').value = b;
+  document.getElementById('slD').value = delta;
+  document.getElementById('vA').textContent = a;
+  document.getElementById('vB').textContent = b;
+  document.getElementById('vD').textContent = delta.toFixed(2);
+  resetCurve();
+}
+
+function resetCurve() {
+  trail = [];
+  t = 0;
+}
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  frameCount++;
+  if (time - fpsTime > 1000) { fps = frameCount; frameCount = 0; fpsTime = time; }
+
+  if (animDelta) {
+    delta += 0.005;
+    if (delta > Math.PI * 2) delta -= Math.PI * 2;
+    document.getElementById('slD').value = delta;
+    document.getElementById('vD').textContent = delta.toFixed(2);
+  }
+
+  ctx.fillStyle = 'rgba(6,6,16,0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  const scale = Math.min(W, H) * 0.35;
+  const cx = W / 2, cy = H / 2;
+
+  // Add new points
+  for (let i = 0; i < 6; i++) {
+    t += 0.01;
+    const x = Math.sin(a * t + delta);
+    const y = Math.sin(b * t);
+    trail.push([x, y, t]);
+    if (trail.length > maxTrail) trail.shift();
+  }
+
+  // Full redraw periodically to prevent smearing
+  if (frameCount % 120 === 0) {
+    ctx.fillStyle = '#060610';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Draw the curve with color gradient
+  if (trail.length > 1) {
+    for (let i = 1; i < trail.length; i++) {
+      const progress = i / trail.length;
+      const hue = (330 + progress * 60) % 360;
+      const alpha = 0.2 + progress * 0.8;
+      ctx.strokeStyle = `hsla(${hue}, 100%, 60%, ${alpha})`;
+      ctx.lineWidth = 1 + progress * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + trail[i-1][0] * scale, cy + trail[i-1][1] * scale);
+      ctx.lineTo(cx + trail[i][0] * scale, cy + trail[i][1] * scale);
+      ctx.stroke();
+    }
+  }
+
+  // Draw full static curve faintly
+  ctx.strokeStyle = 'rgba(255,0,170,0.1)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (let tt = 0; tt < Math.PI * 2 * 20; tt += 0.02) {
+    const x = cx + Math.sin(a * tt + delta) * scale;
+    const y = cy + Math.sin(b * tt) * scale;
+    if (tt === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Draw current position
+  if (trail.length > 0) {
+    const last = trail[trail.length - 1];
+    const px = cx + last[0] * scale;
+    const py = cy + last[1] * scale;
+    ctx.beginPath();
+    ctx.arc(px, py, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f0a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // Title
+  ctx.fillStyle = '#f0a';
+  ctx.font = 'bold 14px Courier New';
+  ctx.fillText('SHIELD-LISSAJOUS', 15, 25);
+
+  document.getElementById('s-a').textContent = a;
+  document.getElementById('s-b').textContent = b;
+  document.getElementById('s-delta').textContent = delta.toFixed(2);
+  document.getElementById('s-pts').textContent = trail.length;
+  document.getElementById('s-fps').textContent = fps;
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

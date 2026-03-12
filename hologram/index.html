@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-HOLOGRAM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+.panel{position:fixed;background:rgba(6,6,16,.92);border:1px solid rgba(255,255,0,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+#stats{top:10px;right:10px;min-width:210px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:6px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.label{color:#667}
+.val{color:#ff0;text-align:right}
+#controls{bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;min-width:240px}
+#controls h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:4px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctrl-row label{color:#667;font-size:10px;letter-spacing:1px;min-width:90px}
+.ctrl-row input[type=range]{width:100px;accent-color:#ff0}
+.ctrl-val{color:#ff0;font-size:10px;min-width:40px;text-align:right}
+button{background:rgba(255,255,0,.1);color:#ff0;border:1px solid rgba(255,255,0,.3);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:10px;cursor:pointer;letter-spacing:1px}
+button:hover{background:rgba(255,255,0,.2)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="stats">
+  <h3>SHIELD-HOLOGRAM</h3>
+  <div class="row"><span class="label">Ref. Beam Angle</span><span class="val" id="st-rangle">30.0°</span></div>
+  <div class="row"><span class="label">Obj. Beam Angle</span><span class="val" id="st-oangle">-15.0°</span></div>
+  <div class="row"><span class="label">Wavelength</span><span class="val" id="st-wl">12.0</span></div>
+  <div class="row"><span class="label">Fringe Spacing</span><span class="val" id="st-fsp">0.0 px</span></div>
+  <div class="row"><span class="label">Fringe Count</span><span class="val" id="st-fc">0</span></div>
+  <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+</div>
+<div class="panel" id="controls">
+  <h3>CONTROLS</h3>
+  <div class="ctrl-row"><label>REF. ANGLE</label><input type="range" id="sl-ra" min="-80" max="80" step="1" value="30"><span class="ctrl-val" id="v-ra">30°</span></div>
+  <div class="ctrl-row"><label>OBJ. ANGLE</label><input type="range" id="sl-oa" min="-80" max="80" step="1" value="-15"><span class="ctrl-val" id="v-oa">-15°</span></div>
+  <div class="ctrl-row"><label>WAVELENGTH</label><input type="range" id="sl-wl" min="5" max="30" step="0.5" value="12"><span class="ctrl-val" id="v-wl">12.0</span></div>
+  <div class="ctrl-row"><label>OBJ. SOURCES</label><input type="range" id="sl-ns" min="1" max="5" step="1" value="3"><span class="ctrl-val" id="v-ns">3</span></div>
+  <div class="ctrl-row"><label>DEPTH</label><input type="range" id="sl-depth" min="0" max="100" step="5" value="50"><span class="ctrl-val" id="v-depth">50</span></div>
+  <div class="ctrl-row"><label>SPEED</label><input type="range" id="sl-spd" min="0" max="3" step="0.1" value="0.5"><span class="ctrl-val" id="v-spd">0.5</span></div>
+  <div class="ctrl-row">
+    <button id="btn-auto">AUTO ANIMATE</button>
+    <button id="btn-reset">RESET</button>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+let refAngle = 30, objAngle = -15, wavelength = 12, numSources = 3, depth = 50, speed = 0.5;
+let autoAnim = false, time = 0;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+
+function resize() { W = window.innerWidth; H = window.innerHeight; cv.width = W; cv.height = H; }
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('sl-ra').oninput = function() { refAngle = +this.value; document.getElementById('v-ra').textContent = this.value + '°'; };
+document.getElementById('sl-oa').oninput = function() { objAngle = +this.value; document.getElementById('v-oa').textContent = this.value + '°'; };
+document.getElementById('sl-wl').oninput = function() { wavelength = +this.value; document.getElementById('v-wl').textContent = (+this.value).toFixed(1); };
+document.getElementById('sl-ns').oninput = function() { numSources = +this.value; document.getElementById('v-ns').textContent = this.value; };
+document.getElementById('sl-depth').oninput = function() { depth = +this.value; document.getElementById('v-depth').textContent = this.value; };
+document.getElementById('sl-spd').oninput = function() { speed = +this.value; document.getElementById('v-spd').textContent = (+this.value).toFixed(1); };
+document.getElementById('btn-auto').onclick = function() { autoAnim = !autoAnim; this.textContent = autoAnim ? 'STOP' : 'AUTO ANIMATE'; };
+document.getElementById('btn-reset').onclick = function() {
+  refAngle = 30; objAngle = -15; wavelength = 12; numSources = 3; depth = 50; speed = 0.5; time = 0;
+  document.getElementById('sl-ra').value = 30; document.getElementById('v-ra').textContent = '30°';
+  document.getElementById('sl-oa').value = -15; document.getElementById('v-oa').textContent = '-15°';
+  document.getElementById('sl-wl').value = 12; document.getElementById('v-wl').textContent = '12.0';
+  document.getElementById('sl-ns').value = 3; document.getElementById('v-ns').textContent = '3';
+  document.getElementById('sl-depth').value = 50; document.getElementById('v-depth').textContent = '50';
+  document.getElementById('sl-spd').value = 0.5; document.getElementById('v-spd').textContent = '0.5';
+};
+
+function draw() {
+  requestAnimationFrame(draw);
+  time += 0.02 * speed;
+
+  if (autoAnim) {
+    refAngle = 30 + 20 * Math.sin(time * 0.7);
+    objAngle = -15 + 15 * Math.sin(time * 0.5 + 1);
+    document.getElementById('sl-ra').value = refAngle;
+    document.getElementById('v-ra').textContent = refAngle.toFixed(0) + '°';
+    document.getElementById('sl-oa').value = objAngle;
+    document.getElementById('v-oa').textContent = objAngle.toFixed(0) + '°';
+  }
+
+  const imgData = ctx.createImageData(W, H);
+  const d = imgData.data;
+  const step = 2;
+  const cx = W / 2, cy = H / 2;
+
+  const refRad = refAngle * Math.PI / 180;
+  const objRad = objAngle * Math.PI / 180;
+  const k = 2 * Math.PI / wavelength;
+
+  // Reference beam direction
+  const refKx = k * Math.sin(refRad);
+  const refKy = k * Math.cos(refRad);
+
+  // Object beam sources (placed at varying depths for 3D effect)
+  const objSources = [];
+  for (let i = 0; i < numSources; i++) {
+    const angle = (i / numSources) * Math.PI * 2;
+    const r = 80 + depth * (i % 2);
+    objSources.push({
+      x: cx + r * Math.cos(angle + objRad),
+      y: cy + r * Math.sin(angle + objRad),
+      phase: i * Math.PI * 0.5
+    });
+  }
+
+  let fringeCount = 0;
+  let lastSign = 0;
+
+  for (let y = 0; y < H; y += step) {
+    for (let x = 0; x < W; x += step) {
+      // Reference beam (plane wave)
+      const refPhase = refKx * x + refKy * y - time * 3;
+      const refWave = Math.sin(refPhase);
+
+      // Object beam (sum of spherical waves)
+      let objWave = 0;
+      for (let s = 0; s < objSources.length; s++) {
+        const dx = x - objSources[s].x;
+        const dy = y - objSources[s].y;
+        const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+        objWave += Math.sin(k * dist - time * 3 + objSources[s].phase) / Math.sqrt(dist / 50 + 1);
+      }
+      objWave /= numSources;
+
+      // Holographic interference: intensity = |ref + obj|^2
+      const total = refWave + objWave;
+      const intensity = total * total * 0.25; // normalize
+
+      // Color mapping with depth effect
+      const depthFactor = 0.5 + 0.5 * Math.sin(k * 0.3 * (x - cx) + time * 0.5);
+      const r = Math.floor(Math.min(255, intensity * 255 * (0.9 + 0.1 * depthFactor)));
+      const g = Math.floor(Math.min(255, intensity * 230 * depthFactor));
+      const b = Math.floor(Math.min(255, intensity * 60 + 8));
+
+      for (let dy = 0; dy < step && y + dy < H; dy++) {
+        for (let dx = 0; dx < step && x + dx < W; dx++) {
+          const idx = ((y + dy) * W + (x + dx)) * 4;
+          d[idx] = r; d[idx+1] = g; d[idx+2] = b; d[idx+3] = 255;
+        }
+      }
+
+      // Count fringes along center line
+      if (y === Math.floor(cy) && x > 0) {
+        const sign = total > 0 ? 1 : -1;
+        if (sign !== lastSign && lastSign !== 0) fringeCount++;
+        lastSign = sign;
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // Draw beam indicators
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+
+  // Reference beam arrow
+  const rLen = 100;
+  const rsx = 60, rsy = 60;
+  ctx.strokeStyle = '#ff0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(rsx, rsy);
+  ctx.lineTo(rsx + rLen * Math.sin(refRad), rsy + rLen * Math.cos(refRad));
+  ctx.stroke();
+  ctx.fillStyle = '#ff0';
+  ctx.font = '10px Courier New';
+  ctx.fillText('REF BEAM', rsx - 10, rsy - 8);
+
+  // Object beam indicator
+  for (let s = 0; s < objSources.length; s++) {
+    ctx.beginPath();
+    ctx.arc(objSources[s].x, objSources[s].y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#0af';
+    ctx.fill();
+  }
+  ctx.fillStyle = '#0af';
+  ctx.font = '10px Courier New';
+  ctx.fillText('OBJ SOURCES', objSources[0].x - 30, objSources[0].y - 12);
+
+  ctx.restore();
+
+  // Fringe spacing calculation
+  const fringeSpacing = wavelength / (Math.abs(Math.sin(refRad) - Math.sin(objRad)) + 0.001);
+
+  // Title
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-HOLOGRAM', 15, H - 50);
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Holographic Interference  |  Reference + Object Beams', 15, H - 34);
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) { fps = Math.round(frameCount * 1000 / (now - lastFps)); frameCount = 0; lastFps = now; }
+  document.getElementById('st-rangle').textContent = refAngle.toFixed(1) + '°';
+  document.getElementById('st-oangle').textContent = objAngle.toFixed(1) + '°';
+  document.getElementById('st-wl').textContent = wavelength.toFixed(1);
+  document.getElementById('st-fsp').textContent = fringeSpacing.toFixed(1) + ' px';
+  document.getElementById('st-fc').textContent = fringeCount;
+  document.getElementById('st-fps').textContent = fps;
+}
+draw();
+</script>
+</body>
+</html>

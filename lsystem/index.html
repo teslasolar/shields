@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-LSYSTEM</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; line-height: 1.7;
+  min-width: 230px; z-index: 10; border-radius: 4px;
+}
+#stats .title { color: #f84; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #888; }
+#stats .val { color: #f84; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px;
+  background: rgba(6,6,16,0.88); border: 1px solid #f84;
+  padding: 14px 18px; font-size: 13px; z-index: 10; border-radius: 4px;
+  max-width: 320px;
+}
+#controls .title { color: #f84; font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+#controls button {
+  background: rgba(255,136,68,0.15); border: 1px solid #f84; color: #f84;
+  padding: 5px 14px; margin: 3px 4px 3px 0; cursor: pointer; font-family: inherit;
+  font-size: 12px; border-radius: 3px; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(255,136,68,0.35); }
+#controls button.active { background: rgba(255,136,68,0.45); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-LSYSTEM</div>
+  <div><span class="label">Category:</span> <span class="val">Fractals</span></div>
+  <div><span class="label">Preset:</span> <span class="val" id="sPreset">Plant</span></div>
+  <div><span class="label">Depth:</span> <span class="val" id="sDepth">5</span></div>
+  <div><span class="label">Angle:</span> <span class="val" id="sAngle">25°</span></div>
+  <div><span class="label">Segments:</span> <span class="val" id="sSegs">0</span></div>
+  <div><span class="label">Drawn:</span> <span class="val" id="sDrawn">0</span></div>
+  <div><span class="label">FPS:</span> <span class="val" id="sFps">0</span></div>
+</div>
+<div id="controls">
+  <div class="title">Controls</div>
+  <div>
+    <button id="btnPlant" class="active">Plant</button>
+    <button id="btnTree">Tree</button>
+    <button id="btnHilbert">Hilbert</button>
+    <button id="btnSierp">Sierpinski</button>
+  </div>
+  <div style="margin-top:4px;">
+    <button id="btnDepthUp">Depth +</button>
+    <button id="btnDepthDn">Depth −</button>
+    <button id="btnAngleUp">Angle +</button>
+    <button id="btnAngleDn">Angle −</button>
+  </div>
+  <div style="margin-top:4px;">
+    <button id="btnAnimate">Restart</button>
+    <button id="btnInstant">Instant</button>
+    <button id="btnSpeed">Speed +</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; generate(); }
+window.addEventListener('resize', resize);
+
+const presets = {
+  plant: {
+    axiom: 'X',
+    rules: { X: 'F+[[X]-X]-F[-FX]+X', F: 'FF' },
+    angle: 25, depth: 6, startAngle: -65,
+    name: 'Plant'
+  },
+  tree: {
+    axiom: 'F',
+    rules: { F: 'FF+[+F-F-F]-[-F+F+F]' },
+    angle: 22, depth: 4, startAngle: -90,
+    name: 'Tree'
+  },
+  hilbert: {
+    axiom: 'A',
+    rules: { A: '+BF-AFA-FB+', B: '-AF+BFB+FA-' },
+    angle: 90, depth: 5, startAngle: 0,
+    name: 'Hilbert'
+  },
+  sierpinski: {
+    axiom: 'FXF--FF--FF',
+    rules: { F: 'FF', X: '--FXF++FXF++FXF--' },
+    angle: 60, depth: 5, startAngle: 0,
+    name: 'Sierpinski'
+  }
+};
+
+let currentPreset = 'plant';
+let depth, angle;
+let segments = [];
+let drawIdx = 0;
+let drawSpeed = 80;
+let instant = false;
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
+
+function expandLSystem(axiom, rules, n) {
+  let str = axiom;
+  for (let i = 0; i < n; i++) {
+    let next = '';
+    for (const ch of str) {
+      next += rules[ch] || ch;
+    }
+    str = next;
+    if (str.length > 2000000) break; // safety
+  }
+  return str;
+}
+
+function generate() {
+  const preset = presets[currentPreset];
+  if (depth === undefined) depth = preset.depth;
+  if (angle === undefined) angle = preset.angle;
+
+  const str = expandLSystem(preset.axiom, preset.rules, depth);
+  const rad = angle * Math.PI / 180;
+  let x = 0, y = 0;
+  let dir = preset.startAngle * Math.PI / 180;
+  const stack = [];
+  const stepLen = 4;
+
+  segments = [];
+  for (const ch of str) {
+    if (ch === 'F') {
+      const nx = x + Math.cos(dir) * stepLen;
+      const ny = y + Math.sin(dir) * stepLen;
+      segments.push({x1: x, y1: y, x2: nx, y2: ny});
+      x = nx; y = ny;
+    } else if (ch === '+') {
+      dir += rad;
+    } else if (ch === '-') {
+      dir -= rad;
+    } else if (ch === '[') {
+      stack.push({x, y, dir});
+    } else if (ch === ']') {
+      const s = stack.pop();
+      x = s.x; y = s.y; dir = s.dir;
+    }
+  }
+
+  // Fit to screen
+  if (segments.length > 0) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const s of segments) {
+      minX = Math.min(minX, s.x1, s.x2); maxX = Math.max(maxX, s.x1, s.x2);
+      minY = Math.min(minY, s.y1, s.y2); maxY = Math.max(maxY, s.y1, s.y2);
+    }
+    const rw = maxX - minX || 1, rh = maxY - minY || 1;
+    const margin = 80;
+    const scale = Math.min((W - margin*2)/rw, (H - margin*2)/rh);
+    const ox = (W - rw*scale)/2 - minX*scale;
+    const oy = (H - rh*scale)/2 - minY*scale;
+    for (const s of segments) {
+      s.x1 = s.x1*scale + ox; s.y1 = s.y1*scale + oy;
+      s.x2 = s.x2*scale + ox; s.y2 = s.y2*scale + oy;
+    }
+  }
+  drawIdx = 0;
+  instant = false;
+}
+
+function setPreset(key) {
+  currentPreset = key;
+  const p = presets[key];
+  depth = p.depth;
+  angle = p.angle;
+  generate();
+  document.querySelectorAll('#controls button').forEach(b => {
+    if (['btnPlant','btnTree','btnHilbert','btnSierp'].includes(b.id)) b.classList.remove('active');
+  });
+}
+
+document.getElementById('btnPlant').onclick = function() { setPreset('plant'); this.classList.add('active'); };
+document.getElementById('btnTree').onclick = function() { setPreset('tree'); this.classList.add('active'); };
+document.getElementById('btnHilbert').onclick = function() { setPreset('hilbert'); this.classList.add('active'); };
+document.getElementById('btnSierp').onclick = function() { setPreset('sierpinski'); this.classList.add('active'); };
+document.getElementById('btnDepthUp').onclick = () => { depth = Math.min(8, depth+1); generate(); };
+document.getElementById('btnDepthDn').onclick = () => { depth = Math.max(1, depth-1); generate(); };
+document.getElementById('btnAngleUp').onclick = () => { angle = Math.min(120, angle+5); generate(); };
+document.getElementById('btnAngleDn').onclick = () => { angle = Math.max(5, angle-5); generate(); };
+document.getElementById('btnAnimate').onclick = () => { drawIdx = 0; instant = false; };
+document.getElementById('btnInstant').onclick = () => { instant = true; drawIdx = segments.length; };
+document.getElementById('btnSpeed').onclick = () => { drawSpeed = Math.min(1000, drawSpeed + 40); };
+
+function render() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) { fps = frameCount; frameCount = 0; lastFpsTime = now; }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillText('SHIELD-LSYSTEM', 16, 30);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText('Fractals', 16, 48);
+
+  if (!instant && drawIdx < segments.length) {
+    drawIdx = Math.min(segments.length, drawIdx + drawSpeed);
+  }
+
+  const count = instant ? segments.length : drawIdx;
+  const lw = segments.length > 10000 ? 0.5 : segments.length > 3000 ? 1 : 1.5;
+  ctx.lineWidth = lw;
+  for (let i = 0; i < count; i++) {
+    const t = i / segments.length;
+    const hue = 15 + t * 30;
+    const light = 40 + t * 25;
+    ctx.strokeStyle = `hsl(${hue},85%,${light}%)`;
+    ctx.beginPath();
+    ctx.moveTo(segments[i].x1, segments[i].y1);
+    ctx.lineTo(segments[i].x2, segments[i].y2);
+    ctx.stroke();
+  }
+
+  document.getElementById('sPreset').textContent = presets[currentPreset].name;
+  document.getElementById('sDepth').textContent = depth;
+  document.getElementById('sAngle').textContent = angle + '°';
+  document.getElementById('sSegs').textContent = segments.length.toLocaleString();
+  document.getElementById('sDrawn').textContent = count.toLocaleString();
+  document.getElementById('sFps').textContent = fps;
+
+  requestAnimationFrame(render);
+}
+
+resize();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

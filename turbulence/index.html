@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-TURBULENCE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.7; min-width: 180px; z-index: 10;
+}
+#stats .title { color: #4af; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #8090a8; }
+#stats .val { color: #c0c8d8; float: right; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(68,170,255,0.15); color: #4af; border: 1px solid #4af;
+  border-radius: 3px; padding: 6px 14px; font-family: 'Courier New', monospace;
+  font-size: 13px; cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,170,255,0.3); }
+#controls label { color: #8090a8; display: flex; align-items: center; gap: 8px; }
+#controls input[type=range] { width: 120px; accent-color: #4af; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-TURBULENCE</div>
+  <div><span class="label">Particles</span><span class="val" id="sPart">—</span></div>
+  <div><span class="label">FPS</span><span class="val" id="sFps">—</span></div>
+  <div><span class="label">Intensity</span><span class="val" id="sInt">—</span></div>
+  <div><span class="label">Scale</span><span class="val" id="sScale">—</span></div>
+</div>
+<div id="controls">
+  <label>Intensity <input type="range" id="rInt" min="1" max="100" value="50"></label>
+  <label>Scale <input type="range" id="rScale" min="1" max="100" value="30"></label>
+  <label>Speed <input type="range" id="rSpeed" min="1" max="100" value="40"></label>
+  <label>Particles <input type="range" id="rPart" min="500" max="15000" value="5000" step="500"></label>
+  <button id="bClear">Clear Trails</button>
+  <button id="bColor">Cycle Colors</button>
+</div>
+<script>
+// Simplex-like noise implementation
+const PERM = new Uint8Array(512);
+const GRAD = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+(function initPerm() {
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 512; i++) PERM[i] = p[i & 255];
+})();
+
+function noise2d(x, y) {
+  const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y);
+  const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+  const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+  const aa = PERM[PERM[X] + Y], ba = PERM[PERM[X + 1] + Y];
+  const ab = PERM[PERM[X] + Y + 1], bb = PERM[PERM[X + 1] + Y + 1];
+  const g = (hash, x, y) => { const g = GRAD[hash & 7]; return g[0] * x + g[1] * y; };
+  const l1 = g(aa, xf, yf) + u * (g(ba, xf - 1, yf) - g(aa, xf, yf));
+  const l2 = g(ab, xf, yf - 1) + u * (g(bb, xf - 1, yf - 1) - g(ab, xf, yf - 1));
+  return l1 + v * (l2 - l1);
+}
+
+function fbm(x, y, octaves) {
+  let val = 0, amp = 1, freq = 1, max = 0;
+  for (let i = 0; i < octaves; i++) {
+    val += noise2d(x * freq, y * freq) * amp;
+    max += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return val / max;
+}
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+let intensity = 2;
+let noiseScale = 0.003;
+let speed = 2;
+let numParticles = 5000;
+let colorMode = 0;
+let time = 0;
+
+let particles = [];
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.life = Math.random() * 200 + 50;
+    this.age = 0;
+    this.speed = 0.5 + Math.random() * 1.5;
+  }
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < numParticles; i++) particles.push(new Particle());
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  initParticles();
+}
+
+function getColor(p) {
+  const a = Math.max(0, 1 - p.age / p.life) * 0.4;
+  const angle = fbm(p.x * noiseScale * 0.5, p.y * noiseScale * 0.5 + time * 0.01, 2);
+  switch (colorMode) {
+    case 0: return `rgba(68,170,255,${a})`;
+    case 1: {
+      const hue = (angle * 180 + 200 + time * 10) % 360;
+      return `hsla(${hue},80%,60%,${a})`;
+    }
+    case 2: {
+      const v = Math.abs(angle);
+      return `rgba(${Math.floor(68 + v * 187)},${Math.floor(170 - v * 100)},${Math.floor(255 - v * 150)},${a})`;
+    }
+    default: return `rgba(68,170,255,${a})`;
+  }
+}
+
+let lastTime = performance.now(), fps = 60;
+
+function render() {
+  const now = performance.now();
+  const dt = Math.min(now - lastTime, 50) / 16.67;
+  fps = fps * 0.95 + 0.05 * (1000 / (now - lastTime));
+  lastTime = now;
+  time += 0.005 * speed * dt;
+
+  // Fade background
+  ctx.fillStyle = 'rgba(6,6,16,0.03)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.lineWidth = 1;
+  for (const p of particles) {
+    const nx = p.x * noiseScale;
+    const ny = p.y * noiseScale;
+    const n1 = fbm(nx + time, ny, 3);
+    const n2 = fbm(nx, ny + time, 3);
+    const angle = n1 * Math.PI * 2 * intensity;
+    const mag = (0.5 + Math.abs(n2)) * speed * p.speed;
+
+    const ox = p.x, oy = p.y;
+    p.x += Math.cos(angle) * mag * dt;
+    p.y += Math.sin(angle) * mag * dt;
+    p.age += dt;
+
+    if (p.x < 0 || p.x > W || p.y < 0 || p.y > H || p.age > p.life) {
+      p.reset();
+      continue;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = getColor(p);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = 'rgba(68,170,255,0.3)';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SHIELD-TURBULENCE', 16, 30);
+
+  document.getElementById('sPart').textContent = particles.length;
+  document.getElementById('sFps').textContent = fps.toFixed(1);
+  document.getElementById('sInt').textContent = intensity.toFixed(2);
+  document.getElementById('sScale').textContent = (noiseScale * 1000).toFixed(1);
+
+  requestAnimationFrame(render);
+}
+
+document.getElementById('rInt').addEventListener('input', e => intensity = e.target.value / 100 * 4);
+document.getElementById('rScale').addEventListener('input', e => noiseScale = e.target.value / 100 * 0.01);
+document.getElementById('rSpeed').addEventListener('input', e => speed = e.target.value / 100 * 5);
+document.getElementById('rPart').addEventListener('input', e => {
+  numParticles = parseInt(e.target.value);
+  while (particles.length < numParticles) particles.push(new Particle());
+  while (particles.length > numParticles) particles.pop();
+});
+document.getElementById('bClear').addEventListener('click', () => {
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+  initParticles();
+});
+document.getElementById('bColor').addEventListener('click', () => {
+  colorMode = (colorMode + 1) % 3;
+});
+
+window.addEventListener('resize', resize);
+resize();
+render();
+</script>
+</body>
+</html>

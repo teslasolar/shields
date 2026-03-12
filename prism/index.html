@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-PRISM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+.panel{position:fixed;background:rgba(6,6,16,.92);border:1px solid rgba(255,255,0,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+#stats{top:10px;right:10px;min-width:220px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:6px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.label{color:#667}
+.val{color:#ff0;text-align:right}
+#controls{bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;min-width:240px}
+#controls h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:4px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctrl-row label{color:#667;font-size:10px;letter-spacing:1px;min-width:80px}
+.ctrl-row input[type=range]{width:110px;accent-color:#ff0}
+.ctrl-val{color:#ff0;font-size:10px;min-width:40px;text-align:right}
+button{background:rgba(255,255,0,.1);color:#ff0;border:1px solid rgba(255,255,0,.3);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:10px;cursor:pointer;letter-spacing:1px}
+button:hover{background:rgba(255,255,0,.2)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="stats">
+  <h3>SHIELD-PRISM</h3>
+  <div class="row"><span class="label">Prism Angle</span><span class="val" id="st-angle">60°</span></div>
+  <div class="row"><span class="label">Incidence</span><span class="val" id="st-inc">45.0°</span></div>
+  <div class="row"><span class="label">n (red 700nm)</span><span class="val" id="st-nr">1.513</span></div>
+  <div class="row"><span class="label">n (violet 400nm)</span><span class="val" id="st-nv">1.532</span></div>
+  <div class="row"><span class="label">Dispersion</span><span class="val" id="st-disp">0.0°</span></div>
+  <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+</div>
+<div class="panel" id="controls">
+  <h3>CONTROLS</h3>
+  <div class="ctrl-row"><label>INCIDENCE</label><input type="range" id="sl-inc" min="10" max="80" step="0.5" value="45"><span class="ctrl-val" id="v-inc">45.0°</span></div>
+  <div class="ctrl-row"><label>PRISM ANGLE</label><input type="range" id="sl-apex" min="30" max="80" step="1" value="60"><span class="ctrl-val" id="v-apex">60°</span></div>
+  <div class="ctrl-row"><label>BASE n</label><input type="range" id="sl-n" min="1.3" max="1.9" step="0.01" value="1.52"><span class="ctrl-val" id="v-n">1.52</span></div>
+  <div class="ctrl-row"><label>DISPERSION</label><input type="range" id="sl-disp" min="0.005" max="0.06" step="0.001" value="0.02"><span class="ctrl-val" id="v-disp">0.020</span></div>
+  <div class="ctrl-row">
+    <button id="btn-anim">ANIMATE</button>
+    <button id="btn-reset">RESET</button>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+let incAngle = 45, apexAngle = 60, baseN = 1.52, dispCoeff = 0.02;
+let animating = false, animTime = 0;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+
+const spectrum = [
+  {wl: 700, r: 255, g: 0, b: 0},
+  {wl: 650, r: 255, g: 80, b: 0},
+  {wl: 600, r: 255, g: 165, b: 0},
+  {wl: 570, r: 255, g: 255, b: 0},
+  {wl: 530, r: 0, g: 255, b: 0},
+  {wl: 490, r: 0, g: 200, b: 255},
+  {wl: 460, r: 0, g: 100, b: 255},
+  {wl: 430, r: 80, g: 0, b: 255},
+  {wl: 400, r: 140, g: 0, b: 255},
+];
+
+function resize() { W = window.innerWidth; H = window.innerHeight; cv.width = W; cv.height = H; }
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('sl-inc').oninput = function() { incAngle = +this.value; document.getElementById('v-inc').textContent = (+this.value).toFixed(1) + '°'; };
+document.getElementById('sl-apex').oninput = function() { apexAngle = +this.value; document.getElementById('v-apex').textContent = this.value + '°'; };
+document.getElementById('sl-n').oninput = function() { baseN = +this.value; document.getElementById('v-n').textContent = (+this.value).toFixed(2); };
+document.getElementById('sl-disp').oninput = function() { dispCoeff = +this.value; document.getElementById('v-disp').textContent = (+this.value).toFixed(3); };
+document.getElementById('btn-anim').onclick = function() { animating = !animating; this.textContent = animating ? 'STOP' : 'ANIMATE'; };
+document.getElementById('btn-reset').onclick = function() {
+  incAngle = 45; apexAngle = 60; baseN = 1.52; dispCoeff = 0.02;
+  document.getElementById('sl-inc').value = 45;
+  document.getElementById('sl-apex').value = 60;
+  document.getElementById('sl-n').value = 1.52;
+  document.getElementById('sl-disp').value = 0.02;
+  document.getElementById('v-inc').textContent = '45.0°';
+  document.getElementById('v-apex').textContent = '60°';
+  document.getElementById('v-n').textContent = '1.52';
+  document.getElementById('v-disp').textContent = '0.020';
+};
+
+function cauchyN(wlNm) {
+  // Cauchy's equation approximation
+  const wlUm = wlNm / 1000;
+  return baseN + dispCoeff / (wlUm * wlUm);
+}
+
+function snellRefract(n1, n2, thetaI) {
+  const sinR = n1 * Math.sin(thetaI) / n2;
+  if (Math.abs(sinR) > 1) return null; // total internal reflection
+  return Math.asin(sinR);
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+
+  if (animating) {
+    animTime += 0.01;
+    incAngle = 35 + 25 * Math.sin(animTime);
+    document.getElementById('sl-inc').value = incAngle;
+    document.getElementById('v-inc').textContent = incAngle.toFixed(1) + '°';
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const cx = W * 0.45, cy = H * 0.55;
+  const prismSize = Math.min(W, H) * 0.28;
+  const apexRad = apexAngle * Math.PI / 180;
+
+  // Prism vertices (apex at top)
+  const ax = cx, ay = cy - prismSize * 0.6;
+  const bx = cx - prismSize * Math.tan(apexRad / 2) * 0.8, by = cy + prismSize * 0.4;
+  const dx = cx + prismSize * Math.tan(apexRad / 2) * 0.8, dy = cy + prismSize * 0.4;
+
+  // Draw prism
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.lineTo(dx, dy);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(180,200,255,0.08)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,0,0.4)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Left face normal and incidence
+  const leftFaceAngle = Math.atan2(ay - by, ax - bx);
+  const leftNormal = leftFaceAngle + Math.PI / 2;
+
+  // Entry point on left face
+  const entryT = 0.45;
+  const entryX = bx + (ax - bx) * entryT;
+  const entryY = by + (ay - by) * entryT;
+
+  const incRad = incAngle * Math.PI / 180;
+
+  // Draw incoming white ray
+  const inDir = leftNormal + Math.PI + incRad;
+  const inLen = prismSize * 1.5;
+  const inX = entryX + Math.cos(inDir) * inLen;
+  const inY = entryY + Math.sin(inDir) * inLen;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(inX, inY);
+  ctx.lineTo(entryX, entryY);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Normal line at entry
+  ctx.strokeStyle = 'rgba(255,255,0,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(entryX - Math.cos(leftNormal) * 50, entryY - Math.sin(leftNormal) * 50);
+  ctx.lineTo(entryX + Math.cos(leftNormal) * 50, entryY + Math.sin(leftNormal) * 50);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Right face angle
+  const rightFaceAngle = Math.atan2(dy - ay, dx - ax);
+  const rightNormal = rightFaceAngle + Math.PI / 2;
+
+  // Refract each wavelength
+  let minDev = Infinity, maxDev = -Infinity;
+  let nRed = cauchyN(700), nViolet = cauchyN(400);
+
+  for (let i = 0; i < spectrum.length; i++) {
+    const s = spectrum[i];
+    const n = cauchyN(s.wl);
+
+    // First refraction (air -> prism) at left face
+    const faceAngle1 = Math.atan2(ay - by, ax - bx);
+    const normalAngle1 = faceAngle1 - Math.PI / 2;
+    const theta1 = incRad;
+    const refracted1 = snellRefract(1.0, n, theta1);
+    if (refracted1 === null) continue;
+
+    // Ray direction inside prism
+    const innerDir = normalAngle1 + Math.PI + refracted1;
+
+    // Find exit point on right face
+    const rightFaceDx = dx - ax, rightFaceDy = dy - ay;
+    const rayDx = Math.cos(innerDir), rayDy = Math.sin(innerDir);
+
+    // Line intersection
+    const denom = rayDx * rightFaceDy - rayDy * rightFaceDx;
+    if (Math.abs(denom) < 1e-10) continue;
+    const t = ((ax - entryX) * rightFaceDy - (ay - entryY) * rightFaceDx) / denom;
+    if (t < 0) continue;
+
+    const exitX = entryX + rayDx * t;
+    const exitY = entryY + rayDy * t;
+
+    // Draw ray inside prism
+    ctx.strokeStyle = `rgba(${s.r},${s.g},${s.b},0.5)`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(entryX, entryY);
+    ctx.lineTo(exitX, exitY);
+    ctx.stroke();
+
+    // Second refraction at right face
+    const normalAngle2 = Math.atan2(dx - ax, -(dy - ay));
+    const faceNormal2 = Math.atan2(-(dx - ax), dy - ay) + Math.PI;
+
+    // Angle of incidence at second surface
+    const incidenceAngle2 = apexRad - refracted1;
+    if (incidenceAngle2 < 0) continue;
+
+    const refracted2 = snellRefract(n, 1.0, Math.abs(incidenceAngle2));
+    if (refracted2 === null) continue; // TIR
+
+    const deviation = refracted2 - incidenceAngle2;
+    if (refracted2 < minDev) minDev = refracted2;
+    if (refracted2 > maxDev) maxDev = refracted2;
+
+    // Exit ray direction
+    const exitDir = rightNormal + refracted2;
+    const outLen = prismSize * 1.8;
+    const outX = exitX + Math.cos(exitDir) * outLen;
+    const outY = exitY + Math.sin(exitDir) * outLen;
+
+    ctx.strokeStyle = `rgba(${s.r},${s.g},${s.b},0.8)`;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = `rgb(${s.r},${s.g},${s.b})`;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(exitX, exitY);
+    ctx.lineTo(outX, outY);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Label wavelength
+    const labelX = outX + 5;
+    const labelY = outY;
+    ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
+    ctx.font = '9px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText(s.wl + 'nm', exitX + (outX - exitX) * 0.7, exitY + (outY - exitY) * 0.7 - 5);
+  }
+
+  // Draw index table
+  const tableX = W * 0.72, tableY = H * 0.15;
+  ctx.fillStyle = 'rgba(255,255,0,0.6)';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('REFRACTIVE INDICES (Cauchy)', tableX, tableY);
+  ctx.fillStyle = '#445';
+  ctx.fillText('─'.repeat(28), tableX, tableY + 12);
+  for (let i = 0; i < spectrum.length; i++) {
+    const s = spectrum[i];
+    const n = cauchyN(s.wl);
+    ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
+    ctx.fillText(`${s.wl}nm  n = ${n.toFixed(4)}`, tableX, tableY + 26 + i * 16);
+  }
+
+  // Angle arc for incidence
+  ctx.strokeStyle = 'rgba(255,255,0,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(entryX, entryY, 30, leftNormal + Math.PI, leftNormal + Math.PI + incRad);
+  ctx.stroke();
+  ctx.fillStyle = '#ff0';
+  ctx.font = '10px Courier New';
+  ctx.fillText(incAngle.toFixed(1) + '°', entryX - 55, entryY - 15);
+
+  // Title
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-PRISM', 15, 25);
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Prism Light Dispersion  |  Snell\'s Law Refraction', 15, 42);
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) { fps = Math.round(frameCount * 1000 / (now - lastFps)); frameCount = 0; lastFps = now; }
+  document.getElementById('st-angle').textContent = apexAngle + '°';
+  document.getElementById('st-inc').textContent = incAngle.toFixed(1) + '°';
+  document.getElementById('st-nr').textContent = nRed.toFixed(3);
+  document.getElementById('st-nv').textContent = nViolet.toFixed(3);
+  document.getElementById('st-disp').textContent = ((maxDev - minDev) * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('st-fps').textContent = fps;
+}
+draw();
+</script>
+</body>
+</html>

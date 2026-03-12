@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-DIFFRACTION</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh}
+canvas{display:block;position:absolute;top:0;left:0;cursor:crosshair}
+.panel{position:fixed;background:rgba(6,6,16,.92);border:1px solid rgba(255,255,0,.15);border-radius:6px;padding:10px 14px;backdrop-filter:blur(10px);font-size:11px;pointer-events:auto;z-index:10}
+#stats{top:10px;right:10px;min-width:210px;line-height:1.7}
+#stats h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:6px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.label{color:#667}
+.val{color:#ff0;text-align:right}
+#controls{bottom:10px;left:10px;display:flex;flex-direction:column;gap:8px;min-width:240px}
+#controls h3{font-size:9px;letter-spacing:3px;color:#ff0;margin-bottom:4px;border-bottom:1px solid rgba(255,255,0,.2);padding-bottom:4px}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ctrl-row label{color:#667;font-size:10px;letter-spacing:1px;min-width:80px}
+.ctrl-row input[type=range]{width:110px;accent-color:#ff0}
+.ctrl-val{color:#ff0;font-size:10px;min-width:40px;text-align:right}
+button{background:rgba(255,255,0,.1);color:#ff0;border:1px solid rgba(255,255,0,.3);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:10px;cursor:pointer;letter-spacing:1px}
+button:hover{background:rgba(255,255,0,.2)}
+button.active{background:rgba(255,255,0,.3);border-color:#ff0}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="stats">
+  <h3>SHIELD-DIFFRACTION</h3>
+  <div class="row"><span class="label">Mode</span><span class="val" id="st-mode">Single Slit</span></div>
+  <div class="row"><span class="label">Slit Width</span><span class="val" id="st-sw">20 px</span></div>
+  <div class="row"><span class="label">Slit Sep.</span><span class="val" id="st-sep">80 px</span></div>
+  <div class="row"><span class="label">Wavelength</span><span class="val" id="st-wl">8.0</span></div>
+  <div class="row"><span class="label">Central Max</span><span class="val" id="st-cmax">1.00</span></div>
+  <div class="row"><span class="label">Frame Rate</span><span class="val" id="st-fps">60</span></div>
+</div>
+<div class="panel" id="controls">
+  <h3>CONTROLS</h3>
+  <div class="ctrl-row"><label>SLIT WIDTH</label><input type="range" id="sl-sw" min="4" max="60" step="2" value="20"><span class="ctrl-val" id="v-sw">20</span></div>
+  <div class="ctrl-row"><label>SEPARATION</label><input type="range" id="sl-sep" min="20" max="200" step="5" value="80"><span class="ctrl-val" id="v-sep">80</span></div>
+  <div class="ctrl-row"><label>WAVELENGTH</label><input type="range" id="sl-wl" min="3" max="20" step="0.5" value="8"><span class="ctrl-val" id="v-wl">8.0</span></div>
+  <div class="ctrl-row"><label>SPEED</label><input type="range" id="sl-spd" min="0.1" max="3" step="0.1" value="1"><span class="ctrl-val" id="v-spd">1.0</span></div>
+  <div class="ctrl-row">
+    <button id="btn-single" class="active">SINGLE SLIT</button>
+    <button id="btn-double">DOUBLE SLIT</button>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+let time = 0;
+let slitWidth = 20, slitSep = 80, wavelength = 8, speed = 1;
+let doubleSlit = false;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+
+function resize() { W = window.innerWidth; H = window.innerHeight; cv.width = W; cv.height = H; }
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('sl-sw').oninput = function() { slitWidth = +this.value; document.getElementById('v-sw').textContent = this.value; };
+document.getElementById('sl-sep').oninput = function() { slitSep = +this.value; document.getElementById('v-sep').textContent = this.value; };
+document.getElementById('sl-wl').oninput = function() { wavelength = +this.value; document.getElementById('v-wl').textContent = (+this.value).toFixed(1); };
+document.getElementById('sl-spd').oninput = function() { speed = +this.value; document.getElementById('v-spd').textContent = (+this.value).toFixed(1); };
+document.getElementById('btn-single').onclick = function() { doubleSlit = false; this.classList.add('active'); document.getElementById('btn-double').classList.remove('active'); };
+document.getElementById('btn-double').onclick = function() { doubleSlit = true; this.classList.add('active'); document.getElementById('btn-single').classList.remove('active'); };
+
+function sinc(x) { return x === 0 ? 1 : Math.sin(x) / x; }
+
+function draw() {
+  requestAnimationFrame(draw);
+  time += 0.03 * speed;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const barrierX = W * 0.3;
+  const screenX = W * 0.75;
+  const cy = H / 2;
+
+  // Draw barrier
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(barrierX - 3, 0, 6, H);
+
+  // Draw slits
+  ctx.fillStyle = '#060610';
+  if (doubleSlit) {
+    ctx.fillRect(barrierX - 3, cy - slitSep/2 - slitWidth/2, 6, slitWidth);
+    ctx.fillRect(barrierX - 3, cy + slitSep/2 - slitWidth/2, 6, slitWidth);
+    // Slit glow
+    ctx.shadowColor = '#ff0';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = 'rgba(255,255,0,0.3)';
+    ctx.fillRect(barrierX - 2, cy - slitSep/2 - slitWidth/2, 4, slitWidth);
+    ctx.fillRect(barrierX - 2, cy + slitSep/2 - slitWidth/2, 4, slitWidth);
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.fillRect(barrierX - 3, cy - slitWidth/2, 6, slitWidth);
+    ctx.shadowColor = '#ff0';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = 'rgba(255,255,0,0.3)';
+    ctx.fillRect(barrierX - 2, cy - slitWidth/2, 4, slitWidth);
+    ctx.shadowBlur = 0;
+  }
+
+  // Incoming plane wave
+  for (let i = 0; i < 15; i++) {
+    const x = ((barrierX * (i / 15) + time * 60) % barrierX);
+    ctx.strokeStyle = `rgba(255,255,0,${0.1 + 0.05 * Math.sin(time * 2 + i)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+
+  // Diffraction pattern on screen and propagating waves
+  const profileData = [];
+  const k = 2 * Math.PI / wavelength;
+
+  // Draw diffracted waves (Huygens' wavelets)
+  for (let y = 0; y < H; y += 2) {
+    let intensity = 0;
+    const theta = Math.atan2(y - cy, screenX - barrierX);
+
+    // Single slit diffraction envelope
+    const beta = k * (slitWidth / 2) * Math.sin(theta);
+    let singleEnvelope = sinc(beta);
+
+    if (doubleSlit) {
+      // Double slit: envelope * cos^2(delta/2)
+      const delta = k * slitSep * Math.sin(theta);
+      intensity = singleEnvelope * singleEnvelope * Math.cos(delta / 2) * Math.cos(delta / 2);
+    } else {
+      intensity = singleEnvelope * singleEnvelope;
+    }
+
+    profileData.push(intensity);
+
+    // Draw on screen
+    const bright = Math.floor(intensity * 255);
+    const r = Math.floor(bright * 1.0);
+    const g = Math.floor(bright * 0.95);
+    const b = Math.floor(bright * 0.2);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(screenX - 2, y, 8, 2);
+  }
+
+  // Draw propagating circular wavefronts from slits
+  const slitPositions = doubleSlit
+    ? [cy - slitSep/2, cy + slitSep/2]
+    : [cy];
+
+  for (let s = 0; s < slitPositions.length; s++) {
+    const sy = slitPositions[s];
+    for (let r = 0; r < 20; r++) {
+      const radius = ((time * 60 + r * wavelength * 3) % (W * 0.8));
+      if (radius < 5) continue;
+      const alpha = Math.max(0, 0.15 - radius / (W * 6));
+      ctx.strokeStyle = `rgba(255,255,0,${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(barrierX, sy, radius, -Math.PI/2.5, Math.PI/2.5);
+      ctx.stroke();
+    }
+  }
+
+  // Draw intensity profile graph
+  const graphX = screenX + 30;
+  const graphW = W - graphX - 20;
+  if (graphW > 50) {
+    ctx.strokeStyle = 'rgba(255,255,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(graphX, 0);
+    ctx.lineTo(graphX, H);
+    ctx.stroke();
+
+    ctx.fillStyle = '#667';
+    ctx.font = '9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('INTENSITY PROFILE', graphX + graphW/2, 20);
+
+    ctx.strokeStyle = '#ff0';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let centralMax = 0;
+    for (let y = 0; y < profileData.length; y++) {
+      const px = graphX + profileData[y] * graphW * 0.9;
+      if (profileData[y] > centralMax) centralMax = profileData[y];
+      if (y === 0) ctx.moveTo(px, y * 2);
+      else ctx.lineTo(px, y * 2);
+    }
+    ctx.stroke();
+    document.getElementById('st-cmax').textContent = centralMax.toFixed(2);
+  }
+
+  // Title
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHIELD-DIFFRACTION', 15, 25);
+  ctx.fillStyle = '#667';
+  ctx.font = '10px Courier New';
+  ctx.fillText('Single/Double Slit Diffraction Simulation', 15, 42);
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) { fps = Math.round(frameCount * 1000 / (now - lastFps)); frameCount = 0; lastFps = now; }
+  document.getElementById('st-mode').textContent = doubleSlit ? 'Double Slit' : 'Single Slit';
+  document.getElementById('st-sw').textContent = slitWidth + ' px';
+  document.getElementById('st-sep').textContent = slitSep + ' px';
+  document.getElementById('st-wl').textContent = wavelength.toFixed(1);
+  document.getElementById('st-fps').textContent = fps;
+}
+draw();
+</script>
+</body>
+</html>

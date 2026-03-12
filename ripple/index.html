@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-RIPPLE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.7; min-width: 180px; z-index: 10;
+}
+#stats .title { color: #4af; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #8090a8; }
+#stats .val { color: #c0c8d8; float: right; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(68,170,255,0.15); color: #4af; border: 1px solid #4af;
+  border-radius: 3px; padding: 6px 14px; font-family: 'Courier New', monospace;
+  font-size: 13px; cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,170,255,0.3); }
+#controls label { color: #8090a8; display: flex; align-items: center; gap: 8px; }
+#controls input[type=range] { width: 120px; accent-color: #4af; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-RIPPLE</div>
+  <div><span class="label">Grid</span><span class="val" id="sGrid">—</span></div>
+  <div><span class="label">FPS</span><span class="val" id="sFps">—</span></div>
+  <div><span class="label">Damping</span><span class="val" id="sDamp">—</span></div>
+  <div><span class="label">Sources</span><span class="val" id="sSrc">—</span></div>
+</div>
+<div id="controls">
+  <label>Damping <input type="range" id="rDamp" min="1" max="100" value="50"></label>
+  <label>Drop Size <input type="range" id="rSize" min="1" max="20" value="6"></label>
+  <label>Wave Speed <input type="range" id="rSpeed" min="1" max="10" value="5"></label>
+  <button id="bRain">Toggle Rain</button>
+  <button id="bClear">Clear</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, GW, GH, buf1, buf2, img;
+const SCALE = 3;
+let damping = 0.985;
+let dropSize = 6;
+let waveSpeed = 0.5;
+let raining = false;
+let sourceCount = 0;
+let totalSources = 0;
+
+function init() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  GW = Math.floor(W / SCALE);
+  GH = Math.floor(H / SCALE);
+  buf1 = new Float32Array(GW * GH);
+  buf2 = new Float32Array(GW * GH);
+  img = ctx.createImageData(GW, GH);
+}
+
+function drop(cx, cy, radius, strength) {
+  strength = strength || 512;
+  totalSources++;
+  for (let y = -radius; y <= radius; y++) {
+    for (let x = -radius; x <= radius; x++) {
+      const d = Math.sqrt(x * x + y * y);
+      if (d > radius) continue;
+      const px = cx + x, py = cy + y;
+      if (px < 1 || px >= GW - 1 || py < 1 || py >= GH - 1) continue;
+      buf1[py * GW + px] += strength * (1 - d / radius);
+    }
+  }
+}
+
+function simulate() {
+  const c = waveSpeed;
+  for (let y = 1; y < GH - 1; y++) {
+    for (let x = 1; x < GW - 1; x++) {
+      const i = y * GW + x;
+      buf2[i] = c * (
+        buf1[i - 1] + buf1[i + 1] +
+        buf1[i - GW] + buf1[i + GW]
+      ) / 2 - buf2[i];
+      buf2[i] *= damping;
+    }
+  }
+  [buf1, buf2] = [buf2, buf1];
+}
+
+function renderGrid() {
+  for (let i = 0; i < GW * GH; i++) {
+    const v = buf1[i];
+    const idx = i * 4;
+    const pos = Math.max(0, v);
+    const neg = Math.max(0, -v);
+    img.data[idx]     = Math.min(255, Math.floor(neg * 0.3 + pos * 0.27));
+    img.data[idx + 1] = Math.min(255, Math.floor(neg * 0.5 + pos * 0.67));
+    img.data[idx + 2] = Math.min(255, Math.floor(neg * 0.8 + pos * 1.0));
+    img.data[idx + 3] = Math.min(255, Math.floor(Math.abs(v) * 2) + 6);
+  }
+}
+
+let lastTime = performance.now(), fps = 60;
+
+function render() {
+  const now = performance.now();
+  fps = fps * 0.95 + 0.05 * (1000 / (now - lastTime));
+  lastTime = now;
+
+  if (raining && Math.random() < 0.08) {
+    const rx = Math.floor(Math.random() * (GW - 20)) + 10;
+    const ry = Math.floor(Math.random() * (GH - 20)) + 10;
+    drop(rx, ry, dropSize, 256 + Math.random() * 256);
+  }
+
+  simulate();
+  renderGrid();
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const tmp = document.createElement('canvas');
+  tmp.width = GW; tmp.height = GH;
+  tmp.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(tmp, 0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(68,170,255,0.3)';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SHIELD-RIPPLE', 16, 30);
+
+  document.getElementById('sGrid').textContent = GW + 'x' + GH;
+  document.getElementById('sFps').textContent = fps.toFixed(1);
+  document.getElementById('sDamp').textContent = damping.toFixed(4);
+  document.getElementById('sSrc').textContent = totalSources;
+
+  requestAnimationFrame(render);
+}
+
+canvas.addEventListener('mousedown', e => {
+  drop(Math.floor(e.clientX / SCALE), Math.floor(e.clientY / SCALE), dropSize, 512);
+});
+canvas.addEventListener('mousemove', e => {
+  if (e.buttons) drop(Math.floor(e.clientX / SCALE), Math.floor(e.clientY / SCALE), dropSize, 256);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.touches) drop(Math.floor(t.clientX / SCALE), Math.floor(t.clientY / SCALE), dropSize, 512);
+});
+
+document.getElementById('rDamp').addEventListener('input', e => damping = 0.95 + e.target.value / 100 * 0.049);
+document.getElementById('rSize').addEventListener('input', e => dropSize = parseInt(e.target.value));
+document.getElementById('rSpeed').addEventListener('input', e => waveSpeed = e.target.value / 10);
+document.getElementById('bRain').addEventListener('click', () => { raining = !raining; });
+document.getElementById('bClear').addEventListener('click', () => { buf1.fill(0); buf2.fill(0); totalSources = 0; });
+
+window.addEventListener('resize', init);
+init();
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SLIME</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 16px; right: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.7; min-width: 180px; z-index: 10;
+}
+#stats .title { color: #4af; font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+#stats .label { color: #8090a8; }
+#stats .val { color: #c0c8d8; float: right; }
+#controls {
+  position: fixed; bottom: 16px; left: 16px; background: rgba(6,6,16,0.85);
+  border: 1px solid #4af; border-radius: 4px; padding: 12px 16px;
+  font-size: 13px; z-index: 10; display: flex; flex-direction: column; gap: 8px;
+}
+#controls button {
+  background: rgba(68,170,255,0.15); color: #4af; border: 1px solid #4af;
+  border-radius: 3px; padding: 6px 14px; font-family: 'Courier New', monospace;
+  font-size: 13px; cursor: pointer; transition: background 0.2s;
+}
+#controls button:hover { background: rgba(68,170,255,0.3); }
+#controls label { color: #8090a8; display: flex; align-items: center; gap: 8px; }
+#controls input[type=range] { width: 120px; accent-color: #4af; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-SLIME</div>
+  <div><span class="label">Agents</span><span class="val" id="sAgents">—</span></div>
+  <div><span class="label">FPS</span><span class="val" id="sFps">—</span></div>
+  <div><span class="label">Sensor Ang</span><span class="val" id="sSensor">—</span></div>
+  <div><span class="label">Decay</span><span class="val" id="sDecay">—</span></div>
+</div>
+<div id="controls">
+  <label>Sensor Angle <input type="range" id="rSensor" min="5" max="90" value="30"></label>
+  <label>Sensor Dist <input type="range" id="rDist" min="3" max="40" value="15"></label>
+  <label>Turn Speed <input type="range" id="rTurn" min="5" max="90" value="30"></label>
+  <label>Decay Rate <input type="range" id="rDecay" min="1" max="50" value="10"></label>
+  <button id="bReset">Reset</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+const SCALE = 2;
+let GW, GH;
+let trail, trailNext;
+let agents = [];
+
+let sensorAngle = Math.PI / 6;
+let sensorDist = 15;
+let turnSpeed = Math.PI / 6;
+let moveSpeed = 1.5;
+let decayRate = 0.02;
+let depositAmount = 1;
+
+const NUM_AGENTS = 8000;
+
+class Agent {
+  constructor() {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * Math.min(GW, GH) * 0.3;
+    this.x = GW / 2 + Math.cos(a) * r;
+    this.y = GH / 2 + Math.sin(a) * r;
+    this.angle = a + Math.PI + (Math.random() - 0.5);
+  }
+}
+
+function sense(agent, angleOffset) {
+  const a = agent.angle + angleOffset;
+  const sx = Math.floor(agent.x + Math.cos(a) * sensorDist);
+  const sy = Math.floor(agent.y + Math.sin(a) * sensorDist);
+  if (sx < 0 || sx >= GW || sy < 0 || sy >= GH) return 0;
+  // Sum in a small area
+  let sum = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const px = sx + dx, py = sy + dy;
+      if (px >= 0 && px < GW && py >= 0 && py < GH)
+        sum += trail[py * GW + px];
+    }
+  }
+  return sum;
+}
+
+function initSim() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  GW = Math.floor(W / SCALE);
+  GH = Math.floor(H / SCALE);
+  trail = new Float32Array(GW * GH);
+  trailNext = new Float32Array(GW * GH);
+  agents = [];
+  for (let i = 0; i < NUM_AGENTS; i++) agents.push(new Agent());
+}
+
+function stepAgents() {
+  for (const a of agents) {
+    const fwd = sense(a, 0);
+    const left = sense(a, sensorAngle);
+    const right = sense(a, -sensorAngle);
+
+    if (fwd > left && fwd > right) {
+      // keep going
+    } else if (fwd < left && fwd < right) {
+      a.angle += (Math.random() - 0.5) * 2 * turnSpeed;
+    } else if (left > right) {
+      a.angle += turnSpeed * 0.3;
+    } else {
+      a.angle -= turnSpeed * 0.3;
+    }
+
+    a.x += Math.cos(a.angle) * moveSpeed;
+    a.y += Math.sin(a.angle) * moveSpeed;
+
+    // Bounce off walls
+    if (a.x < 0) { a.x = 0; a.angle = Math.PI - a.angle; }
+    if (a.x >= GW) { a.x = GW - 1; a.angle = Math.PI - a.angle; }
+    if (a.y < 0) { a.y = 0; a.angle = -a.angle; }
+    if (a.y >= GH) { a.y = GH - 1; a.angle = -a.angle; }
+
+    const ix = Math.floor(a.x), iy = Math.floor(a.y);
+    if (ix >= 0 && ix < GW && iy >= 0 && iy < GH)
+      trail[iy * GW + ix] = Math.min(trail[iy * GW + ix] + depositAmount, 5);
+  }
+}
+
+function diffuseAndDecay() {
+  for (let y = 1; y < GH - 1; y++) {
+    for (let x = 1; x < GW - 1; x++) {
+      const i = y * GW + x;
+      let sum = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++)
+          sum += trail[(y + dy) * GW + (x + dx)];
+      trailNext[i] = Math.max(0, sum / 9 - decayRate);
+    }
+  }
+  [trail, trailNext] = [trailNext, trail];
+}
+
+let lastTime = performance.now(), fps = 60;
+
+function render() {
+  const now = performance.now();
+  fps = fps * 0.95 + 0.05 * (1000 / (now - lastTime));
+  lastTime = now;
+
+  stepAgents();
+  diffuseAndDecay();
+
+  const img = ctx.createImageData(GW, GH);
+  for (let i = 0; i < GW * GH; i++) {
+    const v = Math.min(trail[i], 3) / 3;
+    const idx = i * 4;
+    img.data[idx]     = Math.floor(v * 68);
+    img.data[idx + 1] = Math.floor(v * 170);
+    img.data[idx + 2] = Math.floor(v * 255);
+    img.data[idx + 3] = Math.floor(v * 255 + 6);
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+  const tmp = document.createElement('canvas');
+  tmp.width = GW; tmp.height = GH;
+  tmp.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(tmp, 0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(68,170,255,0.3)';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SHIELD-SLIME', 16, 30);
+
+  document.getElementById('sAgents').textContent = agents.length;
+  document.getElementById('sFps').textContent = fps.toFixed(1);
+  document.getElementById('sSensor').textContent = (sensorAngle * 180 / Math.PI).toFixed(0) + '\u00b0';
+  document.getElementById('sDecay').textContent = decayRate.toFixed(3);
+
+  requestAnimationFrame(render);
+}
+
+document.getElementById('rSensor').addEventListener('input', e => sensorAngle = e.target.value * Math.PI / 180);
+document.getElementById('rDist').addEventListener('input', e => sensorDist = parseInt(e.target.value));
+document.getElementById('rTurn').addEventListener('input', e => turnSpeed = e.target.value * Math.PI / 180);
+document.getElementById('rDecay').addEventListener('input', e => decayRate = e.target.value / 1000);
+document.getElementById('bReset').addEventListener('click', initSim);
+
+canvas.addEventListener('click', e => {
+  const cx = Math.floor(e.clientX / SCALE), cy = Math.floor(e.clientY / SCALE);
+  for (let i = 0; i < 200; i++) {
+    const a = new Agent();
+    a.x = cx + (Math.random() - 0.5) * 20;
+    a.y = cy + (Math.random() - 0.5) * 20;
+    a.angle = Math.random() * Math.PI * 2;
+    agents.push(a);
+  }
+});
+
+window.addEventListener('resize', initSim);
+initSim();
+render();
+</script>
+</body>
+</html>

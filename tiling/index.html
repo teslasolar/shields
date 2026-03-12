@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-TILING</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060610; color: #c0c8d8; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#stats {
+  position: fixed; top: 10px; right: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; font-size: 13px; line-height: 1.7;
+  border-radius: 4px; min-width: 210px; z-index: 10;
+}
+#stats .label { color: #888; }
+#stats .value { color: #f0a; }
+#controls {
+  position: fixed; bottom: 10px; left: 10px; background: rgba(6,6,16,0.85);
+  border: 1px solid #f0a; padding: 12px 16px; border-radius: 4px; z-index: 10;
+}
+#controls button {
+  background: transparent; color: #f0a; border: 1px solid #f0a;
+  padding: 6px 14px; margin: 3px; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 12px; border-radius: 3px; transition: all 0.2s;
+}
+#controls button:hover { background: #f0a; color: #060610; }
+#controls .row { margin: 4px 0; }
+#controls .ctrl-label { color: #888; font-size: 11px; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div><span class="label">SHIELD-TILING</span></div>
+  <div><span class="label">tile set: </span><span class="value" id="s-set">wang-4</span></div>
+  <div><span class="label">grid: </span><span class="value" id="s-grid">0x0</span></div>
+  <div><span class="label">tiles placed: </span><span class="value" id="s-placed">0</span></div>
+  <div><span class="label">conflicts: </span><span class="value" id="s-conflicts">0</span></div>
+  <div><span class="label">fps: </span><span class="value" id="s-fps">0</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-label">TILE SET</div>
+  <div class="row">
+    <button onclick="setTileSet('wang-4')">WANG-4</button>
+    <button onclick="setTileSet('wang-8')">WANG-8</button>
+    <button onclick="setTileSet('wang-11')">WANG-11</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button onclick="regenerate()">REGENERATE</button>
+    <button onclick="animating=!animating">ANIMATE</button>
+    <button onclick="showEdgeColors=!showEdgeColors">EDGES</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; regenerate(); }
+window.addEventListener('resize', resize);
+resize();
+
+let tileSetName = 'wang-4';
+let grid = [];
+let cols = 0, rows = 0;
+let animating = true;
+let showEdgeColors = true;
+let placeIndex = 0;
+let conflicts = 0;
+let hueOffset = 0;
+let fps = 0, frameCount = 0, fpsTime = 0;
+
+const TILE_SIZE = 40;
+
+// Wang tile sets: each tile has [north, east, south, west] edge colors
+const tileSets = {
+  'wang-4': {
+    colors: ['#f0a', '#4af', '#fa0', '#0f8'],
+    numColors: 4,
+    tiles: generateWangTiles(4)
+  },
+  'wang-8': {
+    colors: ['#f0a', '#4af', '#fa0', '#0f8', '#f44', '#a4f', '#ff4', '#4ff'],
+    numColors: 4,
+    tiles: generateWangTiles(4, true)
+  },
+  'wang-11': {
+    colors: ['#f0a', '#4af', '#fa0', '#0f8', '#f44'],
+    numColors: 5,
+    tiles: generateWangTiles(5)
+  }
+};
+
+function generateWangTiles(numEdgeColors, extended) {
+  const tiles = [];
+  const seen = new Set();
+  // Generate all valid combinations
+  for (let n = 0; n < numEdgeColors; n++) {
+    for (let e = 0; e < numEdgeColors; e++) {
+      for (let s = 0; s < numEdgeColors; s++) {
+        for (let w = 0; w < numEdgeColors; w++) {
+          const key = `${n},${e},${s},${w}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            tiles.push([n, e, s, w]);
+          }
+          if (tiles.length > (extended ? 64 : 32)) break;
+        }
+        if (tiles.length > (extended ? 64 : 32)) break;
+      }
+      if (tiles.length > (extended ? 64 : 32)) break;
+    }
+    if (tiles.length > (extended ? 64 : 32)) break;
+  }
+  return tiles;
+}
+
+function findMatchingTile(row, col, tileSet) {
+  const tiles = tileSet.tiles;
+  const candidates = [];
+
+  for (let i = 0; i < tiles.length; i++) {
+    const tile = tiles[i];
+    let valid = true;
+
+    // Check north neighbor (must match south edge)
+    if (row > 0 && grid[row-1][col] !== null) {
+      if (tile[0] !== grid[row-1][col][2]) valid = false;
+    }
+    // Check west neighbor (must match east edge)
+    if (col > 0 && grid[row][col-1] !== null) {
+      if (tile[3] !== grid[row][col-1][1]) valid = false;
+    }
+
+    if (valid) candidates.push(tile);
+  }
+
+  if (candidates.length > 0) {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  // Fallback: pick random tile (conflict)
+  conflicts++;
+  return tiles[Math.floor(Math.random() * tiles.length)];
+}
+
+function regenerate() {
+  cols = Math.ceil(W / TILE_SIZE) + 1;
+  rows = Math.ceil(H / TILE_SIZE) + 1;
+  grid = Array.from({ length: rows }, () => Array(cols).fill(null));
+  placeIndex = 0;
+  conflicts = 0;
+  document.getElementById('s-grid').textContent = cols + 'x' + rows;
+}
+
+function setTileSet(name) {
+  tileSetName = name;
+  document.getElementById('s-set').textContent = name;
+  regenerate();
+}
+
+function drawTile(x, y, tile, tileSet) {
+  const s = TILE_SIZE;
+  const cx = x + s / 2;
+  const cy = y + s / 2;
+  const colors = tileSet.colors;
+
+  // Fill based on tile hash
+  const hash = tile[0] * 125 + tile[1] * 25 + tile[2] * 5 + tile[3];
+  const hue = (hash * 37 + hueOffset) % 360;
+  ctx.fillStyle = `hsla(${hue}, 50%, 20%, 0.9)`;
+  ctx.fillRect(x, y, s, s);
+
+  // Draw edge-colored triangles
+  if (showEdgeColors) {
+    // North
+    ctx.fillStyle = colors[tile[0] % colors.length];
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + s, y); ctx.lineTo(cx, cy); ctx.closePath();
+    ctx.fill();
+    // East
+    ctx.fillStyle = colors[tile[1] % colors.length];
+    ctx.beginPath();
+    ctx.moveTo(x + s, y); ctx.lineTo(x + s, y + s); ctx.lineTo(cx, cy); ctx.closePath();
+    ctx.fill();
+    // South
+    ctx.fillStyle = colors[tile[2] % colors.length];
+    ctx.beginPath();
+    ctx.moveTo(x + s, y + s); ctx.lineTo(x, y + s); ctx.lineTo(cx, cy); ctx.closePath();
+    ctx.fill();
+    // West
+    ctx.fillStyle = colors[tile[3] % colors.length];
+    ctx.beginPath();
+    ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(cx, cy); ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Border
+  ctx.strokeStyle = 'rgba(255,0,170,0.25)';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(x, y, s, s);
+}
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  frameCount++;
+  if (time - fpsTime > 1000) { fps = frameCount; frameCount = 0; fpsTime = time; }
+
+  hueOffset += 0.2;
+
+  const tileSet = tileSets[tileSetName];
+
+  // Place tiles progressively
+  if (animating && placeIndex < rows * cols) {
+    for (let i = 0; i < 3 && placeIndex < rows * cols; i++) {
+      const row = Math.floor(placeIndex / cols);
+      const col = placeIndex % cols;
+      grid[row][col] = findMatchingTile(row, col, tileSet);
+      placeIndex++;
+    }
+  } else if (animating && placeIndex >= rows * cols) {
+    // Regenerate after filled
+    if (frameCount % 300 === 0) regenerate();
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw all placed tiles
+  let placed = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (grid[row][col] !== null) {
+        drawTile(col * TILE_SIZE, row * TILE_SIZE, grid[row][col], tileSet);
+        placed++;
+      }
+    }
+  }
+
+  // Draw placement frontier
+  if (placeIndex < rows * cols) {
+    const fRow = Math.floor(placeIndex / cols);
+    const fCol = placeIndex % cols;
+    ctx.strokeStyle = '#f0a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(fCol * TILE_SIZE, fRow * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+  }
+
+  // Title
+  ctx.fillStyle = '#f0a';
+  ctx.font = 'bold 14px Courier New';
+  ctx.fillText('SHIELD-TILING', 15, 25);
+
+  document.getElementById('s-placed').textContent = placed;
+  document.getElementById('s-conflicts').textContent = conflicts;
+  document.getElementById('s-fps').textContent = fps;
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
