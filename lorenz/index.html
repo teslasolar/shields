@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-LORENZ — Strange Attractor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #c0c0c0;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #stats {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(6,6,16,0.88); border: 1px solid #f84;
+    padding: 14px 18px; font-size: 12px; line-height: 1.8;
+    z-index: 10; min-width: 230px; border-radius: 2px;
+    pointer-events: none;
+  }
+  #stats .title { color: #f84; font-size: 13px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1.5px; }
+  #stats .label { color: #777; }
+  #stats .value { color: #eee; }
+  #controls {
+    position: fixed; bottom: 16px; left: 16px;
+    background: rgba(6,6,16,0.88); border: 1px solid #333;
+    padding: 14px 18px; font-size: 11px; line-height: 2.4;
+    z-index: 10; min-width: 270px; border-radius: 2px;
+  }
+  #controls .ctrl-title { color: #f84; font-size: 12px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1.5px; }
+  #controls label { display: flex; align-items: center; gap: 8px; color: #aaa; }
+  #controls input[type=range] { flex: 1; accent-color: #f84; cursor: crosshair; height: 4px; }
+  #controls .val { color: #eee; min-width: 48px; text-align: right; font-size: 11px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-LORENZ</div>
+  <div>Strange Attractor</div>
+  <br>
+  <div><span class="label">sigma    : </span><span class="value" id="s-sigma">10.000</span></div>
+  <div><span class="label">rho      : </span><span class="value" id="s-rho">28.000</span></div>
+  <div><span class="label">beta     : </span><span class="value" id="s-beta">2.667</span></div>
+  <div><span class="label">iter     : </span><span class="value" id="s-iter">0</span></div>
+  <div><span class="label">lyapunov : </span><span class="value" id="s-lyap">---</span></div>
+  <div><span class="label">particles: </span><span class="value" id="s-parts">8</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-title">CONTROLS</div>
+  <label>sigma   <input type="range" id="c-sigma" min="1" max="30" step="0.1" value="10"> <span class="val" id="v-sigma">10.0</span></label>
+  <label>rho     <input type="range" id="c-rho" min="0" max="50" step="0.1" value="28"> <span class="val" id="v-rho">28.0</span></label>
+  <label>beta    <input type="range" id="c-beta" min="0.1" max="8" step="0.01" value="2.67"> <span class="val" id="v-beta">2.67</span></label>
+  <label>trail   <input type="range" id="c-trail" min="200" max="6000" step="100" value="2500"> <span class="val" id="v-trail">2500</span></label>
+  <label>rot spd <input type="range" id="c-rot" min="0" max="100" step="1" value="30"> <span class="val" id="v-rot">30</span></label>
+</div>
+<script>
+(function(){
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr = window.devicePixelRatio || 1;
+
+function resize() {
+  W = canvas.width = window.innerWidth * dpr;
+  H = canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+let sigma = 10, rho = 28, beta = 8/3;
+let trailLen = 2500, rotSpeed = 0.3;
+
+function bind(id, vid, cb) {
+  const el = document.getElementById(id), vl = document.getElementById(vid);
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    const d = el.step.includes('.') ? (el.step.split('.')[1] || '').length || 1 : 0;
+    vl.textContent = v.toFixed(d);
+    cb(v);
+  });
+}
+bind('c-sigma','v-sigma', v => sigma = v);
+bind('c-rho','v-rho', v => rho = v);
+bind('c-beta','v-beta', v => beta = v);
+bind('c-trail','v-trail', v => trailLen = v);
+bind('c-rot','v-rot', v => rotSpeed = v / 100);
+
+function lorenz(x,y,z) {
+  return [sigma*(y-x), x*(rho-z)-y, x*y - beta*z];
+}
+
+function rk4(x,y,z,dt) {
+  const [k1x,k1y,k1z] = lorenz(x,y,z);
+  const [k2x,k2y,k2z] = lorenz(x+k1x*dt/2, y+k1y*dt/2, z+k1z*dt/2);
+  const [k3x,k3y,k3z] = lorenz(x+k2x*dt/2, y+k2y*dt/2, z+k2z*dt/2);
+  const [k4x,k4y,k4z] = lorenz(x+k3x*dt, y+k3y*dt, z+k3z*dt);
+  return [
+    x + (k1x+2*k2x+2*k3x+k4x)*dt/6,
+    y + (k1y+2*k2y+2*k3y+k4y)*dt/6,
+    z + (k1z+2*k2z+2*k3z+k4z)*dt/6
+  ];
+}
+
+const NP = 8, dt = 0.005;
+let particles = [], iteration = 0;
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < NP; i++) {
+    particles.push({
+      x: 0.1 + Math.random()*4 - 2,
+      y: 0.1 + Math.random()*4 - 2,
+      z: 20 + Math.random()*10,
+      trail: [],
+      hueOff: (i / NP) * 360
+    });
+  }
+}
+initParticles();
+
+let lyapSum = 0, lyapN = 0;
+let rx = 1, ry = 1, rz = 20;
+const eps = 1e-8;
+let px = rx + eps, py = ry, pz = rz;
+
+let angle = 0, time = 0;
+
+function project(x,y,z) {
+  const ca = Math.cos(angle), sa = Math.sin(angle);
+  const px2 = x*ca - y*sa;
+  const py2 = x*sa + y*ca;
+  const sc = Math.min(W,H) / 90;
+  return [W/2 + px2*sc, H/2 - (z-25)*sc + py2*sc*0.3];
+}
+
+function hsl(h,s,l,a) { return 'hsla('+((h%360+360)%360)+','+s+'%,'+l+'%,'+a+')'; }
+
+function frame() {
+  requestAnimationFrame(frame);
+  time++;
+  angle += rotSpeed * 0.012;
+
+  ctx.fillStyle = 'rgba(6,6,16,0.06)';
+  ctx.fillRect(0,0,W,H);
+
+  const steps = 5;
+  for (let s = 0; s < steps; s++) {
+    iteration++;
+    for (const p of particles) {
+      [p.x,p.y,p.z] = rk4(p.x,p.y,p.z,dt);
+      if (!isFinite(p.x)) { p.x=0.1; p.y=0.1; p.z=20; p.trail=[]; }
+      p.trail.push([p.x,p.y,p.z]);
+      if (p.trail.length > trailLen) p.trail.shift();
+    }
+    [rx,ry,rz] = rk4(rx,ry,rz,dt);
+    [px,py,pz] = rk4(px,py,pz,dt);
+    const dx=px-rx, dy=py-ry, dz=pz-rz;
+    const dist = Math.sqrt(dx*dx+dy*dy+dz*dz);
+    if (dist > 0 && isFinite(dist)) {
+      lyapSum += Math.log(dist/eps);
+      lyapN++;
+      const r2 = eps/dist;
+      px=rx+dx*r2; py=ry+dy*r2; pz=rz+dz*r2;
+    }
+  }
+
+  for (const p of particles) {
+    const tr = p.trail;
+    if (tr.length < 2) continue;
+    ctx.lineWidth = 1.2 * dpr;
+    ctx.lineCap = 'round';
+    for (let i = 1; i < tr.length; i += 2) {
+      const frac = i / tr.length;
+      const alpha = frac * 0.65 + 0.05;
+      const hu = (p.hueOff + i * 0.12 + time * 0.25) % 360;
+      const [x1,y1] = project(tr[i-1][0],tr[i-1][1],tr[i-1][2]);
+      const [x2,y2] = project(tr[i][0],tr[i][1],tr[i][2]);
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x2,y2);
+      ctx.strokeStyle = hsl(hu,85,55,alpha);
+      ctx.lineWidth = (0.6 + frac * 1.8) * dpr;
+      ctx.stroke();
+    }
+    const last = tr[tr.length-1];
+    const [hx,hy] = project(last[0],last[1],last[2]);
+    const hu = (p.hueOff + time*0.25) % 360;
+    const gr = ctx.createRadialGradient(hx,hy,0,hx,hy,10*dpr);
+    gr.addColorStop(0, hsl(hu,95,75,0.9));
+    gr.addColorStop(1, hsl(hu,95,75,0));
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.arc(hx,hy,10*dpr,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  if (time % 8 === 0) {
+    document.getElementById('s-sigma').textContent = sigma.toFixed(3);
+    document.getElementById('s-rho').textContent = rho.toFixed(3);
+    document.getElementById('s-beta').textContent = beta.toFixed(3);
+    document.getElementById('s-iter').textContent = iteration.toLocaleString();
+    document.getElementById('s-lyap').textContent = lyapN > 100 ? (lyapSum/(lyapN*dt)).toFixed(3) : '---';
+  }
+}
+frame();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-ELLIPTIC — Elliptic Curve Cryptography</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c8d8;font-family:'Courier New',monospace;overflow:hidden;height:100vh;width:100vw}
+canvas{display:block;cursor:crosshair}
+#stats{position:fixed;top:48px;right:14px;width:260px;background:rgba(6,6,16,.92);border:1px solid rgba(79,248,128,.15);border-radius:8px;padding:14px 16px;backdrop-filter:blur(12px);z-index:1000;font-size:11px;line-height:1.8}
+#stats h2{font-size:10px;letter-spacing:3px;color:#4f8;margin-bottom:8px;border-bottom:1px solid rgba(79,248,128,.15);padding-bottom:6px}
+#stats .row{display:flex;justify-content:space-between}
+#stats .label{color:#667}
+#stats .val{color:#4f8;font-weight:bold}
+#controls{position:fixed;bottom:14px;left:14px;background:rgba(6,6,16,.92);border:1px solid rgba(79,248,128,.15);border-radius:8px;padding:12px 16px;backdrop-filter:blur(12px);z-index:1000;display:flex;gap:8px;flex-wrap:wrap;max-width:500px}
+.btn{background:rgba(79,248,128,.08);border:1px solid rgba(79,248,128,.2);color:#4f8;padding:6px 12px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:10px;letter-spacing:1px;transition:all .2s}
+.btn:hover{background:rgba(79,248,128,.2);border-color:#4f8}
+.btn.active{background:rgba(79,248,128,.25);border-color:#4f8;color:#fff}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+<h2>ELLIPTIC CURVE</h2>
+<div class="row"><span class="label">CURVE</span><span class="val" id="s-curve">y² = x³ - x + 1</span></div>
+<div class="row"><span class="label">FIELD</span><span class="val" id="s-field">F₂₃</span></div>
+<div class="row"><span class="label">BASE POINT</span><span class="val" id="s-base">(0, 1)</span></div>
+<div class="row"><span class="label">ORDER</span><span class="val" id="s-order">—</span></div>
+<div class="row"><span class="label">CURRENT PT</span><span class="val" id="s-cur">(0, 1)</span></div>
+<div class="row"><span class="label">SCALAR n</span><span class="val" id="s-n">1</span></div>
+</div>
+<div id="controls">
+<button class="btn" onclick="stepAdd()">+ ADD P</button>
+<button class="btn" onclick="resetPoint()">RESET</button>
+<button class="btn" onclick="animateScalar()">ANIMATE nP</button>
+<button class="btn active" onclick="changeCurve(0)" id="c0">y²=x³-x+1</button>
+<button class="btn" onclick="changeCurve(1)" id="c1">y²=x³+x+1</button>
+<button class="btn" onclick="changeCurve(2)" id="c2">y²=x³-3x+3</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}
+resize();addEventListener('resize',resize);
+
+const CURVES=[{a:-1,b:1,p:23},{a:1,b:1,p:29},{a:-3,b:3,p:31}];
+let ci=0,curve=CURVES[0];
+let points=[];
+let basePoint=null,currentPoint=null,scalar=1;
+let trail=[];
+let animating=false,animN=0,animTarget=0;
+let frame=0;
+
+function mod(a,m){return((a%m)+m)%m}
+function modinv(a,m){let g=m,x=0,y=1;a=mod(a,m);if(a===0)return 0;let ta=a;while(ta!==0){let q=Math.floor(g/ta);[g,ta]=[ta,g-q*ta];[x,y]=[y,x-q*y]}if(g!==1)return null;return mod(x,m)}
+
+function computePoints(){
+  points=[];
+  const{a,b,p}=curve;
+  for(let x=0;x<p;x++){
+    const rhs=mod(x*x*x+a*x+b,p);
+    for(let y=0;y<p;y++){
+      if(mod(y*y,p)===rhs)points.push({x,y});
+    }
+  }
+  basePoint=points.length>0?{...points[0]}:null;
+  currentPoint=basePoint?{...basePoint}:null;
+  scalar=1;
+  trail=basePoint?[{...basePoint}]:[];
+  if(basePoint){
+    let pt={...basePoint},ord=1;
+    while(pt){pt=pointAdd(pt,basePoint);ord++;if(ord>points.length+2||!pt)break}
+    document.getElementById('s-order').textContent=ord;
+  }
+}
+
+function pointAdd(P,Q){
+  if(!P)return Q?{...Q}:null;
+  if(!Q)return{...P};
+  const{p,a}=curve;
+  let lam;
+  if(P.x===Q.x&&P.y===Q.y){
+    if(P.y===0)return null;
+    lam=mod((3*P.x*P.x+a)*modinv(2*P.y,p),p);
+  }else if(P.x===Q.x){
+    return null;
+  }else{
+    lam=mod((Q.y-P.y)*modinv(mod(Q.x-P.x,p),p),p);
+  }
+  const xr=mod(lam*lam-P.x-Q.x,p);
+  const yr=mod(lam*(P.x-xr)-P.y,p);
+  return{x:xr,y:yr};
+}
+
+function stepAdd(){
+  if(!basePoint||!currentPoint)return;
+  const next=pointAdd(currentPoint,basePoint);
+  if(!next){scalar++;currentPoint=null;trail.push(null);updateStats();return}
+  currentPoint={...next};scalar++;
+  trail.push({...currentPoint});updateStats();
+}
+
+function resetPoint(){
+  if(!basePoint)return;
+  currentPoint={...basePoint};scalar=1;trail=[{...basePoint}];animating=false;updateStats();
+}
+
+function animateScalar(){
+  if(!basePoint)return;
+  resetPoint();animating=true;animN=1;animTarget=Math.min(points.length+1,50);
+}
+
+function changeCurve(i){
+  ci=i;curve=CURVES[i];computePoints();updateStats();
+  document.querySelectorAll('#controls .btn').forEach((b,j)=>{if(j>=3)b.classList.toggle('active',j-3===i)});
+}
+
+function updateStats(){
+  const{a,b,p}=curve;
+  const sa=a>=0?'+'+a:a,sb=b>=0?'+'+b:b;
+  document.getElementById('s-curve').textContent=`y²=x³${sa}x${sb}`;
+  document.getElementById('s-field').textContent=`F${p}`;
+  document.getElementById('s-base').textContent=basePoint?`(${basePoint.x},${basePoint.y})`:'∅';
+  document.getElementById('s-cur').textContent=currentPoint?`(${currentPoint.x},${currentPoint.y})`:'∞';
+  document.getElementById('s-n').textContent=scalar;
+}
+
+function isPrime(n){if(n<2)return false;for(let i=2;i*i<=n;i++)if(n%i===0)return false;return true}
+
+function draw(){
+  frame++;
+  ctx.fillStyle='rgba(6,6,16,0.3)';
+  ctx.fillRect(0,0,W,H);
+
+  const{p,a,b}=curve;
+  const margin=80;
+  const gridW=W-margin*2-280;
+  const gridH=H-margin*2-60;
+  const cellW=gridW/p;
+  const cellH=gridH/p;
+  const ox=margin,oy=margin+30;
+
+  // grid lines
+  ctx.strokeStyle='rgba(79,248,128,0.06)';ctx.lineWidth=0.5;
+  for(let i=0;i<=p;i++){
+    ctx.beginPath();ctx.moveTo(ox+i*cellW,oy);ctx.lineTo(ox+i*cellW,oy+gridH);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox,oy+i*cellH);ctx.lineTo(ox+gridW,oy+i*cellH);ctx.stroke();
+  }
+
+  // axis labels
+  ctx.font='9px monospace';ctx.fillStyle='#334';
+  for(let i=0;i<p;i+=Math.max(1,Math.floor(p/10))){
+    ctx.fillText(i,ox+i*cellW+2,oy+gridH+14);
+    ctx.fillText(i,ox-18,oy+gridH-i*cellH+3);
+  }
+
+  // continuous curve background
+  ctx.strokeStyle='rgba(79,248,128,0.08)';ctx.lineWidth=1;
+  for(let sign=-1;sign<=1;sign+=2){
+    ctx.beginPath();let first=true;
+    for(let px=0;px<gridW;px+=2){
+      const x=(px/gridW)*p;
+      const rhs=x*x*x+a*x+b;
+      if(rhs<0){first=true;continue}
+      const y=sign*Math.sqrt(rhs);
+      const sx=ox+px,sy=oy+gridH-(y/p)*gridH;
+      if(sy<oy||sy>oy+gridH){first=true;continue}
+      if(first){ctx.moveTo(sx,sy);first=false}else ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+  }
+
+  // all curve points
+  for(const pt of points){
+    const px=ox+pt.x*cellW+cellW/2,py=oy+gridH-pt.y*cellH-cellH/2;
+    const pr=isPrime(pt.x)&&isPrime(pt.y);
+    ctx.beginPath();ctx.arc(px,py,pr?4:2.5,0,Math.PI*2);
+    ctx.fillStyle=pr?'rgba(255,204,0,0.7)':'rgba(79,248,128,0.3)';ctx.fill();
+  }
+
+  // trail
+  if(trail.length>1){
+    ctx.strokeStyle='rgba(79,248,128,0.4)';ctx.lineWidth=1.5;ctx.beginPath();
+    let started=false;
+    for(const t of trail){
+      if(!t){started=false;continue}
+      const px=ox+t.x*cellW+cellW/2,py=oy+gridH-t.y*cellH-cellH/2;
+      if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+    for(let i=0;i<trail.length;i++){
+      if(!trail[i])continue;
+      const px=ox+trail[i].x*cellW+cellW/2,py=oy+gridH-trail[i].y*cellH-cellH/2;
+      ctx.beginPath();ctx.arc(px,py,3+Math.sin(frame*0.05+i),0,Math.PI*2);
+      ctx.fillStyle=`hsl(${120+i/trail.length*200},80%,60%)`;ctx.fill();
+      if(trail.length<20){ctx.font='8px monospace';ctx.fillStyle='#aac';ctx.fillText(`${i+1}P`,px+6,py-6)}
+    }
+  }
+
+  // current point highlight
+  if(currentPoint){
+    const px=ox+currentPoint.x*cellW+cellW/2,py=oy+gridH-currentPoint.y*cellH-cellH/2;
+    const pulse=Math.sin(frame*0.08)*0.3+0.7;
+    ctx.beginPath();ctx.arc(px,py,8+Math.sin(frame*0.06)*3,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(79,248,128,${pulse})`;ctx.lineWidth=2;ctx.stroke();
+    const g=ctx.createRadialGradient(px,py,0,px,py,20);
+    g.addColorStop(0,'rgba(79,248,128,0.3)');g.addColorStop(1,'transparent');
+    ctx.fillStyle=g;ctx.fillRect(px-20,py-20,40,40);
+  }
+
+  // base point marker
+  if(basePoint){
+    const px=ox+basePoint.x*cellW+cellW/2,py=oy+gridH-basePoint.y*cellH-cellH/2;
+    ctx.beginPath();ctx.arc(px,py,6,0,Math.PI*2);ctx.strokeStyle='#fc0';ctx.lineWidth=2;ctx.stroke();
+    ctx.font='9px monospace';ctx.fillStyle='#fc0';ctx.fillText('G',px+8,py-8);
+  }
+
+  // title
+  ctx.font='bold 12px monospace';ctx.fillStyle='#4f8';
+  ctx.fillText('SHIELD-ELLIPTIC — Elliptic Curve Cryptography',ox,oy-12);
+
+  // animation step
+  if(animating&&frame%8===0){
+    if(animN<animTarget){stepAdd();animN++}else animating=false;
+  }
+
+  requestAnimationFrame(draw);
+}
+
+computePoints();updateStats();draw();
+</script>
+</body>
+</html>

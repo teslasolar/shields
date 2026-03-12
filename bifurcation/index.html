@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-BIFURCATION — Period Doubling Cascade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #c0c0c0;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+  }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #stats {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(6,6,16,0.88); border: 1px solid #f84;
+    padding: 14px 18px; font-size: 12px; line-height: 1.8;
+    z-index: 10; min-width: 280px; border-radius: 2px;
+    pointer-events: none;
+  }
+  #stats .title { color: #f84; font-size: 13px; font-weight: bold; margin-bottom: 4px; letter-spacing: 1.5px; }
+  #stats .sub { color: #999; font-size: 11px; margin-bottom: 8px; }
+  #stats .label { color: #777; }
+  #stats .value { color: #eee; }
+  #stats .accent { color: #f84; }
+  #stats .feigen { color: #ffd700; font-weight: bold; }
+  #controls {
+    position: fixed; bottom: 16px; left: 16px;
+    background: rgba(6,6,16,0.88); border: 1px solid #333;
+    padding: 14px 18px; font-size: 11px; line-height: 2.4;
+    z-index: 10; min-width: 280px; border-radius: 2px;
+  }
+  #controls .ctrl-title { color: #f84; font-size: 12px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1.5px; }
+  #controls label { display: flex; align-items: center; gap: 8px; color: #aaa; }
+  #controls input[type=range] { flex: 1; accent-color: #f84; cursor: crosshair; height: 4px; }
+  #controls .val { color: #eee; min-width: 52px; text-align: right; font-size: 11px; }
+  #controls select {
+    background: #1a1a2e; color: #f84; border: 1px solid #444;
+    font-family: inherit; font-size: 11px; cursor: crosshair;
+    padding: 2px 6px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-BIFURCATION</div>
+  <div class="sub">Period Doubling Cascade</div>
+  <div><span class="label">Feigenbaum delta : </span><span class="feigen" id="s-delta">---</span></div>
+  <div><span class="label">exact delta      : </span><span class="value">4.66920...</span></div>
+  <div><span class="label">current period   : </span><span class="value" id="s-period">---</span></div>
+  <div><span class="label">r_1 (period 2)   : </span><span class="value" id="s-r1">---</span></div>
+  <div><span class="label">r_2 (period 4)   : </span><span class="value" id="s-r2">---</span></div>
+  <div><span class="label">r_3 (period 8)   : </span><span class="value" id="s-r3">---</span></div>
+  <div><span class="label">r_4 (period 16)  : </span><span class="value" id="s-r4">---</span></div>
+  <div><span class="label">r_inf (chaos)    : </span><span class="value" id="s-rinf">---</span></div>
+  <div><span class="label">scan r           : </span><span class="accent" id="s-scanr">---</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-title">CONTROLS</div>
+  <label>zoom    <input type="range" id="c-zoom" min="0" max="200" step="1" value="0"> <span class="val" id="v-zoom">0</span></label>
+  <label>speed   <input type="range" id="c-speed" min="1" max="100" step="1" value="30"> <span class="val" id="v-speed">30</span></label>
+  <label>highlight
+    <select id="c-highlight">
+      <option value="0">all periods</option>
+      <option value="1">period 1</option>
+      <option value="2">period 2</option>
+      <option value="4">period 4</option>
+      <option value="8">period 8</option>
+      <option value="16">period 16</option>
+      <option value="-1">chaos only</option>
+    </select>
+  </label>
+</div>
+<script>
+(function(){
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr = window.devicePixelRatio || 1;
+
+function resize() {
+  W = canvas.width = window.innerWidth * dpr;
+  H = canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  needRedraw = true;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Known bifurcation points for logistic map
+const rBif = [3.0, 3.44949, 3.54409, 3.5644, 3.5688, 3.56969];
+const rInf = 3.56995; // onset of chaos (accumulation point)
+
+// Compute Feigenbaum delta estimates
+function computeDeltas() {
+  const deltas = [];
+  for (let i = 2; i < rBif.length; i++) {
+    const d = (rBif[i-1] - rBif[i-2]) / (rBif[i] - rBif[i-1]);
+    deltas.push(d);
+  }
+  return deltas;
+}
+
+let zoomLevel = 0, animSpeed = 30, highlightPeriod = 0;
+let needRedraw = true;
+
+function bind(id, vid, cb) {
+  const el = document.getElementById(id), vl = document.getElementById(vid);
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    vl.textContent = Math.round(v);
+    cb(v);
+  });
+}
+bind('c-zoom','v-zoom', v => { zoomLevel = v; needRedraw = true; });
+bind('c-speed','v-speed', v => { animSpeed = v; });
+
+document.getElementById('c-highlight').addEventListener('change', e => {
+  highlightPeriod = parseInt(e.target.value);
+  needRedraw = true;
+});
+
+function getViewRange() {
+  const centerR = rInf;
+  const span = 1.5 * Math.pow(0.98, zoomLevel);
+  const rMin = Math.max(2.5, centerR - span);
+  const rMax = Math.min(4.0, centerR + span * 0.6);
+  return { rMin, rMax, xMin: 0, xMax: 1 };
+}
+
+function detectPeriod(r) {
+  let x = 0.5;
+  for (let i = 0; i < 1000; i++) x = r * x * (1 - x);
+  const orbit = [];
+  for (let i = 0; i < 256; i++) {
+    x = r * x * (1 - x);
+    orbit.push(x);
+  }
+  for (let p = 1; p <= 64; p++) {
+    let match = true;
+    for (let i = 0; i < Math.min(p * 4, orbit.length - p); i++) {
+      if (Math.abs(orbit[orbit.length-1-i] - orbit[orbit.length-1-i-p]) > 1e-6) {
+        match = false; break;
+      }
+    }
+    if (match) return p;
+  }
+  return -1;
+}
+
+function periodColor(p, alpha) {
+  if (p === 1) return 'rgba(70,130,255,' + alpha + ')';
+  if (p === 2) return 'rgba(70,220,100,' + alpha + ')';
+  if (p === 4) return 'rgba(240,220,60,' + alpha + ')';
+  if (p === 8) return 'rgba(255,160,40,' + alpha + ')';
+  if (p === 16) return 'rgba(255,100,60,' + alpha + ')';
+  return 'rgba(220,50,50,' + alpha + ')'; // chaos or higher
+}
+
+let bifData = null;
+
+function computeBif() {
+  const { rMin, rMax, xMin, xMax } = getViewRange();
+  const padL = Math.floor(W * 0.08), padR = Math.floor(W * 0.04);
+  const padT = Math.floor(H * 0.08), padB = Math.floor(H * 0.1);
+  const imgW = W - padL - padR;
+  const imgH = H - padT - padB;
+
+  const pixels = new Float32Array(imgW * imgH * 4); // r,g,b,count
+
+  const warmup = 500, show = 300;
+
+  for (let px = 0; px < imgW; px++) {
+    const r = rMin + (px / imgW) * (rMax - rMin);
+    let x = 0.5;
+    for (let i = 0; i < warmup; i++) x = r * x * (1 - x);
+
+    const period = detectPeriod(r);
+    let cr, cg, cb;
+    if (period === 1) { cr=70; cg=130; cb=255; }
+    else if (period === 2) { cr=70; cg=220; cb=100; }
+    else if (period === 4) { cr=240; cg=220; cb=60; }
+    else if (period === 8) { cr=255; cg=160; cb=40; }
+    else if (period === 16) { cr=255; cg=100; cb=60; }
+    else { cr=220; cg=50; cb=50; }
+
+    if (highlightPeriod > 0 && period !== highlightPeriod) {
+      cr *= 0.15; cg *= 0.15; cb *= 0.15;
+    }
+    if (highlightPeriod === -1 && period > 0 && period <= 32) {
+      cr *= 0.15; cg *= 0.15; cb *= 0.15;
+    }
+
+    for (let i = 0; i < show; i++) {
+      x = r * x * (1 - x);
+      const py = Math.floor((1 - (x - xMin) / (xMax - xMin)) * imgH);
+      if (py >= 0 && py < imgH) {
+        const idx = (py * imgW + px) * 4;
+        pixels[idx] += cr;
+        pixels[idx+1] += cg;
+        pixels[idx+2] += cb;
+        pixels[idx+3] += 1;
+      }
+    }
+  }
+
+  bifData = { padL, padT, imgW, imgH, pixels, rMin, rMax, xMin, xMax };
+}
+
+let scanR = 2.5, time = 0;
+
+function frame() {
+  requestAnimationFrame(frame);
+  time++;
+
+  if (needRedraw) {
+    computeBif();
+    needRedraw = false;
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!bifData) return;
+  const { padL, padT, imgW, imgH, pixels, rMin, rMax, xMin, xMax } = bifData;
+
+  // Render bifurcation
+  const imgD = ctx.createImageData(imgW, imgH);
+  for (let i = 0; i < imgW * imgH; i++) {
+    const cnt = pixels[i*4+3];
+    if (cnt > 0) {
+      const norm = Math.min(1, cnt / 6);
+      const boost = 0.4 + 0.6 * norm;
+      imgD.data[i*4]   = Math.min(255, Math.floor(pixels[i*4]   / cnt * boost));
+      imgD.data[i*4+1] = Math.min(255, Math.floor(pixels[i*4+1] / cnt * boost));
+      imgD.data[i*4+2] = Math.min(255, Math.floor(pixels[i*4+2] / cnt * boost));
+      imgD.data[i*4+3] = Math.floor(80 + 175 * norm);
+    }
+  }
+  ctx.putImageData(imgD, padL, padT);
+
+  // Border
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(padL, padT, imgW, imgH);
+
+  // Axis labels
+  ctx.fillStyle = '#555';
+  ctx.font = (10*dpr) + 'px Courier New';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= 6; i++) {
+    const rv = rMin + i*(rMax-rMin)/6;
+    ctx.fillText(rv.toFixed(3), padL + (i/6)*imgW, padT+imgH + 16*dpr);
+  }
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const xv = xMin + i*(xMax-xMin)/4;
+    ctx.fillText(xv.toFixed(2), padL - 6*dpr, padT + (1-i/4)*imgH + 4*dpr);
+  }
+
+  // Mark bifurcation points
+  for (let i = 0; i < rBif.length; i++) {
+    const r = rBif[i];
+    if (r < rMin || r > rMax) continue;
+    const px = padL + ((r - rMin) / (rMax - rMin)) * imgW;
+    ctx.beginPath();
+    ctx.moveTo(px, padT);
+    ctx.lineTo(px, padT + imgH);
+    ctx.strokeStyle = 'rgba(255,215,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4*dpr, 4*dpr]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label
+    ctx.fillStyle = '#ffd700';
+    ctx.font = (9*dpr) + 'px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('r_' + (i+1), px, padT - 6*dpr);
+  }
+
+  // Accumulation point
+  if (rInf >= rMin && rInf <= rMax) {
+    const px = padL + ((rInf - rMin) / (rMax - rMin)) * imgW;
+    ctx.beginPath();
+    ctx.moveTo(px, padT);
+    ctx.lineTo(px, padT + imgH);
+    ctx.strokeStyle = 'rgba(255,136,68,0.5)';
+    ctx.lineWidth = 2 * dpr;
+    ctx.setLineDash([2*dpr, 3*dpr]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f84';
+    ctx.font = (10*dpr) + 'px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('r_inf', px, padT - 6*dpr);
+  }
+
+  // Animated scan line
+  scanR += animSpeed * 0.00008 * (rMax - rMin);
+  if (scanR > rMax) scanR = rMin;
+  const scanPx = padL + ((scanR - rMin) / (rMax - rMin)) * imgW;
+
+  ctx.beginPath();
+  ctx.moveTo(scanPx, padT);
+  ctx.lineTo(scanPx, padT + imgH);
+  ctx.strokeStyle = 'rgba(255,136,68,0.6)';
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.stroke();
+
+  // Glow at scan line
+  const scanGrad = ctx.createLinearGradient(scanPx - 30*dpr, 0, scanPx + 30*dpr, 0);
+  scanGrad.addColorStop(0, 'rgba(255,136,68,0)');
+  scanGrad.addColorStop(0.5, 'rgba(255,136,68,0.06)');
+  scanGrad.addColorStop(1, 'rgba(255,136,68,0)');
+  ctx.fillStyle = scanGrad;
+  ctx.fillRect(scanPx - 30*dpr, padT, 60*dpr, imgH);
+
+  // Period legend
+  const legendY = padT + 14*dpr;
+  const legendX = padL + 10*dpr;
+  const items = [
+    [1,'period 1','rgba(70,130,255,0.9)'],
+    [2,'period 2','rgba(70,220,100,0.9)'],
+    [4,'period 4','rgba(240,220,60,0.9)'],
+    [8,'period 8','rgba(255,160,40,0.9)'],
+    [16,'period 16','rgba(255,100,60,0.9)'],
+    [-1,'chaos','rgba(220,50,50,0.9)']
+  ];
+  ctx.font = (9*dpr) + 'px Courier New';
+  ctx.textAlign = 'left';
+  items.forEach((item, i) => {
+    const y = legendY + i * 16 * dpr;
+    ctx.fillStyle = item[2];
+    ctx.fillRect(legendX, y - 4*dpr, 8*dpr, 8*dpr);
+    ctx.fillStyle = '#888';
+    ctx.fillText(item[1], legendX + 14*dpr, y + 3*dpr);
+  });
+
+  // Feigenbaum formula overlay
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold ' + (13*dpr) + 'px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('delta = lim (r_n - r_{n-1}) / (r_{n+1} - r_n)', padL, H - 20*dpr);
+
+  // Stats update
+  if (time % 8 === 0) {
+    const deltas = computeDeltas();
+    const bestDelta = deltas.length > 0 ? deltas[deltas.length - 1] : NaN;
+    document.getElementById('s-delta').textContent = isFinite(bestDelta) ? bestDelta.toFixed(4) : '---';
+
+    const scanPeriod = detectPeriod(scanR);
+    document.getElementById('s-period').textContent = scanPeriod > 0 ? scanPeriod : 'chaos';
+    document.getElementById('s-scanr').textContent = scanR.toFixed(5);
+
+    document.getElementById('s-r1').textContent = rBif[0].toFixed(5);
+    document.getElementById('s-r2').textContent = rBif[1].toFixed(5);
+    document.getElementById('s-r3').textContent = rBif[2].toFixed(5);
+    document.getElementById('s-r4').textContent = rBif[3].toFixed(5);
+    document.getElementById('s-rinf').textContent = rInf.toFixed(5);
+  }
+}
+frame();
+})();
+</script>
+</body>
+</html>

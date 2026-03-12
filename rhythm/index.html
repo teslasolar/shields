@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-RHYTHM — Prime Polyrhythm Machine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+  #stats {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: rgba(6,6,16,0.88);
+    border: 1px solid #f4a;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12px;
+    line-height: 1.7;
+    z-index: 10;
+    min-width: 220px;
+    pointer-events: none;
+    user-select: none;
+  }
+  #stats .title {
+    color: #f4a;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+  }
+  #stats .label { color: #888; }
+  #stats .val { color: #f4a; }
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    background: rgba(6,6,16,0.88);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12px;
+    z-index: 10;
+    min-width: 240px;
+  }
+  #controls .section-title {
+    color: #f4a;
+    font-size: 11px;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  #controls label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    color: #bbb;
+    font-size: 11px;
+  }
+  #controls input[type="range"] {
+    width: 140px;
+    accent-color: #f4a;
+    cursor: pointer;
+  }
+  #controls input[type="checkbox"] {
+    accent-color: #f4a;
+    cursor: pointer;
+  }
+  #controls button {
+    background: transparent;
+    border: 1px solid #f4a;
+    color: #f4a;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    margin-top: 6px;
+    margin-right: 6px;
+    transition: background 0.2s;
+  }
+  #controls button:hover { background: rgba(255,68,170,0.15); }
+  #controls button.active { background: rgba(255,68,170,0.3); }
+  .ring-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .ring-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  #startOverlay {
+    position: fixed; inset: 0;
+    background: rgba(6,6,16,0.95);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; cursor: pointer;
+    flex-direction: column; gap: 16px;
+  }
+  #startOverlay .prompt {
+    color: #f4a; font-size: 18px; letter-spacing: 3px;
+  }
+  #startOverlay .sub {
+    color: #666; font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div id="startOverlay">
+  <div class="prompt">SHIELD-RHYTHM</div>
+  <div class="sub">Click anywhere to initialize audio</div>
+</div>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-RHYTHM</div>
+  <div id="statsContent"></div>
+</div>
+<div id="controls">
+  <div class="section-title">CONTROLS</div>
+  <label>BPM: <span id="bpmVal">120</span>
+    <input type="range" id="bpmSlider" min="30" max="300" value="120">
+  </label>
+  <div style="margin-top:8px; margin-bottom:4px; color:#666; font-size:10px;">RINGS</div>
+  <div id="ringToggles"></div>
+  <div style="margin-top:8px;">
+    <button id="btnPlay" class="active">PLAY</button>
+    <button id="btnMute">MUTE</button>
+    <button id="btnReset">RESET</button>
+  </div>
+</div>
+
+<script>
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const LCM = 510510;
+const COLORS = [
+  '#ff4444', '#ff8800', '#ffcc00', '#44ff44', '#4488ff', '#aa44ff', '#f4a'
+];
+const TONE_FREQS = [220, 330, 440, 550, 660, 770, 880];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy, maxR;
+
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  cx = W / 2;
+  cy = H / 2;
+  maxR = Math.min(W, H) * 0.38;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let audioCtx = null;
+let masterGain = null;
+let bpm = 120;
+let playing = true;
+let muted = false;
+let globalBeat = 0;
+let lastBeatTime = 0;
+let ringEnabled = PRIMES.map(() => true);
+let ringBeats = PRIMES.map(() => 0);
+let pulses = [];
+let sweepAngle = -Math.PI / 2;
+let started = false;
+
+// Build ring toggle UI
+const ringTogglesEl = document.getElementById('ringToggles');
+PRIMES.forEach((p, i) => {
+  const row = document.createElement('div');
+  row.className = 'ring-row';
+  const dot = document.createElement('span');
+  dot.className = 'ring-dot';
+  dot.style.background = COLORS[i];
+  const lbl = document.createElement('label');
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = true;
+  cb.addEventListener('change', () => { ringEnabled[i] = cb.checked; });
+  lbl.appendChild(cb);
+  lbl.appendChild(document.createTextNode(` P${p}`));
+  row.appendChild(dot);
+  row.appendChild(lbl);
+  ringTogglesEl.appendChild(row);
+});
+
+document.getElementById('bpmSlider').addEventListener('input', e => {
+  bpm = parseInt(e.target.value);
+  document.getElementById('bpmVal').textContent = bpm;
+});
+
+document.getElementById('btnPlay').addEventListener('click', function() {
+  playing = !playing;
+  this.textContent = playing ? 'PLAY' : 'PAUSED';
+  this.classList.toggle('active', playing);
+});
+
+document.getElementById('btnMute').addEventListener('click', function() {
+  muted = !muted;
+  this.textContent = muted ? 'UNMUTE' : 'MUTE';
+  this.classList.toggle('active', muted);
+  if (masterGain) masterGain.gain.value = muted ? 0 : 0.3;
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  globalBeat = 0;
+  sweepAngle = -Math.PI / 2;
+  ringBeats = PRIMES.map(() => 0);
+  pulses = [];
+});
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.3;
+  masterGain.connect(audioCtx.destination);
+}
+
+function playTone(ringIndex) {
+  if (!audioCtx || muted || !ringEnabled[ringIndex]) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = TONE_FREQS[ringIndex];
+  g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+  osc.connect(g);
+  g.connect(masterGain);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.15);
+}
+
+function addPulse(ringIndex, angle) {
+  const ringR = getRingRadius(ringIndex);
+  pulses.push({
+    x: cx + Math.cos(angle) * ringR,
+    y: cy + Math.sin(angle) * ringR,
+    color: COLORS[ringIndex],
+    life: 1.0,
+    r: 6 * devicePixelRatio
+  });
+}
+
+function getRingRadius(i) {
+  const minR = maxR * 0.2;
+  return minR + (maxR - minR) * (i / (PRIMES.length - 1));
+}
+
+document.getElementById('startOverlay').addEventListener('click', () => {
+  document.getElementById('startOverlay').style.display = 'none';
+  initAudio();
+  started = true;
+  lastBeatTime = performance.now();
+});
+
+let prevTime = performance.now();
+
+function update(now) {
+  const dt = (now - prevTime) / 1000;
+  prevTime = now;
+
+  if (playing && started) {
+    const beatInterval = 60000 / (bpm * 4);
+    if (now - lastBeatTime >= beatInterval) {
+      lastBeatTime = now;
+      globalBeat = (globalBeat + 1) % LCM;
+
+      PRIMES.forEach((p, i) => {
+        const beatsPerRev = p;
+        const beatPos = globalBeat % beatsPerRev;
+        if (beatPos === 0 || globalBeat % Math.ceil(LCM / (beatsPerRev * (bpm / 60))) === 0) {
+          // check if sweep passes a marker
+        }
+        ringBeats[i] = globalBeat % p;
+      });
+    }
+
+    // Smooth sweep
+    const revsPerSec = bpm / 60;
+    sweepAngle += revsPerSec * dt * Math.PI * 2;
+    if (sweepAngle > Math.PI * 2 - Math.PI / 2) {
+      sweepAngle = -Math.PI / 2;
+    }
+
+    // Check beats based on sweep angle
+    const normAngle = ((sweepAngle + Math.PI / 2) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    PRIMES.forEach((p, i) => {
+      if (!ringEnabled[i]) return;
+      for (let k = 0; k < p; k++) {
+        const markerAngle = (k / p) * Math.PI * 2;
+        const diff = Math.abs(normAngle - markerAngle);
+        const threshold = revsPerSec * dt * Math.PI * 2 * 1.1;
+        if (diff < threshold || (Math.PI * 2 - diff) < threshold) {
+          const beatAngle = markerAngle - Math.PI / 2;
+          if (!pulses.find(pp => Math.abs(pp.marker - k) < 0.1 && pp.ring === i && pp.life > 0.8)) {
+            playTone(i);
+            const pulse = {
+              x: cx + Math.cos(beatAngle) * getRingRadius(i),
+              y: cy + Math.sin(beatAngle) * getRingRadius(i),
+              color: COLORS[i],
+              life: 1.0,
+              r: 8 * devicePixelRatio,
+              marker: k,
+              ring: i
+            };
+            pulses.push(pulse);
+            ringBeats[i] = k;
+          }
+        }
+      }
+    });
+  }
+
+  // Update pulses
+  pulses = pulses.filter(p => {
+    p.life -= dt * 2.5;
+    p.r += dt * 40 * devicePixelRatio;
+    return p.life > 0;
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background glow
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 1.2);
+  grad.addColorStop(0, 'rgba(255,68,170,0.03)');
+  grad.addColorStop(1, 'rgba(6,6,16,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw rings
+  PRIMES.forEach((p, i) => {
+    const r = getRingRadius(i);
+    const alpha = ringEnabled[i] ? 0.3 : 0.08;
+
+    // Ring circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = COLORS[i] + (ringEnabled[i] ? '55' : '22');
+    ctx.lineWidth = 1.5 * devicePixelRatio;
+    ctx.stroke();
+
+    // Beat markers
+    for (let k = 0; k < p; k++) {
+      const angle = (k / p) * Math.PI * 2 - Math.PI / 2;
+      const mx = cx + Math.cos(angle) * r;
+      const my = cy + Math.sin(angle) * r;
+      const isActive = ringBeats[i] === k;
+      const dotR = (isActive ? 5 : 3) * devicePixelRatio;
+
+      ctx.beginPath();
+      ctx.arc(mx, my, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = isActive ? COLORS[i] : COLORS[i] + '66';
+      ctx.fill();
+
+      if (isActive && ringEnabled[i]) {
+        ctx.beginPath();
+        ctx.arc(mx, my, dotR + 4 * devicePixelRatio, 0, Math.PI * 2);
+        ctx.strokeStyle = COLORS[i] + '88';
+        ctx.lineWidth = 1.5 * devicePixelRatio;
+        ctx.stroke();
+      }
+    }
+
+    // Prime label
+    ctx.fillStyle = COLORS[i] + (ringEnabled[i] ? 'cc' : '44');
+    ctx.font = `${11 * devicePixelRatio}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(p, cx, cy - r + 14 * devicePixelRatio);
+  });
+
+  // Sweep hand
+  if (started && playing) {
+    const handLen = maxR * 1.05;
+    const hx = cx + Math.cos(sweepAngle) * handLen;
+    const hy = cy + Math.sin(sweepAngle) * handLen;
+
+    const handGrad = ctx.createLinearGradient(cx, cy, hx, hy);
+    handGrad.addColorStop(0, 'rgba(255,68,170,0.0)');
+    handGrad.addColorStop(0.3, 'rgba(255,68,170,0.4)');
+    handGrad.addColorStop(1, 'rgba(255,68,170,0.8)');
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(hx, hy);
+    ctx.strokeStyle = handGrad;
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.stroke();
+
+    // Sweep tip glow
+    ctx.beginPath();
+    ctx.arc(hx, hy, 4 * devicePixelRatio, 0, Math.PI * 2);
+    ctx.fillStyle = '#f4a';
+    ctx.fill();
+  }
+
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4 * devicePixelRatio, 0, Math.PI * 2);
+  ctx.fillStyle = '#f4a';
+  ctx.fill();
+
+  // Pulses
+  pulses.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = p.color + Math.floor(p.life * 80).toString(16).padStart(2, '0');
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = p.color + Math.floor(p.life * 160).toString(16).padStart(2, '0');
+    ctx.fill();
+  });
+
+  // Update stats
+  const cyclePos = globalBeat % LCM;
+  const pct = ((cyclePos / LCM) * 100).toFixed(4);
+  let statsHTML = `<span class="label">BPM:</span> <span class="val">${bpm}</span><br>`;
+  statsHTML += `<span class="label">CYCLE:</span> <span class="val">${cyclePos.toLocaleString()} / ${LCM.toLocaleString()}</span><br>`;
+  statsHTML += `<span class="label">PROGRESS:</span> <span class="val">${pct}%</span><br>`;
+  statsHTML += `<span class="label">STATUS:</span> <span class="val">${playing ? 'PLAYING' : 'PAUSED'}</span><br>`;
+  statsHTML += '<br>';
+  PRIMES.forEach((p, i) => {
+    const col = ringEnabled[i] ? COLORS[i] : '#444';
+    statsHTML += `<span style="color:${col}">P${p.toString().padStart(2,' ')}</span> `;
+    statsHTML += `<span class="label">beat</span> <span class="val">${(ringBeats[i]+1).toString().padStart(2,' ')}/${p.toString().padStart(2,' ')}</span><br>`;
+  });
+  document.getElementById('statsContent').innerHTML = statsHTML;
+}
+
+function loop(now) {
+  update(now);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

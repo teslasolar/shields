@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-KNOT — Prime Knot Topology</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #e4a;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+  #stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(6,6,16,0.85);
+    border: 1px solid rgba(238,68,170,0.3);
+    padding: 16px 22px;
+    font-size: 13px;
+    line-height: 1.8;
+    z-index: 10;
+    min-width: 220px;
+    pointer-events: none;
+  }
+  #stats .title {
+    color: #e4a;
+    font-size: 11px;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(238,68,170,0.2);
+    padding-bottom: 6px;
+  }
+  #stats .label { color: #667; }
+  #stats .value { color: #ccc; }
+  #stats .highlight { color: #e4a; }
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(6,6,16,0.85);
+    border: 1px solid rgba(238,68,170,0.3);
+    padding: 16px 22px;
+    font-size: 12px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #controls .ctrl-title {
+    color: #e4a;
+    font-size: 10px;
+    letter-spacing: 3px;
+    margin-bottom: 4px;
+  }
+  #controls button {
+    background: rgba(238,68,170,0.1);
+    border: 1px solid rgba(238,68,170,0.4);
+    color: #e4a;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #controls button:hover {
+    background: rgba(238,68,170,0.25);
+    border-color: #e4a;
+  }
+  #controls button.active {
+    background: rgba(238,68,170,0.35);
+    border-color: #e4a;
+  }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  #controls input[type=range] {
+    -webkit-appearance: none;
+    width: 160px;
+    height: 4px;
+    background: rgba(238,68,170,0.2);
+    outline: none;
+    border-radius: 2px;
+  }
+  #controls input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e4a;
+    cursor: pointer;
+  }
+  #controls label {
+    color: #889;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-KNOT &mdash; PRIME KNOT TOPOLOGY</div>
+  <div><span class="label">KNOT TYPE </span><span class="value" id="s-type">T(2,3)</span></div>
+  <div><span class="label">CROSSING # </span><span class="value" id="s-crossing">3</span></div>
+  <div><span class="label">WRITHE </span><span class="value" id="s-writhe">+3</span></div>
+  <div><span class="label">SEGMENTS </span><span class="highlight" id="s-seg">512</span></div>
+  <div><span class="label">PRIME GEN </span><span class="highlight" id="s-prime">p=2, q=3</span></div>
+  <div><span class="label">FPS </span><span class="value" id="s-fps">60</span></div>
+</div>
+
+<div id="controls">
+  <div class="ctrl-title">KNOT CONTROLS</div>
+  <div class="btn-row" id="knot-btns"></div>
+  <label>SPEED <input type="range" id="speed" min="0" max="100" value="30"></label>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const KNOTS = [
+  { p: 2, q: 3, label: 'T(2,3)', crossing: 3, writhe: 3 },
+  { p: 2, q: 5, label: 'T(2,5)', crossing: 5, writhe: 5 },
+  { p: 2, q: 7, label: 'T(2,7)', crossing: 7, writhe: 7 },
+  { p: 3, q: 5, label: 'T(3,5)', crossing: 10, writhe: 10 },
+  { p: 2, q: 11, label: 'T(2,11)', crossing: 11, writhe: 11 },
+  { p: 2, q: 13, label: 'T(2,13)', crossing: 13, writhe: 13 },
+  { p: 3, q: 7, label: 'T(3,7)', crossing: 14, writhe: 14 }
+];
+
+let currentKnot = 0;
+let angleX = 0, angleY = 0, angleZ = 0;
+let speed = 0.3;
+let lastTime = 0, fps = 60;
+const SEG = 512;
+
+const primeColors = [
+  '#ee44aa', '#ff6699', '#ff88bb',
+  '#cc33ff', '#aa55ff', '#8877ff', '#66aaff'
+];
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Build knot buttons
+const btnContainer = document.getElementById('knot-btns');
+KNOTS.forEach((k, i) => {
+  const btn = document.createElement('button');
+  btn.textContent = k.label;
+  btn.className = i === 0 ? 'active' : '';
+  btn.onclick = () => {
+    currentKnot = i;
+    document.querySelectorAll('#knot-btns button').forEach((b, j) => {
+      b.className = j === i ? 'active' : '';
+    });
+    updateStats();
+  };
+  btnContainer.appendChild(btn);
+});
+
+document.getElementById('speed').addEventListener('input', e => {
+  speed = e.target.value / 100;
+});
+
+function updateStats() {
+  const k = KNOTS[currentKnot];
+  document.getElementById('s-type').textContent = k.label;
+  document.getElementById('s-crossing').textContent = k.crossing;
+  document.getElementById('s-writhe').textContent = '+' + k.writhe;
+  document.getElementById('s-prime').textContent = 'p=' + k.p + ', q=' + k.q;
+  document.getElementById('s-seg').textContent = SEG;
+}
+updateStats();
+
+function rotX(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c];
+}
+function rotY(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c + p[2]*s, p[1], -p[0]*s + p[2]*c];
+}
+function rotZ(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2]];
+}
+
+function torusKnot(t, p, q, R, r) {
+  const phi = t * 2 * Math.PI;
+  const x = (R + r * Math.cos(q * phi)) * Math.cos(p * phi);
+  const y = (R + r * Math.cos(q * phi)) * Math.sin(p * phi);
+  const z = r * Math.sin(q * phi);
+  return [x, y, z];
+}
+
+function project(p3, w, h) {
+  const fov = 500;
+  const d = fov / (fov + p3[2] + 300);
+  return [w / 2 + p3[0] * d, h / 2 + p3[1] * d, d];
+}
+
+function isPrime(n) {
+  if (n < 2) return false;
+  for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;
+  return true;
+}
+
+let frameCount = 0;
+let fpsAccum = 0;
+
+function draw(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+  fpsAccum += dt;
+  frameCount++;
+  if (fpsAccum > 500) {
+    fps = Math.round(frameCount / (fpsAccum / 1000));
+    document.getElementById('s-fps').textContent = fps;
+    frameCount = 0;
+    fpsAccum = 0;
+  }
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw grid
+  ctx.strokeStyle = 'rgba(238,68,170,0.04)';
+  ctx.lineWidth = 0.5;
+  const gs = 60;
+  for (let x = gs; x < w; x += gs) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = gs; y < h; y += gs) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  angleX += speed * 0.008;
+  angleY += speed * 0.012;
+  angleZ += speed * 0.004;
+
+  const k = KNOTS[currentKnot];
+  const R = Math.min(w, h) * 0.22;
+  const r = R * 0.4;
+  const points = [];
+
+  for (let i = 0; i <= SEG; i++) {
+    const t = i / SEG;
+    let pt = torusKnot(t, k.p, k.q, R, r);
+    pt = rotX(pt, angleX);
+    pt = rotY(pt, angleY);
+    pt = rotZ(pt, angleZ);
+    const [sx, sy, sd] = project(pt, w, h);
+    points.push({ x: sx, y: sy, d: sd, idx: i, z: pt[2] });
+  }
+
+  // Draw glow trail
+  for (let i = 1; i < points.length; i++) {
+    const p0 = points[i - 1];
+    const p1 = points[i];
+    const primeIdx = i % PRIMES.length;
+    const baseColor = primeColors[primeIdx];
+
+    const alpha = 0.15 + 0.35 * p1.d;
+    ctx.strokeStyle = baseColor;
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.lineWidth = 6 * p1.d;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.stroke();
+  }
+
+  // Draw main curve
+  for (let i = 1; i < points.length; i++) {
+    const p0 = points[i - 1];
+    const p1 = points[i];
+    const primeIdx = i % PRIMES.length;
+    const baseColor = primeColors[primeIdx];
+
+    const alpha = 0.4 + 0.6 * p1.d;
+    ctx.strokeStyle = baseColor;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 2.5 * p1.d;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.stroke();
+  }
+
+  // Draw prime-indexed nodes
+  ctx.globalAlpha = 1;
+  for (let i = 0; i < points.length; i++) {
+    if (isPrime(i)) {
+      const p = points[i];
+      const pulse = 0.6 + 0.4 * Math.sin(time * 0.003 + i);
+      const rad = (3 + 2 * pulse) * p.d;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(238,68,170,${0.7 * pulse})`;
+      ctx.fill();
+      // glow
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad * 2.5, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 2.5);
+      g.addColorStop(0, `rgba(238,68,170,${0.3 * pulse})`);
+      g.addColorStop(1, 'rgba(238,68,170,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+  }
+
+  // Moving highlight
+  const travelIdx = Math.floor((time * speed * 0.2) % SEG);
+  if (travelIdx < points.length) {
+    const tp = points[travelIdx];
+    ctx.beginPath();
+    ctx.arc(tp.x, tp.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = 0.9;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tp.x, tp.y, 15, 0, Math.PI * 2);
+    const tg = ctx.createRadialGradient(tp.x, tp.y, 0, tp.x, tp.y, 15);
+    tg.addColorStop(0, 'rgba(255,255,255,0.4)');
+    tg.addColorStop(1, 'rgba(238,68,170,0)');
+    ctx.fillStyle = tg;
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

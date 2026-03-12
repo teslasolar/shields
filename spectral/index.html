@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SPECTRAL — Prime Spectrum Analyzer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+  #stats {
+    position: fixed;
+    top: 16px; right: 16px;
+    background: rgba(6,6,16,0.88);
+    border: 1px solid #f4a;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12px;
+    line-height: 1.7;
+    z-index: 10;
+    min-width: 260px;
+    pointer-events: none;
+    user-select: none;
+  }
+  #stats .title {
+    color: #f4a;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+  }
+  #stats .label { color: #888; }
+  #stats .val { color: #f4a; }
+  #stats .val2 { color: #8cf; }
+  #controls {
+    position: fixed;
+    bottom: 16px; left: 16px;
+    background: rgba(6,6,16,0.88);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12px;
+    z-index: 10;
+    min-width: 280px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  #controls .section-title {
+    color: #f4a;
+    font-size: 11px;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .ctrl-row label {
+    color: #888;
+    font-size: 11px;
+    min-width: 80px;
+    cursor: crosshair;
+  }
+  .ctrl-row input[type=range] {
+    flex: 1;
+    accent-color: #f4a;
+    cursor: crosshair;
+    max-width: 100px;
+  }
+  .ctrl-row input[type=checkbox] {
+    accent-color: #f4a;
+    cursor: crosshair;
+  }
+  .ctrl-row .rv {
+    color: #f4a;
+    font-size: 10px;
+    min-width: 30px;
+    text-align: right;
+  }
+  #controls button {
+    background: transparent;
+    border: 1px solid #f4a;
+    color: #f4a;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    margin-top: 8px;
+    margin-right: 6px;
+    transition: background 0.2s;
+  }
+  #controls button:hover { background: rgba(255,68,170,0.15); }
+  #controls button.active { background: rgba(255,68,170,0.3); }
+  #startOverlay {
+    position: fixed; inset: 0;
+    background: rgba(6,6,16,0.95);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; cursor: pointer;
+    flex-direction: column; gap: 16px;
+  }
+  #startOverlay .prompt { color: #f4a; font-size: 18px; letter-spacing: 3px; }
+  #startOverlay .sub { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="startOverlay">
+  <div class="prompt">SHIELD-SPECTRAL</div>
+  <div class="sub">Click anywhere to initialize audio</div>
+</div>
+
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-SPECTRAL</div>
+  <div id="statsContent"></div>
+</div>
+
+<div id="controls">
+  <div class="section-title">CONTROLS</div>
+  <div id="harmonicControls"></div>
+  <div style="margin-top:10px">
+    <button id="btnScale">LINEAR</button>
+  </div>
+</div>
+
+<script>
+const PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const BASE_FREQ = 55; // A1
+const COLORS = ['#ff4444','#ff8800','#ffcc00','#44ff44','#4488ff','#aa44ff','#f4a'];
+const FREQ_SCALE = PRIMES.map(p => p * BASE_FREQ);
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+let audioCtx = null;
+let analyser = null;
+let oscillators = [];
+let gains = [];
+let amplitudes = PRIMES.map(() => 0.5);
+let enabled = PRIMES.map(() => true);
+let logScale = false;
+let started = false;
+
+// Spectrogram waterfall buffer
+const WATERFALL_LINES = 200;
+let waterfall = [];
+
+// Build controls
+const hcEl = document.getElementById('harmonicControls');
+PRIMES.forEach((p, i) => {
+  const row = document.createElement('div');
+  row.className = 'ctrl-row';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = true;
+  cb.addEventListener('change', () => {
+    enabled[i] = cb.checked;
+    if (gains[i]) gains[i].gain.value = enabled[i] ? amplitudes[i] * 0.15 : 0;
+  });
+
+  const lbl = document.createElement('label');
+  lbl.style.color = COLORS[i];
+  lbl.textContent = `P${p} ${FREQ_SCALE[i]}Hz`;
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = 0; slider.max = 100; slider.value = 50;
+  const rv = document.createElement('span');
+  rv.className = 'rv';
+  rv.textContent = '0.50';
+  slider.addEventListener('input', () => {
+    amplitudes[i] = slider.value / 100;
+    rv.textContent = amplitudes[i].toFixed(2);
+    if (gains[i] && enabled[i]) gains[i].gain.value = amplitudes[i] * 0.15;
+  });
+
+  row.appendChild(cb);
+  row.appendChild(lbl);
+  row.appendChild(slider);
+  row.appendChild(rv);
+  hcEl.appendChild(row);
+});
+
+document.getElementById('btnScale').addEventListener('click', function() {
+  logScale = !logScale;
+  this.textContent = logScale ? 'LOG' : 'LINEAR';
+  this.classList.toggle('active', logScale);
+});
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.8;
+
+  const merger = audioCtx.createGain();
+  merger.gain.value = 1.0;
+  merger.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  PRIMES.forEach((p, i) => {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = FREQ_SCALE[i];
+    g.gain.value = amplitudes[i] * 0.15;
+    osc.connect(g);
+    g.connect(merger);
+    osc.start();
+    oscillators.push(osc);
+    gains.push(g);
+  });
+}
+
+document.getElementById('startOverlay').addEventListener('click', () => {
+  document.getElementById('startOverlay').style.display = 'none';
+  initAudio();
+  started = true;
+});
+
+function draw() {
+  requestAnimationFrame(draw);
+  if (!started || !analyser) return;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const dpr = devicePixelRatio;
+  const pad = 40 * dpr;
+  const sectionH = (H - pad * 2) / 3;
+
+  // Get data
+  const bufLen = analyser.frequencyBinCount;
+  const timeData = new Float32Array(bufLen);
+  const freqData = new Uint8Array(bufLen);
+  analyser.getFloatTimeDomainData(timeData);
+  analyser.getByteFrequencyData(freqData);
+
+  const nyquist = audioCtx.sampleRate / 2;
+
+  // --- SECTION 1: Waveform ---
+  const wY = pad;
+  const wH = sectionH - 20 * dpr;
+
+  // Section label
+  ctx.fillStyle = '#666';
+  ctx.font = `${10 * dpr}px 'Courier New'`;
+  ctx.textAlign = 'left';
+  ctx.fillText('WAVEFORM', pad, wY - 6 * dpr);
+
+  // Border
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, wY, W - pad * 2, wH);
+
+  // Centerline
+  ctx.strokeStyle = '#1a1a2a';
+  ctx.beginPath();
+  ctx.moveTo(pad, wY + wH / 2);
+  ctx.lineTo(W - pad, wY + wH / 2);
+  ctx.stroke();
+
+  // Waveform
+  ctx.beginPath();
+  const wSlice = (W - pad * 2) / bufLen;
+  for (let i = 0; i < bufLen; i++) {
+    const x = pad + i * wSlice;
+    const y = wY + wH / 2 + timeData[i] * wH * 0.45;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#f4a';
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.stroke();
+
+  // Glow
+  ctx.shadowColor = '#f4a';
+  ctx.shadowBlur = 8 * dpr;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // --- SECTION 2: FFT Spectrum ---
+  const fY = wY + sectionH;
+  const fH = sectionH - 20 * dpr;
+
+  ctx.fillStyle = '#666';
+  ctx.font = `${10 * dpr}px 'Courier New'`;
+  ctx.fillText('FFT SPECTRUM' + (logScale ? ' (LOG)' : ' (LINEAR)'), pad, fY - 6 * dpr);
+
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, fY, W - pad * 2, fH);
+
+  const fW = W - pad * 2;
+  const maxFreqDisplay = 1200; // Hz
+  const binsToShow = Math.floor(maxFreqDisplay / nyquist * bufLen);
+
+  // Draw spectrum bars
+  for (let i = 0; i < binsToShow && i < bufLen; i++) {
+    const freq = (i / bufLen) * nyquist;
+    let x;
+    if (logScale) {
+      const logMin = Math.log(20);
+      const logMax = Math.log(maxFreqDisplay);
+      const logF = Math.log(Math.max(20, freq));
+      x = pad + ((logF - logMin) / (logMax - logMin)) * fW;
+    } else {
+      x = pad + (freq / maxFreqDisplay) * fW;
+    }
+
+    const barH = (freqData[i] / 255) * fH * 0.95;
+    const barW = Math.max(1, fW / binsToShow * 0.8);
+
+    // Color: check if near a prime frequency
+    let color = '#335';
+    let glow = false;
+    PRIMES.forEach((p, pi) => {
+      if (enabled[pi] && Math.abs(freq - FREQ_SCALE[pi]) < nyquist / bufLen * 3) {
+        color = COLORS[pi];
+        glow = true;
+      }
+    });
+
+    ctx.fillStyle = color;
+    ctx.fillRect(x, fY + fH - barH, barW, barH);
+
+    if (glow) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12 * dpr;
+      ctx.fillRect(x, fY + fH - barH, barW, barH);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Frequency markers for primes
+  PRIMES.forEach((p, pi) => {
+    if (!enabled[pi]) return;
+    const freq = FREQ_SCALE[pi];
+    let x;
+    if (logScale) {
+      const logMin = Math.log(20);
+      const logMax = Math.log(maxFreqDisplay);
+      x = pad + ((Math.log(freq) - logMin) / (logMax - logMin)) * fW;
+    } else {
+      x = pad + (freq / maxFreqDisplay) * fW;
+    }
+
+    ctx.strokeStyle = COLORS[pi] + '44';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, fY);
+    ctx.lineTo(x, fY + fH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = COLORS[pi];
+    ctx.font = `${9 * dpr}px 'Courier New'`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${freq}Hz`, x, fY + fH + 12 * dpr);
+  });
+
+  // --- SECTION 3: Spectrogram Waterfall ---
+  const sY = fY + sectionH;
+  const sH = sectionH - 20 * dpr;
+
+  ctx.fillStyle = '#666';
+  ctx.font = `${10 * dpr}px 'Courier New'`;
+  ctx.textAlign = 'left';
+  ctx.fillText('SPECTROGRAM', pad, sY - 6 * dpr);
+
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, sY, W - pad * 2, sH);
+
+  // Add current frame to waterfall
+  const wfLine = new Uint8Array(binsToShow);
+  for (let i = 0; i < binsToShow; i++) wfLine[i] = freqData[i];
+  waterfall.push(wfLine);
+  if (waterfall.length > WATERFALL_LINES) waterfall.shift();
+
+  // Draw waterfall
+  const lineH = sH / WATERFALL_LINES;
+  for (let row = 0; row < waterfall.length; row++) {
+    const line = waterfall[row];
+    const y = sY + (waterfall.length - 1 - row) * lineH;
+
+    for (let i = 0; i < line.length; i += 2) {
+      const freq = (i / bufLen) * nyquist;
+      let x;
+      if (logScale) {
+        const logMin = Math.log(20);
+        const logMax = Math.log(maxFreqDisplay);
+        const logF = Math.log(Math.max(20, freq));
+        x = pad + ((logF - logMin) / (logMax - logMin)) * fW;
+      } else {
+        x = pad + (freq / maxFreqDisplay) * fW;
+      }
+
+      const val = line[i] / 255;
+      if (val < 0.05) continue;
+
+      // Color mapping: check prime proximity
+      let r = val * 40, g = val * 60, b = val * 120;
+      PRIMES.forEach((p, pi) => {
+        if (enabled[pi] && Math.abs(freq - FREQ_SCALE[pi]) < nyquist / bufLen * 4) {
+          const c = hexToRgb(COLORS[pi]);
+          r = c.r * val;
+          g = c.g * val;
+          b = c.b * val;
+        }
+      });
+
+      ctx.fillStyle = `rgb(${Math.floor(r)},${Math.floor(g)},${Math.floor(b)})`;
+      const bw = Math.max(2, fW / line.length * 2.5);
+      ctx.fillRect(x, y, bw, lineH + 0.5);
+    }
+  }
+
+  // Stats
+  let totalEnergy = 0;
+  for (let i = 0; i < bufLen; i++) totalEnergy += freqData[i];
+
+  let statsHTML = '';
+  statsHTML += `<span class="label">SAMPLE RATE:</span> <span class="val2">${audioCtx.sampleRate}</span><br>`;
+  statsHTML += `<span class="label">FFT SIZE:</span> <span class="val2">${analyser.fftSize}</span><br>`;
+  statsHTML += `<span class="label">TOTAL ENERGY:</span> <span class="val">${totalEnergy.toLocaleString()}</span><br>`;
+  statsHTML += `<span class="label">SCALE:</span> <span class="val">${logScale ? 'LOG' : 'LINEAR'}</span><br><br>`;
+
+  PRIMES.forEach((p, i) => {
+    const freq = FREQ_SCALE[i];
+    const bin = Math.round(freq / nyquist * bufLen);
+    const amp = bin < bufLen ? freqData[bin] : 0;
+    const col = enabled[i] ? COLORS[i] : '#444';
+    statsHTML += `<span style="color:${col}">P${p.toString().padStart(2)} ${freq.toString().padStart(4)}Hz</span> `;
+    statsHTML += `<span class="label">amp</span> <span class="val">${amp.toString().padStart(3)}</span><br>`;
+  });
+
+  document.getElementById('statsContent').innerHTML = statsHTML;
+}
+
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{1,2})([a-f\d]{1,2})([a-f\d]{1,2})$/i.exec(hex);
+  if (!result) return { r: 255, g: 255, b: 255 };
+  let r = result[1], g = result[2], b = result[3];
+  if (r.length === 1) r += r;
+  if (g.length === 1) g += g;
+  if (b.length === 1) b += b;
+  return { r: parseInt(r, 16), g: parseInt(g, 16), b: parseInt(b, 16) };
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

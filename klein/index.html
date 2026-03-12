@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-KLEIN — Klein Bottle Immersion</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #e4a;
+  font-family: 'Courier New', monospace;
+  cursor: crosshair;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+#stats {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(6,6,16,0.85);
+  border: 1px solid rgba(238,68,170,0.3);
+  padding: 16px 22px;
+  font-size: 13px;
+  line-height: 1.8;
+  z-index: 10;
+  min-width: 240px;
+  pointer-events: none;
+}
+#stats .title {
+  color: #e4a;
+  font-size: 11px;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(238,68,170,0.2);
+  padding-bottom: 6px;
+}
+#stats .label { color: #667; }
+#stats .value { color: #ccc; }
+#stats .highlight { color: #e4a; }
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(6,6,16,0.85);
+  border: 1px solid rgba(238,68,170,0.3);
+  padding: 16px 22px;
+  font-size: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#controls .ctrl-title {
+  color: #e4a;
+  font-size: 10px;
+  letter-spacing: 3px;
+  margin-bottom: 4px;
+}
+#controls button {
+  background: rgba(238,68,170,0.1);
+  border: 1px solid rgba(238,68,170,0.4);
+  color: #e4a;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+#controls button:hover {
+  background: rgba(238,68,170,0.25);
+  border-color: #e4a;
+}
+#controls button.active {
+  background: rgba(238,68,170,0.35);
+  border-color: #e4a;
+}
+#controls label {
+  color: #889;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#controls input[type=range] {
+  -webkit-appearance: none;
+  width: 140px;
+  height: 4px;
+  background: rgba(238,68,170,0.2);
+  outline: none;
+  border-radius: 2px;
+}
+#controls input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e4a;
+  cursor: pointer;
+}
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-KLEIN &mdash; KLEIN BOTTLE IMMERSION</div>
+  <div><span class="label">SURFACE </span><span class="value">Klein Bottle</span></div>
+  <div><span class="label">GENUS </span><span class="highlight">1 (non-orientable)</span></div>
+  <div><span class="label">EULER CHAR </span><span class="highlight">0</span></div>
+  <div><span class="label">DIMENSION </span><span class="value">4D &rarr; 3D &rarr; 2D</span></div>
+  <div><span class="label">GRID LINES </span><span class="value" id="s-grid">127</span></div>
+  <div><span class="label">PRIME NODES </span><span class="highlight" id="s-primes">0</span></div>
+  <div><span class="label">ROTATION </span><span class="value" id="s-rot">XW + YZ</span></div>
+  <div><span class="label">FPS </span><span class="value" id="s-fps">60</span></div>
+</div>
+
+<div id="controls">
+  <div class="ctrl-title">4D PROJECTION CONTROLS</div>
+  <label>SPEED <input type="range" id="speed" min="0" max="100" value="30"></label>
+  <label>ZOOM <input type="range" id="zoom" min="20" max="200" value="100"></label>
+  <div class="ctrl-title" style="margin-top:6px">ROTATION AXES</div>
+  <div class="btn-row">
+    <button id="btn-xw" class="active" onclick="setAxis('xw')">XW</button>
+    <button id="btn-yz" class="active" onclick="setAxis('yz')">YZ</button>
+    <button id="btn-xy" onclick="setAxis('xy')">XY</button>
+    <button id="btn-zw" onclick="setAxis('zw')">ZW</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const U_LINES = 127;
+const V_LINES = 32;
+let speed = 0.3;
+let zoomFactor = 1.0;
+let axisXW = true, axisYZ = true, axisXY = false, axisZW = false;
+let angleXW = 0, angleYZ = 0, angleXY = 0, angleZW = 0;
+let lastTime = 0, fps = 60, frameCount = 0, fpsAccum = 0;
+
+function setAxis(a) {
+  const btn = document.getElementById('btn-' + a);
+  if (a === 'xw') { axisXW = !axisXW; btn.className = axisXW ? 'active' : ''; }
+  if (a === 'yz') { axisYZ = !axisYZ; btn.className = axisYZ ? 'active' : ''; }
+  if (a === 'xy') { axisXY = !axisXY; btn.className = axisXY ? 'active' : ''; }
+  if (a === 'zw') { axisZW = !axisZW; btn.className = axisZW ? 'active' : ''; }
+  updateRotLabel();
+}
+
+function updateRotLabel() {
+  const parts = [];
+  if (axisXW) parts.push('XW');
+  if (axisYZ) parts.push('YZ');
+  if (axisXY) parts.push('XY');
+  if (axisZW) parts.push('ZW');
+  document.getElementById('s-rot').textContent = parts.join(' + ') || 'NONE';
+}
+
+function isPrime(n) {
+  if (n < 2) return false;
+  for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;
+  return true;
+}
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('speed').addEventListener('input', e => {
+  speed = e.target.value / 100;
+});
+document.getElementById('zoom').addEventListener('input', e => {
+  zoomFactor = e.target.value / 100;
+});
+
+// Klein bottle parametric (figure-8 immersion)
+function kleinBottle(u, v) {
+  const uu = u * 2 * Math.PI;
+  const vv = v * 2 * Math.PI;
+
+  const a = 3;
+  const cosu = Math.cos(uu), sinu = Math.sin(uu);
+  const cosv = Math.cos(vv), sinv = Math.sin(vv);
+
+  // Figure-8 Klein bottle immersion in 4D
+  const x = (a + Math.cos(uu / 2) * sinv - Math.sin(uu / 2) * Math.sin(2 * vv)) * cosu;
+  const y = (a + Math.cos(uu / 2) * sinv - Math.sin(uu / 2) * Math.sin(2 * vv)) * sinu;
+  const z = Math.sin(uu / 2) * sinv + Math.cos(uu / 2) * Math.sin(2 * vv);
+  const w = Math.cos(vv) * 1.5; // 4th dimension
+
+  return [x, y, z, w];
+}
+
+// 4D rotation in the XW plane
+function rot4XW(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c - p[3]*s, p[1], p[2], p[0]*s + p[3]*c];
+}
+
+// 4D rotation in the YZ plane
+function rot4YZ(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c, p[3]];
+}
+
+// 4D rotation in XY plane
+function rot4XY(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2], p[3]];
+}
+
+// 4D rotation in ZW plane
+function rot4ZW(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0], p[1], p[2]*c - p[3]*s, p[2]*s + p[3]*c];
+}
+
+// 4D -> 3D perspective projection
+function project4to3(p4) {
+  const d4 = 8;
+  const f = d4 / (d4 + p4[3]);
+  return [p4[0] * f, p4[1] * f, p4[2] * f, p4[3]];
+}
+
+// 3D -> 2D perspective projection
+function project3to2(p3, w, h, scale) {
+  const fov = 400;
+  const f = fov / (fov + p3[2] * scale * 0.3 + 200);
+  return [w / 2 + p3[0] * scale * f, h / 2 + p3[1] * scale * f, f, p3[2]];
+}
+
+function computePoint(u, v, w, h, scale, time) {
+  let pt = kleinBottle(u, v);
+
+  if (axisXW) pt = rot4XW(pt, angleXW);
+  if (axisYZ) pt = rot4YZ(pt, angleYZ);
+  if (axisXY) pt = rot4XY(pt, angleXY);
+  if (axisZW) pt = rot4ZW(pt, angleZW);
+
+  const w4 = pt[3]; // preserve 4D depth for coloring
+  const p3 = project4to3(pt);
+  const p2 = project3to2(p3, w, h, scale);
+  return { x: p2[0], y: p2[1], f: p2[2], z: p2[3], w4: w4 };
+}
+
+let primeNodeCount = 0;
+
+function draw(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+  fpsAccum += dt;
+  frameCount++;
+  if (fpsAccum > 500) {
+    fps = Math.round(frameCount / (fpsAccum / 1000));
+    document.getElementById('s-fps').textContent = fps;
+    frameCount = 0;
+    fpsAccum = 0;
+  }
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const scale = Math.min(w, h) * 0.07 * zoomFactor;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(238,68,170,0.04)';
+  ctx.lineWidth = 0.5;
+  const gs = 60;
+  for (let x = gs; x < w; x += gs) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = gs; y < h; y += gs) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  if (axisXW) angleXW += speed * 0.008;
+  if (axisYZ) angleYZ += speed * 0.005;
+  if (axisXY) angleXY += speed * 0.006;
+  if (axisZW) angleZW += speed * 0.007;
+
+  primeNodeCount = 0;
+
+  // Draw U-lines (along u parameter, constant v)
+  const vSteps = V_LINES;
+  for (let vi = 0; vi < vSteps; vi++) {
+    const v = vi / vSteps;
+    const pts = [];
+    for (let ui = 0; ui <= U_LINES; ui++) {
+      const u = ui / U_LINES;
+      pts.push(computePoint(u, v, w, h, scale, time));
+    }
+
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1], p1 = pts[i];
+      // Color by 4D depth
+      const depth4 = (p1.w4 + 5) / 10;
+      const hue = 330 + depth4 * 40;
+      const lightness = 30 + depth4 * 35;
+      const alpha = 0.15 + 0.5 * p1.f;
+      ctx.strokeStyle = `hsla(${hue}, 80%, ${lightness}%, ${alpha})`;
+      ctx.lineWidth = (0.6 + 1.0 * p1.f) * (isPrime(vi) ? 2.0 : 0.8);
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+    }
+  }
+
+  // Draw V-lines (along v parameter, constant u)
+  for (let ui = 0; ui < U_LINES; ui += 3) {
+    const u = ui / U_LINES;
+    const pts = [];
+    for (let vi = 0; vi <= vSteps; vi++) {
+      const v = vi / vSteps;
+      pts.push(computePoint(u, v, w, h, scale, time));
+    }
+
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1], p1 = pts[i];
+      const depth4 = (p1.w4 + 5) / 10;
+      const hue = 330 + depth4 * 40;
+      const lightness = 30 + depth4 * 35;
+      const alpha = 0.1 + 0.35 * p1.f;
+      ctx.strokeStyle = `hsla(${hue}, 80%, ${lightness}%, ${alpha * 0.6})`;
+      ctx.lineWidth = (0.4 + 0.6 * p1.f) * (isPrime(ui) ? 1.5 : 0.5);
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+    }
+  }
+
+  // Prime intersection highlights
+  for (let ui = 0; ui < U_LINES; ui++) {
+    if (!isPrime(ui)) continue;
+    for (let vi = 0; vi < vSteps; vi++) {
+      if (!isPrime(vi)) continue;
+      primeNodeCount++;
+      const u = ui / U_LINES;
+      const v = vi / vSteps;
+      const p = computePoint(u, v, w, h, scale, time);
+      const pulse = 0.4 + 0.6 * Math.sin(time * 0.003 + ui * 0.7 + vi * 1.3);
+      const rad = (2 + 3 * pulse) * p.f;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(238,68,170,${0.6 * pulse})`;
+      ctx.fill();
+
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 3);
+      g.addColorStop(0, `rgba(238,68,170,${0.3 * pulse})`);
+      g.addColorStop(1, 'rgba(238,68,170,0)');
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad * 3, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+  }
+
+  document.getElementById('s-primes').textContent = primeNodeCount;
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

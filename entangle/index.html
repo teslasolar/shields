@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-ENTANGLE — Quantum Entanglement</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#a4f;font-family:'Courier New',monospace;cursor:crosshair;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#stats{position:fixed;top:20px;right:20px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:16px 20px;font-size:13px;line-height:1.8;min-width:240px;pointer-events:none;z-index:10}
+#stats .title{color:#a4f;font-size:15px;font-weight:bold;margin-bottom:8px;letter-spacing:2px}
+#stats .label{color:#668}
+#stats .val{color:#caf}
+#controls{position:fixed;bottom:20px;left:20px;display:flex;flex-wrap:wrap;gap:8px;z-index:10;max-width:500px}
+#controls button{background:rgba(6,6,16,0.85);border:1px solid #a4f;color:#a4f;padding:8px 16px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;transition:all 0.2s}
+#controls button:hover{background:#a4f;color:#060610}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-ENTANGLE</div>
+  <div>Quantum Entanglement</div>
+  <br>
+  <div><span class="label">bell state: </span><span class="val" id="sBell">|Phi+⟩</span></div>
+  <div><span class="label">concurrence:</span><span class="val" id="sConc">1.000</span></div>
+  <div><span class="label">CHSH value: </span><span class="val" id="sCHSH">2.828</span></div>
+  <div><span class="label">qubit A:    </span><span class="val" id="sA">superpos</span></div>
+  <div><span class="label">qubit B:    </span><span class="val" id="sB">superpos</span></div>
+  <br>
+  <div><span class="label">collapsed:  </span><span class="val" id="sCol">no</span></div>
+</div>
+<div id="controls">
+  <button onclick="measure()">MEASURE</button>
+  <button onclick="rotateA()">ROTATE A</button>
+  <button onclick="rotateB()">ROTATE B</button>
+  <button onclick="switchBell()">SWITCH BELL</button>
+  <button onclick="resetEnt()">RESET</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+const bellStates=[
+  {name:'|\u03A6+\u27E9',label:'(|00\u27E9+|11\u27E9)/\u221A2',corr:1},
+  {name:'|\u03A6-\u27E9',label:'(|00\u27E9-|11\u27E9)/\u221A2',corr:1},
+  {name:'|\u03A8+\u27E9',label:'(|01\u27E9+|10\u27E9)/\u221A2',corr:-1},
+  {name:'|\u03A8-\u27E9',label:'(|01\u27E9-|10\u27E9)/\u221A2',corr:-1}
+];
+let bellIdx=0;
+let time=0;
+let collapsed=false;
+let collapsedA=0,collapsedB=0;
+let collapseTime=0;
+let particles=[];
+
+// Qubit states on Bloch sphere
+let thetaA=Math.PI/2,phiA=0;
+let thetaB=Math.PI/2,phiB=0;
+let targetTA=Math.PI/2,targetPA=0;
+let targetTB=Math.PI/2,targetPB=0;
+let rotAngle=0;
+
+function project(x,y,z,cx,cy,scale){
+  let camD=4;
+  let ry=rotAngle;
+  let cosY=Math.cos(ry),sinY=Math.sin(ry);
+  let x1=x*cosY-z*sinY,z1=x*sinY+z*cosY;
+  let rx=0.35;
+  let cosX=Math.cos(rx),sinX=Math.sin(rx);
+  let y1=y*cosX-z1*sinX,z2=y*sinX+z1*cosX;
+  let p=camD/(camD+z2);
+  return{x:cx+x1*scale*p,y:cy-y1*scale*p,z:z2,s:p};
+}
+
+function drawSphere(cx,cy,scale,theta,phi,label,highlight,collapsed,cval){
+  // Wireframe
+  for(let lat=-60;lat<=60;lat+=30){
+    let r=Math.cos(lat*Math.PI/180),yy=Math.sin(lat*Math.PI/180);
+    ctx.beginPath();
+    for(let i=0;i<=48;i++){
+      let a=2*Math.PI*i/48;
+      let p=project(r*Math.cos(a),yy,r*Math.sin(a),cx,cy,scale);
+      i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);
+    }
+    ctx.strokeStyle='#a4f';ctx.globalAlpha=0.1;ctx.stroke();
+  }
+  // Equator
+  ctx.beginPath();
+  for(let i=0;i<=64;i++){
+    let a=2*Math.PI*i/64;
+    let p=project(Math.cos(a),0,Math.sin(a),cx,cy,scale);
+    i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);
+  }
+  ctx.strokeStyle='#a4f';ctx.globalAlpha=0.25;ctx.stroke();
+  // Meridians
+  for(let lon=0;lon<180;lon+=45){
+    ctx.beginPath();
+    let nx=Math.sin(lon*Math.PI/180),nz=Math.cos(lon*Math.PI/180);
+    for(let i=0;i<=48;i++){
+      let a=2*Math.PI*i/48;
+      let px=Math.cos(a)*nz,py=Math.sin(a),pz=-Math.cos(a)*nx;
+      let p=project(px,py,pz,cx,cy,scale);
+      i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);
+    }
+    ctx.strokeStyle='#a4f';ctx.globalAlpha=0.08;ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // Axes
+  let p0=project(0,-1.2,0,cx,cy,scale),p1=project(0,1.2,0,cx,cy,scale);
+  ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);
+  ctx.strokeStyle='#a4f';ctx.globalAlpha=0.2;ctx.lineWidth=1;ctx.stroke();
+  ctx.globalAlpha=1;
+
+  // Labels
+  let pN=project(0,1.15,0,cx,cy,scale);
+  let pS=project(0,-1.15,0,cx,cy,scale);
+  ctx.font='11px Courier New';ctx.fillStyle='#8af';
+  ctx.fillText('|0\u27E9',pN.x+4,pN.y-4);
+  ctx.fillText('|1\u27E9',pS.x+4,pS.y+12);
+
+  // State vector
+  let sx=Math.sin(theta)*Math.cos(phi),sy=Math.cos(theta),sz=Math.sin(theta)*Math.sin(phi);
+  let ps=project(sx,sy,sz,cx,cy,scale);
+  let po=project(0,0,0,cx,cy,scale);
+  let col=highlight?'#ff44ff':'#a4f';
+  if(collapsed)col=cval===0?'#4ff':'#f4f';
+  ctx.beginPath();ctx.moveTo(po.x,po.y);ctx.lineTo(ps.x,ps.y);
+  ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();ctx.lineWidth=1;
+  // Dot
+  ctx.beginPath();ctx.arc(ps.x,ps.y,5,0,Math.PI*2);
+  ctx.fillStyle=col;ctx.fill();
+  // Glow
+  let grad=ctx.createRadialGradient(ps.x,ps.y,0,ps.x,ps.y,25);
+  grad.addColorStop(0,col+'88');grad.addColorStop(1,col+'00');
+  ctx.fillStyle=grad;ctx.fillRect(ps.x-25,ps.y-25,50,50);
+
+  // Label
+  ctx.font='14px Courier New';ctx.fillStyle='#a4f';
+  ctx.fillText(label,cx-scale*0.3,cy+scale+30);
+}
+
+function measure(){
+  if(collapsed)return;
+  collapsed=true;collapseTime=time;
+  let r=Math.random();
+  let bs=bellStates[bellIdx];
+  if(bellIdx<=1){// Phi states: |00>+|11>
+    if(r<0.5){collapsedA=0;collapsedB=0;}else{collapsedA=1;collapsedB=1;}
+  }else{// Psi states: |01>+|10>
+    if(r<0.5){collapsedA=0;collapsedB=1;}else{collapsedA=1;collapsedB=0;}
+  }
+  targetTA=collapsedA===0?0:Math.PI;targetPA=0;
+  targetTB=collapsedB===0?0:Math.PI;targetPB=0;
+  // Spawn particles
+  for(let i=0;i<60;i++){
+    let side=i<30?-1:1;
+    let cx=W/2+side*W*0.2;
+    particles.push({
+      x:cx,y:H/2,
+      vx:(Math.random()-0.5)*8+side*2,
+      vy:(Math.random()-0.5)*8,
+      life:1,color:collapsedA===0?'#4ff':'#f4f',
+      r:Math.random()*3+1
+    });
+  }
+}
+
+function rotateA(){
+  if(collapsed)return;
+  targetTA+=0.4;targetPA+=0.6;
+  targetTA=targetTA%(Math.PI);
+}
+function rotateB(){
+  if(collapsed)return;
+  targetTB+=0.4;targetPB+=0.6;
+  targetTB=targetTB%(Math.PI);
+}
+function switchBell(){
+  bellIdx=(bellIdx+1)%4;
+  resetEnt();
+}
+function resetEnt(){
+  collapsed=false;
+  targetTA=Math.PI/2;targetPA=0;
+  targetTB=Math.PI/2;targetPB=0;
+  thetaA=Math.PI/2;phiA=0;
+  thetaB=Math.PI/2;phiB=0;
+  particles=[];
+}
+
+function drawCorrelationLines(){
+  if(collapsed)return;
+  let cx1=W/2-W*0.2,cx2=W/2+W*0.2,cy=H/2;
+  let n=12;
+  for(let i=0;i<n;i++){
+    let t=time*2+i*Math.PI*2/n;
+    let progress=(Math.sin(t)*0.5+0.5);
+    let x=cx1+(cx2-cx1)*progress;
+    let yOff=Math.sin(t*3+i)*20;
+    let alpha=0.15+0.15*Math.sin(t*2);
+    ctx.beginPath();ctx.arc(x,cy+yOff,2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(170,68,255,${alpha})`;ctx.fill();
+  }
+  // Correlation arc
+  ctx.beginPath();
+  ctx.moveTo(cx1,cy);
+  for(let i=0;i<=30;i++){
+    let frac=i/30;
+    let x=cx1+(cx2-cx1)*frac;
+    let y=cy-Math.sin(frac*Math.PI)*40*Math.sin(time*1.5);
+    ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle='rgba(170,68,255,0.2)';ctx.lineWidth=1;ctx.stroke();
+
+  // Entanglement waves
+  for(let w=0;w<3;w++){
+    ctx.beginPath();
+    for(let i=0;i<=60;i++){
+      let frac=i/60;
+      let x=cx1+(cx2-cx1)*frac;
+      let y=cy+Math.sin(frac*Math.PI*4+time*3+w*2)*15*(1-Math.abs(frac-0.5)*2);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle=`rgba(170,68,255,${0.06+w*0.02})`;ctx.stroke();
+  }
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  time+=0.016;
+  rotAngle+=0.004;
+
+  // Entangled oscillation
+  if(!collapsed){
+    let osc=Math.sin(time*1.2)*0.3;
+    phiA+=(targetPA+osc-phiA)*0.05;
+    phiB+=(targetPB-osc-phiB)*0.05;
+    thetaA+=(targetTA-thetaA)*0.05;
+    thetaB+=(targetTB-thetaB)*0.05;
+    // Mirror entanglement: keep them correlated
+    let bs=bellStates[bellIdx];
+    if(bs.corr===1){
+      // Same direction correlation
+      thetaB+=(thetaA-thetaB)*0.02;
+    }else{
+      // Anti-correlation
+      thetaB+=((Math.PI-thetaA)-thetaB)*0.02;
+    }
+  }else{
+    thetaA+=(targetTA-thetaA)*0.12;phiA+=(targetPA-phiA)*0.12;
+    thetaB+=(targetTB-thetaB)*0.12;phiB+=(targetPB-phiB)*0.12;
+  }
+
+  // Particles
+  particles=particles.filter(p=>{
+    p.x+=p.vx;p.y+=p.vy;p.life-=0.015;p.vy+=0.05;
+    return p.life>0;
+  });
+
+  // Clear
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+
+  // Collapse flash
+  if(collapsed&&time-collapseTime<0.5){
+    let f=1-(time-collapseTime)/0.5;
+    ctx.fillStyle=`rgba(170,68,255,${f*0.15})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Title
+  ctx.font='11px Courier New';ctx.fillStyle='#668';
+  ctx.fillText(bellStates[bellIdx].label,W/2-80,40);
+
+  // Draw correlation lines
+  drawCorrelationLines();
+
+  // Draw two spheres
+  let sep=W*0.2;
+  let sc=Math.min(W*0.12,H*0.25);
+  drawSphere(W/2-sep,H/2,sc,thetaA,phiA,'QUBIT A',!collapsed,collapsed,collapsedA);
+  drawSphere(W/2+sep,H/2,sc,thetaB,phiB,'QUBIT B',!collapsed,collapsed,collapsedB);
+
+  // Particles
+  for(let p of particles){
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);
+    ctx.fillStyle=p.color;ctx.globalAlpha=p.life;ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Labels between spheres
+  if(!collapsed){
+    ctx.font='12px Courier New';ctx.fillStyle='#a4f';ctx.globalAlpha=0.4+0.2*Math.sin(time*2);
+    ctx.fillText('ENTANGLED',W/2-40,H/2-sc-20);
+    ctx.globalAlpha=1;
+  }else{
+    ctx.font='12px Courier New';ctx.fillStyle='#f44';
+    ctx.fillText('COLLAPSED',W/2-38,H/2-sc-20);
+    ctx.font='11px Courier New';ctx.fillStyle='#caf';
+    ctx.fillText(`A=|${collapsedA}\u27E9  B=|${collapsedB}\u27E9`,W/2-50,H/2-sc-5);
+  }
+
+  // Update stats
+  let bs=bellStates[bellIdx];
+  document.getElementById('sBell').textContent=bs.name;
+  document.getElementById('sConc').textContent=collapsed?'0.000':'1.000';
+  document.getElementById('sCHSH').textContent=collapsed?'2.000':'2.828';
+  document.getElementById('sA').textContent=collapsed?`|${collapsedA}\u27E9`:'superpos';
+  document.getElementById('sB').textContent=collapsed?`|${collapsedB}\u27E9`:'superpos';
+  document.getElementById('sCol').textContent=collapsed?'yes':'no';
+}
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-MÖBIUS — Non-Orientable Prime Surface</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060610;
+  color: #e4a;
+  font-family: 'Courier New', monospace;
+  cursor: crosshair;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+#stats {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(6,6,16,0.85);
+  border: 1px solid rgba(238,68,170,0.3);
+  padding: 16px 22px;
+  font-size: 13px;
+  line-height: 1.8;
+  z-index: 10;
+  min-width: 230px;
+  pointer-events: none;
+}
+#stats .title {
+  color: #e4a;
+  font-size: 11px;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(238,68,170,0.2);
+  padding-bottom: 6px;
+}
+#stats .label { color: #667; }
+#stats .value { color: #ccc; }
+#stats .highlight { color: #e4a; }
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(6,6,16,0.85);
+  border: 1px solid rgba(238,68,170,0.3);
+  padding: 16px 22px;
+  font-size: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#controls .ctrl-title {
+  color: #e4a;
+  font-size: 10px;
+  letter-spacing: 3px;
+  margin-bottom: 4px;
+}
+#controls button {
+  background: rgba(238,68,170,0.1);
+  border: 1px solid rgba(238,68,170,0.4);
+  color: #e4a;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+#controls button:hover {
+  background: rgba(238,68,170,0.25);
+  border-color: #e4a;
+}
+#controls button.active {
+  background: rgba(238,68,170,0.35);
+  border-color: #e4a;
+}
+#controls label {
+  color: #889;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#controls input[type=range] {
+  -webkit-appearance: none;
+  width: 160px;
+  height: 4px;
+  background: rgba(238,68,170,0.2);
+  outline: none;
+  border-radius: 2px;
+}
+#controls input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e4a;
+  cursor: pointer;
+}
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-M&Ouml;BIUS &mdash; NON-ORIENTABLE PRIME SURFACE</div>
+  <div><span class="label">SURFACE TYPE </span><span class="value">M&ouml;bius Strip</span></div>
+  <div><span class="label">ORIENTABLE </span><span class="value highlight">NO</span></div>
+  <div><span class="label">POINTS </span><span class="value" id="s-points">127</span></div>
+  <div><span class="label">PRIME COUNT </span><span class="highlight" id="s-primes">31</span></div>
+  <div><span class="label">STRIPS </span><span class="value" id="s-strips">15</span></div>
+  <div><span class="label">PARTICLE LOOP </span><span class="highlight" id="s-loop">1 / 2</span></div>
+  <div><span class="label">FPS </span><span class="value" id="s-fps">60</span></div>
+</div>
+
+<div id="controls">
+  <div class="ctrl-title">SURFACE CONTROLS</div>
+  <label>ROTATION <input type="range" id="speed" min="0" max="100" value="35"></label>
+  <div class="btn-row">
+    <button id="btn-wire" class="active" onclick="setMode('wire')">WIREFRAME</button>
+    <button id="btn-solid" onclick="setMode('solid')">SOLID</button>
+    <button id="btn-both" onclick="setMode('both')">COMBINED</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let renderMode = 'wire'; // wire, solid, both
+let speed = 0.35;
+let angleX = 0.3, angleY = 0, angleZ = 0;
+const U_SEGS = 127;
+const V_SEGS = 15;
+let lastTime = 0, fps = 60, frameCount = 0, fpsAccum = 0;
+
+function setMode(m) {
+  renderMode = m;
+  document.getElementById('btn-wire').className = m === 'wire' ? 'active' : '';
+  document.getElementById('btn-solid').className = m === 'solid' ? 'active' : '';
+  document.getElementById('btn-both').className = m === 'both' ? 'active' : '';
+}
+
+function isPrime(n) {
+  if (n < 2) return false;
+  for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;
+  return true;
+}
+
+const primeCount = Array.from({length: U_SEGS}, (_, i) => i).filter(isPrime).length;
+document.getElementById('s-primes').textContent = primeCount;
+document.getElementById('s-strips').textContent = V_SEGS;
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+document.getElementById('speed').addEventListener('input', e => {
+  speed = e.target.value / 100;
+});
+
+function mobius(u, v, R, w) {
+  const theta = u * 2 * Math.PI;
+  const s = v - 0.5;
+  const x = (R + w * s * Math.cos(theta / 2)) * Math.cos(theta);
+  const y = (R + w * s * Math.cos(theta / 2)) * Math.sin(theta);
+  const z = w * s * Math.sin(theta / 2);
+  return [x, y, z];
+}
+
+function rotX(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c];
+}
+function rotY(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c + p[2]*s, p[1], -p[0]*s + p[2]*c];
+}
+function rotZ(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2]];
+}
+
+function project(p3, w, h) {
+  const fov = 500;
+  const d = fov / (fov + p3[2] + 250);
+  return [w / 2 + p3[0] * d, h / 2 + p3[1] * d, d, p3[2]];
+}
+
+let particleU = 0;
+let particleLoop = 0;
+
+function draw(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+  fpsAccum += dt;
+  frameCount++;
+  if (fpsAccum > 500) {
+    fps = Math.round(frameCount / (fpsAccum / 1000));
+    document.getElementById('s-fps').textContent = fps;
+    frameCount = 0;
+    fpsAccum = 0;
+  }
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(238,68,170,0.04)';
+  ctx.lineWidth = 0.5;
+  const gs = 60;
+  for (let x = gs; x < w; x += gs) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = gs; y < h; y += gs) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  angleY += speed * 0.01;
+  angleX += speed * 0.003;
+  angleZ += speed * 0.002;
+
+  const R = Math.min(w, h) * 0.25;
+  const stripW = R * 0.5;
+
+  // Compute mesh
+  const mesh = [];
+  for (let ui = 0; ui <= U_SEGS; ui++) {
+    mesh[ui] = [];
+    const u = ui / U_SEGS;
+    for (let vi = 0; vi <= V_SEGS; vi++) {
+      const v = vi / V_SEGS;
+      let pt = mobius(u, v, R, stripW);
+      pt = rotX(pt, angleX);
+      pt = rotY(pt, angleY);
+      pt = rotZ(pt, angleZ);
+      const [sx, sy, sd, sz] = project(pt, w, h);
+      mesh[ui][vi] = { x: sx, y: sy, d: sd, z: sz };
+    }
+  }
+
+  // Draw solid quads
+  if (renderMode === 'solid' || renderMode === 'both') {
+    for (let ui = 0; ui < U_SEGS; ui++) {
+      for (let vi = 0; vi < V_SEGS; vi++) {
+        const a = mesh[ui][vi];
+        const b = mesh[ui + 1][vi];
+        const c = mesh[ui + 1][vi + 1];
+        const d = mesh[ui][vi + 1];
+        const avgD = (a.d + b.d + c.d + d.d) / 4;
+        const avgZ = (a.z + b.z + c.z + d.z) / 4;
+        const depth = (avgZ + R) / (2 * R);
+        const alpha = 0.03 + 0.12 * avgD;
+
+        let r = 238, g = 68, bl = 170;
+        if (isPrime(ui)) {
+          r = 255; g = 120; bl = 200;
+        }
+        ctx.fillStyle = `rgba(${r},${g},${bl},${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw wireframe
+  if (renderMode === 'wire' || renderMode === 'both') {
+    // U-lines (along strip)
+    for (let vi = 0; vi <= V_SEGS; vi++) {
+      for (let ui = 0; ui < U_SEGS; ui++) {
+        const p0 = mesh[ui][vi];
+        const p1 = mesh[ui + 1][vi];
+        const alpha = 0.15 + 0.45 * p0.d;
+        const prime = isPrime(ui);
+        ctx.strokeStyle = prime
+          ? `rgba(255,150,220,${alpha * 1.3})`
+          : `rgba(238,68,170,${alpha})`;
+        ctx.lineWidth = prime ? 1.8 * p0.d : 0.8 * p0.d;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.stroke();
+      }
+    }
+
+    // V-lines (across strip)
+    for (let ui = 0; ui <= U_SEGS; ui += 4) {
+      for (let vi = 0; vi < V_SEGS; vi++) {
+        const p0 = mesh[ui][vi];
+        const p1 = mesh[ui][vi + 1];
+        const alpha = 0.1 + 0.3 * p0.d;
+        ctx.strokeStyle = `rgba(238,68,170,${alpha * 0.5})`;
+        ctx.lineWidth = 0.5 * p0.d;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Prime-indexed point highlights
+  for (let ui = 0; ui < U_SEGS; ui++) {
+    if (isPrime(ui)) {
+      const midV = Math.floor(V_SEGS / 2);
+      const p = mesh[ui][midV];
+      const pulse = 0.5 + 0.5 * Math.sin(time * 0.004 + ui * 0.5);
+      const rad = (3 + 3 * pulse) * p.d;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(238,68,170,${0.5 * pulse})`;
+      ctx.fill();
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 3);
+      g.addColorStop(0, `rgba(238,68,170,${0.25 * pulse})`);
+      g.addColorStop(1, 'rgba(238,68,170,0)');
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad * 3, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+  }
+
+  // Tracing particle that shows 2-loop property
+  particleU += speed * 0.002;
+  if (particleU >= 2.0) {
+    particleU -= 2.0;
+    particleLoop = 0;
+  }
+  const loopNum = particleU < 1.0 ? 1 : 2;
+  document.getElementById('s-loop').textContent = loopNum + ' / 2';
+
+  // Particle on surface edge (v=0 first loop, smoothly transitioning)
+  const pu = particleU % 1.0;
+  const pv = particleU < 1.0 ? 0 : 1;
+  let ppt = mobius(pu, pv, R, stripW);
+  ppt = rotX(ppt, angleX);
+  ppt = rotY(ppt, angleY);
+  ppt = rotZ(ppt, angleZ);
+  const [ppx, ppy, ppd] = project(ppt, w, h);
+
+  // Particle trail
+  for (let t = 1; t <= 40; t++) {
+    const trailU = particleU - t * 0.005;
+    if (trailU < 0) continue;
+    const tu = trailU % 1.0;
+    const tv = trailU < 1.0 ? 0 : 1;
+    let tpt = mobius(tu, tv, R, stripW);
+    tpt = rotX(tpt, angleX);
+    tpt = rotY(tpt, angleY);
+    tpt = rotZ(tpt, angleZ);
+    const [tx, ty, td] = project(tpt, w, h);
+    const a = (1 - t / 40) * 0.5;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 2 * td * (1 - t / 40), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fill();
+  }
+
+  // Main particle
+  ctx.beginPath();
+  ctx.arc(ppx, ppy, 5 * ppd, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  const pg = ctx.createRadialGradient(ppx, ppy, 0, ppx, ppy, 20 * ppd);
+  pg.addColorStop(0, 'rgba(255,255,255,0.5)');
+  pg.addColorStop(0.5, 'rgba(238,68,170,0.2)');
+  pg.addColorStop(1, 'rgba(238,68,170,0)');
+  ctx.beginPath();
+  ctx.arc(ppx, ppy, 20 * ppd, 0, Math.PI * 2);
+  ctx.fillStyle = pg;
+  ctx.fill();
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

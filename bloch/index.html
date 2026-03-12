@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-BLOCH — Bloch Sphere Qubit</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#a4f;font-family:'Courier New',monospace;cursor:crosshair;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#stats{position:fixed;top:20px;right:20px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:16px 20px;font-size:13px;line-height:1.8;min-width:220px;pointer-events:none;z-index:10}
+#stats .title{color:#a4f;font-size:15px;font-weight:bold;margin-bottom:8px;letter-spacing:2px}
+#stats .label{color:#668}
+#stats .val{color:#caf}
+#controls{position:fixed;bottom:20px;left:20px;display:flex;flex-wrap:wrap;gap:8px;z-index:10;max-width:400px}
+#controls button{background:rgba(6,6,16,0.85);border:1px solid #a4f;color:#a4f;padding:8px 16px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;transition:all 0.2s}
+#controls button:hover{background:#a4f;color:#060610}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-BLOCH</div>
+  <div>Bloch Sphere Qubit</div>
+  <br>
+  <div><span class="label">theta: </span><span class="val" id="sTheta">0.000</span></div>
+  <div><span class="label">phi:   </span><span class="val" id="sPhi">0.000</span></div>
+  <div><span class="label">|a|^2: </span><span class="val" id="sAlpha">1.000</span></div>
+  <div><span class="label">|b|^2: </span><span class="val" id="sBeta">0.000</span></div>
+  <div><span class="label">purity:</span><span class="val" id="sPurity">1.000</span></div>
+  <br>
+  <div><span class="label">rabi:  </span><span class="val" id="sRabi">active</span></div>
+</div>
+<div id="controls">
+  <button onclick="applyGate('X')">GATE X</button>
+  <button onclick="applyGate('Y')">GATE Y</button>
+  <button onclick="applyGate('Z')">GATE Z</button>
+  <button onclick="applyGate('H')">HADAMARD</button>
+  <button onclick="resetState()">RESET</button>
+  <button onclick="toggleRabi()">RABI ON/OFF</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+// Qubit state: |psi> = cos(theta/2)|0> + e^(i*phi)*sin(theta/2)|1>
+let theta=0,phi=0;
+let targetTheta=0,targetPhi=0;
+let rabiActive=true;
+const primes=[2,3,5,7,11,13,17];
+let time=0;
+let trailPoints=[];
+const MAX_TRAIL=500;
+let gateFlash=0;
+let gateFlashColor='#a4f';
+
+// 3D projection
+const camDist=4;
+let rotY=0,rotX=0.3;
+
+function project(x,y,z){
+  // Rotate around Y
+  let cy=Math.cos(rotY),sy=Math.sin(rotY);
+  let x1=x*cy-z*sy, z1=x*sy+z*cy;
+  // Rotate around X
+  let cx=Math.cos(rotX),sx=Math.sin(rotX);
+  let y1=y*cx-z1*sx, z2=y*sx+z1*cx;
+  let scale=Math.min(W,H)*0.28;
+  let perspective=camDist/(camDist+z2);
+  return{x:W/2+x1*scale*perspective,y:H/2-y1*scale*perspective,z:z2,s:perspective};
+}
+
+function blochXYZ(th,ph){
+  return{x:Math.sin(th)*Math.cos(ph),y:Math.cos(th),z:Math.sin(th)*Math.sin(ph)};
+}
+
+function applyGate(g){
+  gateFlash=1;
+  if(g==='X'){targetTheta=Math.PI-targetTheta;targetPhi=targetPhi+Math.PI;}
+  else if(g==='Y'){let nt=Math.PI-targetTheta;let np=Math.PI-targetPhi;targetTheta=nt;targetPhi=np;}
+  else if(g==='Z'){targetPhi=targetPhi+Math.PI;}
+  else if(g==='H'){
+    let st=Math.sin(targetTheta/2),ct=Math.cos(targetTheta/2);
+    let ep=targetPhi;
+    // H|psi>: new state on Bloch sphere
+    let nx=Math.sin(targetTheta)*Math.cos(targetPhi);
+    let ny=Math.cos(targetTheta);
+    let nz=Math.sin(targetTheta)*Math.sin(targetPhi);
+    // Hadamard: (X+Z)/sqrt2 rotation
+    let hx=(nz+nx)/1.414,hy=ny,hz=(nx-nz)/1.414;
+    // Actually just swap X and Z, negate Y-ish: H maps |0>->|+>, |1>->|->
+    hx=ny;hy=nx;
+    let hnx=ny,hny=nx*Math.cos(targetPhi)+nz*Math.sin(targetPhi);
+    // Simpler: just do the Bloch rotation for Hadamard
+    // H = rotation by pi around (X+Z)/sqrt(2) axis
+    let ax=1/Math.sqrt(2),az=1/Math.sqrt(2);
+    // Rodrigues rotation by pi around (ax,0,az)
+    let dot=ax*nx+az*nz;
+    let rx=2*dot*ax-nx, ry=-ny, rz=2*dot*az-nz;
+    targetTheta=Math.acos(Math.max(-1,Math.min(1,ry)));
+    targetPhi=Math.atan2(rz,rx);
+  }
+  targetPhi=((targetPhi%(2*Math.PI))+(2*Math.PI))%(2*Math.PI);
+  targetTheta=Math.max(0,Math.min(Math.PI,targetTheta));
+  gateFlashColor=g==='X'?'#f44':g==='Y'?'#4f4':g==='Z'?'#44f':'#ff4';
+}
+
+function resetState(){theta=0;phi=0;targetTheta=0;targetPhi=0;trailPoints=[];gateFlash=1;gateFlashColor='#a4f';}
+function toggleRabi(){rabiActive=!rabiActive;}
+
+function drawCircle3D(cx,cy,cz,r,nx,ny,nz,segments,color,alpha){
+  // Draw a circle in 3D centered at (cx,cy,cz) with normal (nx,ny,nz)
+  // Find two perpendicular vectors to normal
+  let ux,uy,uz;
+  if(Math.abs(ny)>0.9){ux=1;uy=0;uz=0;}else{ux=0;uy=1;uz=0;}
+  // Cross product: normal x u
+  let vx=ny*uz-nz*uy,vy=nz*ux-nx*uz,vz=nx*uy-ny*ux;
+  let vl=Math.sqrt(vx*vx+vy*vy+vz*vz);
+  vx/=vl;vy/=vl;vz/=vl;
+  // Second perpendicular
+  let wx=ny*vz-nz*vy,wy=nz*vx-nx*vz,wz=nx*vy-ny*vx;
+
+  ctx.beginPath();
+  for(let i=0;i<=segments;i++){
+    let a=2*Math.PI*i/segments;
+    let px=cx+r*(Math.cos(a)*vx+Math.sin(a)*wx);
+    let py=cy+r*(Math.cos(a)*vy+Math.sin(a)*wy);
+    let pz=cz+r*(Math.cos(a)*vz+Math.sin(a)*wz);
+    let p=project(px,py,pz);
+    if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);
+  }
+  ctx.strokeStyle=color;
+  ctx.globalAlpha=alpha;
+  ctx.stroke();
+  ctx.globalAlpha=1;
+}
+
+function drawLine3D(x1,y1,z1,x2,y2,z2,color,alpha,lw){
+  let p1=project(x1,y1,z1),p2=project(x2,y2,z2);
+  ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
+  ctx.strokeStyle=color;ctx.globalAlpha=alpha;ctx.lineWidth=lw||1;
+  ctx.stroke();ctx.globalAlpha=1;ctx.lineWidth=1;
+}
+
+function drawArrow3D(x1,y1,z1,x2,y2,z2,color,lw){
+  let p1=project(x1,y1,z1),p2=project(x2,y2,z2);
+  ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
+  ctx.strokeStyle=color;ctx.lineWidth=lw||2;ctx.stroke();ctx.lineWidth=1;
+  // Arrowhead
+  let dx=p2.x-p1.x,dy=p2.y-p1.y,dl=Math.sqrt(dx*dx+dy*dy);
+  if(dl>5){
+    dx/=dl;dy/=dl;
+    let ax=p2.x-dx*12,ay=p2.y-dy*12;
+    ctx.beginPath();
+    ctx.moveTo(p2.x,p2.y);
+    ctx.lineTo(ax-dy*5,ay+dx*5);
+    ctx.lineTo(ax+dy*5,ay-dx*5);
+    ctx.closePath();ctx.fillStyle=color;ctx.fill();
+  }
+}
+
+function drawLabel3D(x,y,z,text,color){
+  let p=project(x,y,z);
+  ctx.font='13px Courier New';ctx.fillStyle=color;
+  ctx.globalAlpha=0.9;
+  ctx.fillText(text,p.x+6,p.y-6);
+  ctx.globalAlpha=1;
+}
+
+function drawDot3D(x,y,z,r,color){
+  let p=project(x,y,z);
+  ctx.beginPath();ctx.arc(p.x,p.y,r*p.s,0,Math.PI*2);
+  ctx.fillStyle=color;ctx.fill();
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  time+=0.016;
+
+  // Slow sphere rotation
+  rotY+=0.003;
+
+  // Rabi oscillations
+  if(rabiActive){
+    let dt=0;
+    for(let i=0;i<primes.length;i++){
+      let freq=primes[i]*0.01;
+      let amp=0.003/(i+1);
+      targetTheta+=amp*Math.sin(freq*time*60);
+      targetPhi+=amp*Math.cos(freq*time*60*1.3);
+    }
+    targetTheta=Math.max(0.01,Math.min(Math.PI-0.01,targetTheta));
+    targetPhi=((targetPhi%(2*Math.PI))+(2*Math.PI))%(2*Math.PI);
+  }
+
+  // Smooth interpolation
+  theta+=(targetTheta-theta)*0.08;
+  phi+=(targetPhi-phi)*0.08;
+
+  // Trail
+  let bv=blochXYZ(theta,phi);
+  trailPoints.push({x:bv.x,y:bv.y,z:bv.z,t:time});
+  if(trailPoints.length>MAX_TRAIL)trailPoints.shift();
+
+  // Gate flash decay
+  if(gateFlash>0)gateFlash*=0.95;
+
+  // Clear
+  ctx.fillStyle='#060610';
+  ctx.fillRect(0,0,W,H);
+
+  // Gate flash
+  if(gateFlash>0.01){
+    ctx.fillStyle=gateFlashColor;
+    ctx.globalAlpha=gateFlash*0.1;
+    ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha=1;
+  }
+
+  // Draw wireframe sphere
+  ctx.lineWidth=1;
+  // Latitude circles
+  for(let lat=-80;lat<=80;lat+=20){
+    let r=Math.cos(lat*Math.PI/180);
+    let y=Math.sin(lat*Math.PI/180);
+    drawCircle3D(0,y,0,r,0,1,0,48,'#a4f',0.08);
+  }
+  // Equator
+  drawCircle3D(0,0,0,1,0,1,0,64,'#a4f',0.25);
+  // Longitude circles
+  for(let lon=0;lon<180;lon+=30){
+    let nx=Math.sin(lon*Math.PI/180),nz=Math.cos(lon*Math.PI/180);
+    drawCircle3D(0,0,0,1,nx,0,nz,64,'#a4f',0.08);
+  }
+
+  // Axes
+  drawLine3D(-1.3,0,0,1.3,0,0,'#a4f',0.2,1);
+  drawLine3D(0,-1.3,0,0,1.3,0,'#a4f',0.2,1);
+  drawLine3D(0,0,-1.3,0,0,1.3,'#a4f',0.2,1);
+
+  // Labels
+  drawLabel3D(0,1.15,0,'|0\u27E9','#caf');
+  drawLabel3D(0,-1.15,0,'|1\u27E9','#caf');
+  drawLabel3D(1.15,0,0,'|+\u27E9','#8af');
+  drawLabel3D(-1.15,0,0,'|-\u27E9','#8af');
+  drawLabel3D(0,0,1.15,'|i\u27E9','#8af');
+  drawLabel3D(0,0,-1.15,'|-i\u27E9','#8af');
+
+  // Axis dots
+  drawDot3D(0,1,0,4,'#caf');
+  drawDot3D(0,-1,0,4,'#caf');
+  drawDot3D(1,0,0,3,'#8af');
+  drawDot3D(-1,0,0,3,'#8af');
+  drawDot3D(0,0,1,3,'#8af');
+  drawDot3D(0,0,-1,3,'#8af');
+
+  // Trail
+  for(let i=1;i<trailPoints.length;i++){
+    let a=i/trailPoints.length;
+    let tp=trailPoints[i],pp=trailPoints[i-1];
+    let p1=project(pp.x,pp.y,pp.z),p2=project(tp.x,tp.y,tp.z);
+    ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
+    ctx.strokeStyle=`rgba(170,68,255,${a*0.5})`;
+    ctx.lineWidth=a*2;
+    ctx.stroke();
+  }
+  ctx.lineWidth=1;
+
+  // State vector arrow
+  drawArrow3D(0,0,0,bv.x,bv.y,bv.z,'#ff44ff',3);
+
+  // State dot
+  drawDot3D(bv.x,bv.y,bv.z,6,'#ff44ff');
+
+  // Glow at tip
+  let pt=project(bv.x,bv.y,bv.z);
+  let grad=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,30);
+  grad.addColorStop(0,'rgba(255,68,255,0.4)');
+  grad.addColorStop(1,'rgba(255,68,255,0)');
+  ctx.fillStyle=grad;
+  ctx.fillRect(pt.x-30,pt.y-30,60,60);
+
+  // Update stats
+  let alpha2=Math.cos(theta/2)**2;
+  let beta2=Math.sin(theta/2)**2;
+  document.getElementById('sTheta').textContent=theta.toFixed(3);
+  document.getElementById('sPhi').textContent=phi.toFixed(3);
+  document.getElementById('sAlpha').textContent=alpha2.toFixed(3);
+  document.getElementById('sBeta').textContent=beta2.toFixed(3);
+  document.getElementById('sPurity').textContent='1.000';
+  document.getElementById('sRabi').textContent=rabiActive?'active':'paused';
+}
+animate();
+</script>
+</body>
+</html>

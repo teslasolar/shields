@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-LOGISTIC — Logistic Map Explorer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #c0c0c0;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+  }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #stats {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(6,6,16,0.88); border: 1px solid #f84;
+    padding: 14px 18px; font-size: 12px; line-height: 1.8;
+    z-index: 10; min-width: 250px; border-radius: 2px;
+    pointer-events: none;
+  }
+  #stats .title { color: #f84; font-size: 13px; font-weight: bold; margin-bottom: 4px; letter-spacing: 1.5px; }
+  #stats .sub { color: #999; font-size: 11px; margin-bottom: 8px; }
+  #stats .label { color: #777; }
+  #stats .value { color: #eee; }
+  #stats .gold { color: #ffd700; }
+  #controls {
+    position: fixed; bottom: 16px; left: 16px;
+    background: rgba(6,6,16,0.88); border: 1px solid #333;
+    padding: 14px 18px; font-size: 11px; line-height: 2.4;
+    z-index: 10; min-width: 280px; border-radius: 2px;
+  }
+  #controls .ctrl-title { color: #f84; font-size: 12px; font-weight: bold; margin-bottom: 6px; letter-spacing: 1.5px; }
+  #controls label { display: flex; align-items: center; gap: 8px; color: #aaa; }
+  #controls input[type=range] { flex: 1; accent-color: #f84; cursor: crosshair; height: 4px; }
+  #controls .val { color: #eee; min-width: 52px; text-align: right; font-size: 11px; }
+  #controls button {
+    background: #1a1a2e; color: #f84; border: 1px solid #f84;
+    padding: 4px 12px; font-family: inherit; font-size: 11px;
+    cursor: crosshair; margin-top: 4px; border-radius: 2px;
+  }
+  #controls button:hover { background: #f84; color: #060610; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-LOGISTIC</div>
+  <div class="sub">Logistic Map Explorer</div>
+  <div><span class="label">r        : </span><span class="value" id="s-r">3.000</span></div>
+  <div><span class="label">period   : </span><span class="value" id="s-period">---</span></div>
+  <div><span class="label">orbit    : </span><span class="value" id="s-orbit">---</span></div>
+  <div><span class="label">sweep    : </span><span class="value" id="s-sweep">---</span></div>
+  <div id="s-flash" style="display:none"><span class="gold">PRIME R VALUE</span></div>
+</div>
+<div id="controls">
+  <div class="ctrl-title">CONTROLS</div>
+  <label>r value <input type="range" id="c-r" min="2.5" max="4.0" step="0.001" value="3.5"> <span class="val" id="v-r">3.500</span></label>
+  <label>iters   <input type="range" id="c-iter" min="100" max="2000" step="50" value="500"> <span class="val" id="v-iter">500</span></label>
+  <label>zoom    <input type="range" id="c-zoom" min="0" max="100" step="1" value="0"> <span class="val" id="v-zoom">0</span></label>
+  <button id="btn-feigen">ZOOM FEIGENBAUM</button>
+  <button id="btn-reset">RESET VIEW</button>
+</div>
+<script>
+(function(){
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr = window.devicePixelRatio || 1;
+
+function resize() {
+  W = canvas.width = window.innerWidth * dpr;
+  H = canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  needRedraw = true;
+}
+window.addEventListener('resize', resize);
+resize();
+
+let rVal = 3.5, iterCount = 500, zoomLevel = 0;
+let rMin = 2.5, rMax = 4.0, xMin = 0, xMax = 1;
+let sweepR = 2.5, sweepSpeed = 0.003;
+let needRedraw = true;
+let flashTimer = 0;
+
+// Bifurcation diagram cache
+let bifImg = null;
+
+function bind(id, vid, cb) {
+  const el = document.getElementById(id), vl = document.getElementById(vid);
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    const d = el.step.includes('.') ? (el.step.split('.')[1]||'').length||1 : 0;
+    vl.textContent = v.toFixed(d);
+    cb(v);
+  });
+}
+bind('c-r','v-r', v => { rVal = v; });
+bind('c-iter','v-iter', v => { iterCount = v; needRedraw = true; });
+bind('c-zoom','v-zoom', v => {
+  zoomLevel = v;
+  const center = 3.5699;
+  const span = 1.5 * Math.pow(0.95, v);
+  rMin = Math.max(2.5, center - span/2);
+  rMax = Math.min(4.0, center + span/2);
+  sweepR = rMin;
+  needRedraw = true;
+});
+
+document.getElementById('btn-feigen').addEventListener('click', () => {
+  rMin = 3.4; rMax = 3.7; xMin = 0.3; xMax = 0.95;
+  sweepR = rMin; needRedraw = true;
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  rMin = 2.5; rMax = 4.0; xMin = 0; xMax = 1;
+  sweepR = rMin; needRedraw = true;
+  document.getElementById('c-zoom').value = 0;
+  document.getElementById('v-zoom').textContent = '0';
+  zoomLevel = 0;
+});
+
+function computeBifurcation() {
+  const imgW = Math.floor(W * 0.85);
+  const imgH = Math.floor(H * 0.8);
+  const offX = Math.floor(W * 0.08);
+  const offY = Math.floor(H * 0.08);
+
+  bifImg = { offX, offY, imgW, imgH, data: new Uint8Array(imgW * imgH) };
+
+  const warmup = 300;
+  const show = Math.min(iterCount, 200);
+
+  for (let px = 0; px < imgW; px++) {
+    const r = rMin + (px / imgW) * (rMax - rMin);
+    let x = 0.5 + Math.random() * 0.01;
+    for (let i = 0; i < warmup; i++) x = r * x * (1 - x);
+    for (let i = 0; i < show; i++) {
+      x = r * x * (1 - x);
+      const py = Math.floor((1 - (x - xMin) / (xMax - xMin)) * imgH);
+      if (py >= 0 && py < imgH) {
+        const idx = py * imgW + px;
+        bifImg.data[idx] = Math.min(255, bifImg.data[idx] + 8);
+      }
+    }
+  }
+}
+
+function getOrbit(r, n) {
+  let x = 0.5;
+  for (let i = 0; i < 500; i++) x = r * x * (1 - x);
+  const orbit = [];
+  for (let i = 0; i < n; i++) {
+    x = r * x * (1 - x);
+    orbit.push(x);
+  }
+  return orbit;
+}
+
+function detectPeriod(orbit) {
+  if (orbit.length < 20) return -1;
+  const last = orbit.slice(-64);
+  for (let p = 1; p <= 32; p++) {
+    let match = true;
+    for (let i = 0; i < Math.min(p * 3, last.length - p); i++) {
+      if (Math.abs(last[last.length - 1 - i] - last[last.length - 1 - i - p]) > 1e-6) {
+        match = false; break;
+      }
+    }
+    if (match) return p;
+  }
+  return -1;
+}
+
+function isPrimeRelated(r) {
+  const primes = [2, 3];
+  for (const p of primes) {
+    if (Math.abs(r - p) < 0.015) return true;
+  }
+  return false;
+}
+
+let time = 0;
+
+function frame() {
+  requestAnimationFrame(frame);
+  time++;
+
+  if (needRedraw) {
+    computeBifurcation();
+    needRedraw = false;
+  }
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw bifurcation diagram
+  if (bifImg) {
+    const { offX, offY, imgW, imgH, data } = bifImg;
+    const imgData = ctx.createImageData(imgW, imgH);
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i];
+      if (v > 0) {
+        const brightness = Math.min(1, v / 20);
+        const r = Math.floor(50 + 200 * brightness);
+        const g = Math.floor(80 + 120 * brightness);
+        const b = Math.floor(180 + 75 * brightness);
+        imgData.data[i*4] = r;
+        imgData.data[i*4+1] = g;
+        imgData.data[i*4+2] = b;
+        imgData.data[i*4+3] = Math.floor(60 + 195 * brightness);
+      }
+    }
+    ctx.putImageData(imgData, offX, offY);
+
+    // Axes
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(offX, offY, imgW, imgH);
+
+    // Axis labels
+    ctx.fillStyle = '#666';
+    ctx.font = (10 * dpr) + 'px Courier New';
+    ctx.textAlign = 'center';
+    for (let i = 0; i <= 5; i++) {
+      const rv = rMin + i * (rMax - rMin) / 5;
+      const px = offX + (i / 5) * imgW;
+      ctx.fillText(rv.toFixed(2), px, offY + imgH + 16 * dpr);
+    }
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+      const xv = xMin + i * (xMax - xMin) / 4;
+      const py = offY + (1 - i/4) * imgH;
+      ctx.fillText(xv.toFixed(2), offX - 6*dpr, py + 4*dpr);
+    }
+
+    // Sweep line
+    sweepR += sweepSpeed * (rMax - rMin) / 60;
+    if (sweepR > rMax) sweepR = rMin;
+
+    const sweepPx = offX + ((sweepR - rMin) / (rMax - rMin)) * imgW;
+    ctx.beginPath();
+    ctx.moveTo(sweepPx, offY);
+    ctx.lineTo(sweepPx, offY + imgH);
+    ctx.strokeStyle = 'rgba(255,136,68,0.3)';
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.stroke();
+
+    // Current r line
+    const rPx = offX + ((rVal - rMin) / (rMax - rMin)) * imgW;
+    ctx.beginPath();
+    ctx.moveTo(rPx, offY);
+    ctx.lineTo(rPx, offY + imgH);
+    ctx.strokeStyle = '#f84';
+    ctx.lineWidth = 2 * dpr;
+    ctx.stroke();
+
+    // Orbit highlight
+    const orbit = getOrbit(rVal, 200);
+    const unique = [];
+    for (const v of orbit.slice(-64)) {
+      let found = false;
+      for (const u of unique) { if (Math.abs(u - v) < 1e-4) { found = true; break; } }
+      if (!found) unique.push(v);
+    }
+    for (const v of unique) {
+      const py = offY + (1 - (v - xMin) / (xMax - xMin)) * imgH;
+      ctx.beginPath();
+      ctx.arc(rPx, py, 4 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = '#f84';
+      ctx.fill();
+      ctx.beginPath();
+      const gr = ctx.createRadialGradient(rPx, py, 0, rPx, py, 12*dpr);
+      gr.addColorStop(0, 'rgba(255,136,68,0.5)');
+      gr.addColorStop(1, 'rgba(255,136,68,0)');
+      ctx.fillStyle = gr;
+      ctx.arc(rPx, py, 12*dpr, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Prime flash
+    if (isPrimeRelated(sweepR)) {
+      flashTimer = 20;
+    }
+    if (flashTimer > 0) {
+      flashTimer--;
+      const alpha = flashTimer / 20 * 0.15;
+      ctx.fillStyle = 'rgba(255,215,0,' + alpha + ')';
+      ctx.fillRect(0, 0, W, H);
+      document.getElementById('s-flash').style.display = 'block';
+    } else {
+      document.getElementById('s-flash').style.display = 'none';
+    }
+
+    // Cobweb diagram inset (top-left area)
+    const cwSize = Math.min(W, H) * 0.22;
+    const cwX = offX;
+    const cwY = offY;
+
+    // Stats
+    const period = detectPeriod(orbit);
+    if (time % 6 === 0) {
+      document.getElementById('s-r').textContent = rVal.toFixed(4);
+      document.getElementById('s-period').textContent = period > 0 ? period : 'chaos';
+      const orbStr = unique.slice(0, 4).map(v => v.toFixed(3)).join(', ');
+      document.getElementById('s-orbit').textContent = orbStr + (unique.length > 4 ? '...' : '');
+      document.getElementById('s-sweep').textContent = sweepR.toFixed(3);
+    }
+  }
+
+  // Title glow
+  ctx.fillStyle = '#f84';
+  ctx.font = 'bold ' + (14*dpr) + 'px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('x(n+1) = r * x(n) * (1 - x(n))', W*0.08, H*0.96);
+}
+frame();
+})();
+</script>
+</body>
+</html>

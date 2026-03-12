@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-OVERTONE — Harmonic Overtone Series</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060610;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+  #stats {
+    position: fixed;
+    top: 16px; right: 16px;
+    background: rgba(6,6,16,0.88);
+    border: 1px solid #f4a;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12px;
+    line-height: 1.7;
+    z-index: 10;
+    min-width: 300px;
+    max-height: 85vh;
+    overflow-y: auto;
+    pointer-events: none;
+    user-select: none;
+  }
+  #stats .title {
+    color: #f4a;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+  }
+  #stats .label { color: #888; }
+  #stats .val { color: #f4a; }
+  #stats .val2 { color: #8cf; }
+  #stats .prime { color: #ffd700; font-weight: bold; }
+  #controls {
+    position: fixed;
+    bottom: 16px; left: 16px;
+    background: rgba(6,6,16,0.88);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12px;
+    z-index: 10;
+    min-width: 280px;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  #controls .section-title {
+    color: #f4a;
+    font-size: 11px;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+  }
+  .ctrl-row label {
+    color: #888;
+    font-size: 11px;
+    min-width: 90px;
+    cursor: crosshair;
+  }
+  .ctrl-row input[type=range] {
+    flex: 1;
+    accent-color: #f4a;
+    cursor: crosshair;
+    max-width: 110px;
+  }
+  .ctrl-row input[type=checkbox] {
+    accent-color: #f4a;
+    cursor: crosshair;
+  }
+  .ctrl-row .rv {
+    color: #f4a;
+    font-size: 10px;
+    min-width: 40px;
+    text-align: right;
+  }
+  #controls button {
+    background: transparent;
+    border: 1px solid #f4a;
+    color: #f4a;
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    margin-top: 8px;
+    margin-right: 6px;
+    transition: background 0.2s;
+  }
+  #controls button:hover { background: rgba(255,68,170,0.15); }
+  .harm-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin: 8px 0;
+  }
+  .harm-btn {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    padding: 2px 6px;
+    cursor: crosshair;
+    transition: all 0.2s;
+    min-width: 28px;
+    text-align: center;
+  }
+  .harm-btn.active {
+    border-color: #f4a;
+    color: #f4a;
+    background: rgba(255,68,170,0.1);
+  }
+  .harm-btn.prime-active {
+    border-color: #ffd700;
+    color: #ffd700;
+    background: rgba(255,215,0,0.1);
+  }
+  #startOverlay {
+    position: fixed; inset: 0;
+    background: rgba(6,6,16,0.95);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; cursor: pointer;
+    flex-direction: column; gap: 16px;
+  }
+  #startOverlay .prompt { color: #f4a; font-size: 18px; letter-spacing: 3px; }
+  #startOverlay .sub { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="startOverlay">
+  <div class="prompt">SHIELD-OVERTONE</div>
+  <div class="sub">Click anywhere to initialize audio</div>
+</div>
+
+<canvas id="c"></canvas>
+
+<div id="stats">
+  <div class="title">SHIELD-OVERTONE</div>
+  <div id="statsContent"></div>
+</div>
+
+<div id="controls">
+  <div class="section-title">CONTROLS</div>
+  <div class="ctrl-row">
+    <label>FUNDAMENTAL</label>
+    <input type="range" id="fundSlider" min="20" max="200" value="55">
+    <span class="rv" id="fundVal">55 Hz</span>
+  </div>
+  <div style="color:#666;font-size:10px;margin:6px 0 4px">HARMONICS (gold = prime)</div>
+  <div class="harm-toggles" id="harmToggles"></div>
+  <div>
+    <button id="btnPluck">PLUCK</button>
+    <button id="btnAllOn">ALL ON</button>
+    <button id="btnAllOff">ALL OFF</button>
+    <button id="btnPrimesOnly">PRIMES ONLY</button>
+  </div>
+</div>
+
+<script>
+const SHIELD_PRIMES = [2, 3, 5, 7, 11, 13, 17];
+const MAX_HARMONIC = 17;
+const LCM = 510510;
+
+// Interval names for harmonics
+const INTERVALS = [
+  '', 'Unison', 'Octave', 'Perfect 5th+Oct', 'Double Oct',
+  'Major 3rd+2Oct', '5th+2Oct', 'Harm 7th+2Oct', 'Triple Oct',
+  'Major 2nd+3Oct', 'Major 3rd+3Oct', 'Harm 11th', 'Perfect 5th+3Oct',
+  'Harm 13th', 'Harm 7th+3Oct', 'Major 7th+3Oct', 'Quad Oct', 'Harm 17th'
+];
+
+const HARMONIC_COLORS = [];
+for (let i = 1; i <= MAX_HARMONIC; i++) {
+  const hue = ((i - 1) / MAX_HARMONIC) * 300;
+  HARMONIC_COLORS.push(`hsl(${hue}, 80%, 55%)`);
+}
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+let audioCtx = null;
+let masterGain = null;
+let oscillators = [];
+let harmonicGains = [];
+let fundamental = 55;
+let harmonicEnabled = new Array(MAX_HARMONIC).fill(true);
+let harmonicAmplitude = new Array(MAX_HARMONIC).fill(0); // for pluck decay
+let pluckTime = 0;
+let pluckActive = false;
+let started = false;
+let time = 0;
+
+function isPrime(n) {
+  if (n < 2) return false;
+  for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;
+  return true;
+}
+
+// Build harmonic toggle buttons
+const htEl = document.getElementById('harmToggles');
+for (let i = 1; i <= MAX_HARMONIC; i++) {
+  const btn = document.createElement('button');
+  btn.className = 'harm-btn active' + (isPrime(i) ? ' prime-active' : '');
+  btn.textContent = i;
+  btn.addEventListener('click', () => {
+    harmonicEnabled[i - 1] = !harmonicEnabled[i - 1];
+    btn.classList.toggle('active');
+    if (isPrime(i)) btn.classList.toggle('prime-active', harmonicEnabled[i - 1]);
+    updateOscillators();
+  });
+  htEl.appendChild(btn);
+}
+
+document.getElementById('fundSlider').addEventListener('input', e => {
+  fundamental = parseInt(e.target.value);
+  document.getElementById('fundVal').textContent = fundamental + ' Hz';
+  updateOscillatorFreqs();
+});
+
+document.getElementById('btnPluck').addEventListener('click', pluck);
+document.getElementById('btnAllOn').addEventListener('click', () => {
+  harmonicEnabled.fill(true);
+  updateToggles();
+  updateOscillators();
+});
+document.getElementById('btnAllOff').addEventListener('click', () => {
+  harmonicEnabled.fill(false);
+  updateToggles();
+  updateOscillators();
+});
+document.getElementById('btnPrimesOnly').addEventListener('click', () => {
+  for (let i = 0; i < MAX_HARMONIC; i++) {
+    harmonicEnabled[i] = isPrime(i + 1);
+  }
+  updateToggles();
+  updateOscillators();
+});
+
+function updateToggles() {
+  const btns = htEl.querySelectorAll('.harm-btn');
+  btns.forEach((btn, i) => {
+    btn.classList.toggle('active', harmonicEnabled[i]);
+    if (isPrime(i + 1)) btn.classList.toggle('prime-active', harmonicEnabled[i]);
+  });
+}
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.25;
+  masterGain.connect(audioCtx.destination);
+
+  for (let i = 0; i < MAX_HARMONIC; i++) {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = fundamental * (i + 1);
+    // Natural harmonic amplitude falloff: 1/n
+    g.gain.value = harmonicEnabled[i] ? (1 / (i + 1)) * 0.3 : 0;
+    osc.connect(g);
+    g.connect(masterGain);
+    osc.start();
+    oscillators.push(osc);
+    harmonicGains.push(g);
+    harmonicAmplitude[i] = harmonicEnabled[i] ? 1 / (i + 1) : 0;
+  }
+}
+
+function updateOscillators() {
+  harmonicGains.forEach((g, i) => {
+    const target = harmonicEnabled[i] ? (1 / (i + 1)) * 0.3 : 0;
+    g.gain.setTargetAtTime(target, audioCtx.currentTime, 0.05);
+    harmonicAmplitude[i] = harmonicEnabled[i] ? 1 / (i + 1) : 0;
+  });
+}
+
+function updateOscillatorFreqs() {
+  oscillators.forEach((osc, i) => {
+    osc.frequency.setValueAtTime(fundamental * (i + 1), audioCtx.currentTime);
+  });
+}
+
+function pluck() {
+  if (!audioCtx) return;
+  pluckTime = performance.now();
+  pluckActive = true;
+
+  // Pluck: sharp attack, exponential decay with higher harmonics decaying faster
+  harmonicGains.forEach((g, i) => {
+    if (!harmonicEnabled[i]) return;
+    const amp = (1 / (i + 1)) * 0.4;
+    const decay = 0.8 + i * 0.15; // higher harmonics decay faster
+    g.gain.cancelScheduledValues(audioCtx.currentTime);
+    g.gain.setValueAtTime(amp, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + decay);
+    // Restore sustained level
+    g.gain.setValueAtTime((1 / (i + 1)) * 0.3, audioCtx.currentTime + decay + 0.01);
+  });
+}
+
+document.getElementById('startOverlay').addEventListener('click', () => {
+  document.getElementById('startOverlay').style.display = 'none';
+  initAudio();
+  started = true;
+  pluck(); // Initial pluck
+});
+
+function draw(now) {
+  requestAnimationFrame(draw);
+  time = now / 1000;
+
+  ctx.fillStyle = '#060610';
+  ctx.fillRect(0, 0, W, H);
+
+  const dpr = devicePixelRatio;
+  const pad = 50 * dpr;
+  const stringLen = W - pad * 2;
+  const stringY0 = H * 0.15;
+  const stringSpacing = (H * 0.7) / (MAX_HARMONIC + 1);
+
+  // Pluck decay factor
+  const pluckAge = pluckActive ? (now - pluckTime) / 1000 : 999;
+  const pluckFactor = Math.max(0, Math.exp(-pluckAge * 1.5));
+
+  // --- COMPOSITE WAVEFORM AT TOP ---
+  const compY = pad * 0.5;
+  const compH = H * 0.08;
+
+  ctx.fillStyle = '#666';
+  ctx.font = `${10 * dpr}px 'Courier New'`;
+  ctx.textAlign = 'left';
+  ctx.fillText('COMPOSITE WAVEFORM', pad, compY);
+
+  ctx.strokeStyle = '#1a1a2a';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, compY + compH / 2 + 10 * dpr);
+  ctx.lineTo(W - pad, compY + compH / 2 + 10 * dpr);
+  ctx.stroke();
+
+  // Draw composite
+  ctx.beginPath();
+  const samples = 600;
+  for (let s = 0; s <= samples; s++) {
+    const x = pad + (s / samples) * stringLen;
+    const t = time;
+    let y = 0;
+    for (let h = 0; h < MAX_HARMONIC; h++) {
+      if (!harmonicEnabled[h]) continue;
+      const n = h + 1;
+      const amp = (1 / n) * 0.8;
+      const freq = fundamental * n;
+      const decay = pluckActive ? Math.exp(-pluckAge * (1 + h * 0.3)) : 1;
+      y += amp * decay * Math.sin(2 * Math.PI * freq * t + (s / samples) * n * Math.PI);
+    }
+    const py = compY + compH / 2 + 10 * dpr + y * compH * 0.4;
+    if (s === 0) ctx.moveTo(x, py); else ctx.lineTo(x, py);
+  }
+  ctx.strokeStyle = '#f4a';
+  ctx.lineWidth = 2 * dpr;
+  ctx.stroke();
+  ctx.shadowColor = '#f4a';
+  ctx.shadowBlur = 6 * dpr;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // --- STANDING WAVES ---
+  const wavesTop = H * 0.2;
+  const wavesH = H * 0.72;
+  const waveSpacing = wavesH / MAX_HARMONIC;
+
+  for (let h = 0; h < MAX_HARMONIC; h++) {
+    const n = h + 1;
+    const yCenter = wavesTop + h * waveSpacing + waveSpacing * 0.5;
+    const isP = isPrime(n);
+    const isShieldPrime = SHIELD_PRIMES.includes(n);
+    const isActive = harmonicEnabled[h];
+
+    // String endpoints
+    const x0 = pad;
+    const x1 = W - pad;
+
+    // Fixed endpoints
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.arc(x0, yCenter, 3 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x1, yCenter, 3 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Base line
+    ctx.strokeStyle = '#1a1a2a';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x0, yCenter);
+    ctx.lineTo(x1, yCenter);
+    ctx.stroke();
+
+    if (!isActive) {
+      // Label only
+      ctx.fillStyle = '#333';
+      ctx.font = `${9 * dpr}px 'Courier New'`;
+      ctx.textAlign = 'right';
+      ctx.fillText(`H${n}`, x0 - 8 * dpr, yCenter + 3 * dpr);
+      continue;
+    }
+
+    // Standing wave
+    const amp = (1 / n) * waveSpacing * 0.35;
+    const freq = fundamental * n;
+    const decay = pluckActive ? Math.exp(-pluckAge * (0.5 + h * 0.2)) : 1;
+    const envelope = Math.min(1, decay + 0.3); // Keep some minimum vibration
+
+    // Prime gold pulse
+    let pulseGlow = 0;
+    if (isShieldPrime) {
+      pulseGlow = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * 3 + h));
+    }
+
+    ctx.beginPath();
+    for (let s = 0; s <= samples; s++) {
+      const frac = s / samples;
+      const x = x0 + frac * stringLen;
+      // Standing wave: sin(n*pi*x/L) * cos(2*pi*f*t)
+      const standing = Math.sin(n * Math.PI * frac) * Math.cos(2 * Math.PI * freq * time);
+      const py = yCenter + amp * standing * envelope;
+      if (s === 0) ctx.moveTo(x, py); else ctx.lineTo(x, py);
+    }
+
+    let strokeColor = HARMONIC_COLORS[h];
+    if (isShieldPrime) {
+      // Blend toward gold when pulsing
+      const gold = `rgba(255,215,0,${0.5 + pulseGlow * 0.5})`;
+      strokeColor = gold;
+    }
+
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = (isShieldPrime ? 2.5 : 1.5) * dpr;
+    ctx.stroke();
+
+    if (isShieldPrime) {
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = (8 + pulseGlow * 10) * dpr;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Node points
+    for (let k = 0; k <= n; k++) {
+      const nx = x0 + (k / n) * stringLen;
+      ctx.beginPath();
+      ctx.arc(nx, yCenter, 2 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = isShieldPrime ? '#ffd700' : '#666';
+      ctx.fill();
+    }
+
+    // Label
+    const labelCol = isShieldPrime ? '#ffd700' : (isP ? '#cca' : '#888');
+    ctx.fillStyle = labelCol;
+    ctx.font = `${(isShieldPrime ? 11 : 9) * dpr}px 'Courier New'`;
+    ctx.textAlign = 'right';
+    ctx.fillText(`H${n}${isP ? '*' : ''}`, x0 - 8 * dpr, yCenter + 3 * dpr);
+
+    // Frequency on right
+    ctx.textAlign = 'left';
+    ctx.font = `${9 * dpr}px 'Courier New'`;
+    ctx.fillStyle = '#555';
+    ctx.fillText(`${(fundamental * n).toFixed(0)}Hz`, x1 + 8 * dpr, yCenter + 3 * dpr);
+  }
+
+  // --- STATS ---
+  let statsHTML = '';
+  statsHTML += `<span class="label">FUNDAMENTAL:</span> <span class="val">${fundamental} Hz</span><br>`;
+  statsHTML += `<span class="label">LCM (primes):</span> <span class="val2">${LCM.toLocaleString()}</span><br>`;
+  statsHTML += `<span class="label">ACTIVE:</span> <span class="val">${harmonicEnabled.filter(Boolean).length}/${MAX_HARMONIC}</span><br>`;
+  statsHTML += `<span class="label">PLUCK:</span> <span class="val">${pluckActive && pluckAge < 3 ? 'DECAY ' + pluckAge.toFixed(1) + 's' : 'IDLE'}</span><br>`;
+  statsHTML += '<br><span style="color:#666;font-size:10px">H# = HARMONIC  * = PRIME  ** = SHIELD PRIME</span><br><br>';
+
+  for (let h = 0; h < MAX_HARMONIC; h++) {
+    const n = h + 1;
+    const isP = isPrime(n);
+    const isSP = SHIELD_PRIMES.includes(n);
+    const freq = fundamental * n;
+    const ratio = `${n}:1`;
+    const interval = INTERVALS[n] || '?';
+
+    let prefix = '  ';
+    if (isSP) prefix = '**';
+    else if (isP) prefix = '* ';
+
+    const col = isSP ? '#ffd700' : (isP ? '#cca' : (harmonicEnabled[h] ? '#aaa' : '#444'));
+    statsHTML += `<span style="color:${col}">`;
+    statsHTML += `${prefix}H${n.toString().padStart(2)} `;
+    statsHTML += `${ratio.padStart(4)} `;
+    statsHTML += `${freq.toString().padStart(5)}Hz `;
+    statsHTML += `${interval}`;
+    statsHTML += `</span><br>`;
+  }
+
+  document.getElementById('statsContent').innerHTML = statsHTML;
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

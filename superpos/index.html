@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SUPERPOS — Quantum Superposition</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#a4f;font-family:'Courier New',monospace;cursor:crosshair;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#stats{position:fixed;top:20px;right:20px;background:rgba(6,6,16,0.85);border:1px solid #a4f;padding:16px 20px;font-size:13px;line-height:1.8;min-width:240px;pointer-events:none;z-index:10}
+#stats .title{color:#a4f;font-size:15px;font-weight:bold;margin-bottom:8px;letter-spacing:2px}
+#stats .label{color:#668}
+#stats .val{color:#caf}
+#controls{position:fixed;bottom:20px;left:20px;display:flex;flex-wrap:wrap;gap:8px;z-index:10;max-width:500px}
+#controls button{background:rgba(6,6,16,0.85);border:1px solid #a4f;color:#a4f;padding:8px 16px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;transition:all 0.2s}
+#controls button:hover{background:#a4f;color:#060610}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  <div class="title">SHIELD-SUPERPOS</div>
+  <div>Quantum Superposition</div>
+  <br>
+  <div><span class="label">qubits:    </span><span class="val">7 (shield primes)</span></div>
+  <div><span class="label">basis:     </span><span class="val" id="sBasis">128</span></div>
+  <div><span class="label">nonzero:   </span><span class="val" id="sNonzero">1</span></div>
+  <div><span class="label">entropy:   </span><span class="val" id="sEntropy">0.000</span></div>
+  <div><span class="label">max |a|:   </span><span class="val" id="sMax">1.000</span></div>
+  <div><span class="label">state:     </span><span class="val" id="sState">|0000000⟩</span></div>
+  <br>
+  <div><span class="label">phase:     </span><span class="val" id="sPhase">off</span></div>
+</div>
+<div id="controls">
+  <button onclick="hadamardAll()">HADAMARD ALL</button>
+  <button onclick="measureState()">MEASURE</button>
+  <button onclick="applyPrimePhase()">PRIME PHASE</button>
+  <button onclick="resetReg()">RESET</button>
+  <button onclick="togglePhaseAnim()">PHASE ON/OFF</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+const N=7, DIM=128;
+const primes=[2,3,5,7,11,13,17];
+
+// Amplitudes: complex numbers [re, im] for each basis state
+let amps=new Array(DIM);
+let targetAmps=new Array(DIM);
+let displayAmps=new Array(DIM);
+for(let i=0;i<DIM;i++){amps[i]=[0,0];targetAmps[i]=[0,0];displayAmps[i]=[0,0];}
+amps[0]=[1,0];targetAmps[0]=[1,0];displayAmps[0]=[1,0];
+
+let time=0;
+let phaseActive=false;
+let isCollapsed=false;
+let collapsedState=-1;
+let measureFlash=0;
+let particles=[];
+
+function complexMag(re,im){return Math.sqrt(re*re+im*im);}
+function complexMag2(re,im){return re*re+im*im;}
+
+function hadamardAll(){
+  // Apply H^7 = equal superposition if starting from computational basis
+  isCollapsed=false;collapsedState=-1;
+  let norm=1/Math.sqrt(DIM);
+  for(let i=0;i<DIM;i++){
+    // H^n|0> = 1/sqrt(2^n) * sum|x>
+    // H^n|k> = 1/sqrt(2^n) * sum (-1)^(k.x) |x>
+    let re=0,im=0;
+    for(let j=0;j<DIM;j++){
+      let dot=0;
+      for(let b=0;b<N;b++){
+        if((i>>b)&1 && (j>>b)&1) dot++;
+      }
+      let sign=dot%2===0?1:-1;
+      re+=sign*amps[j][0];
+      im+=sign*amps[j][1];
+    }
+    targetAmps[i]=[re*norm,im*norm];
+  }
+  // Copy to amps after computing all
+  for(let i=0;i<DIM;i++){amps[i]=[targetAmps[i][0],targetAmps[i][1]];}
+}
+
+function measureState(){
+  // Build probability distribution
+  let probs=new Array(DIM);
+  let total=0;
+  for(let i=0;i<DIM;i++){
+    probs[i]=complexMag2(amps[i][0],amps[i][1]);
+    total+=probs[i];
+  }
+  // Normalize
+  for(let i=0;i<DIM;i++)probs[i]/=total;
+  // Sample
+  let r=Math.random(),cum=0;
+  let result=0;
+  for(let i=0;i<DIM;i++){
+    cum+=probs[i];
+    if(r<=cum){result=i;break;}
+  }
+  // Collapse
+  for(let i=0;i<DIM;i++){targetAmps[i]=[0,0];}
+  targetAmps[result]=[1,0];
+  isCollapsed=true;
+  collapsedState=result;
+  measureFlash=1;
+  // Particles
+  let barW=Math.max(2,(W-200)/DIM);
+  let barX=100+result*barW;
+  for(let i=0;i<40;i++){
+    particles.push({
+      x:barX,y:H*0.5,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-0.5)*10-3,
+      life:1,r:Math.random()*3+1
+    });
+  }
+}
+
+function applyPrimePhase(){
+  if(isCollapsed)return;
+  for(let i=0;i<DIM;i++){
+    let phase=0;
+    for(let b=0;b<N;b++){
+      if((i>>b)&1) phase+=primes[b]*0.5;
+    }
+    let c=Math.cos(phase),s=Math.sin(phase);
+    let re=amps[i][0]*c-amps[i][1]*s;
+    let im=amps[i][0]*s+amps[i][1]*c;
+    amps[i]=[re,im];
+    targetAmps[i]=[re,im];
+  }
+}
+
+function resetReg(){
+  for(let i=0;i<DIM;i++){amps[i]=[0,0];targetAmps[i]=[0,0];displayAmps[i]=[0,0];}
+  amps[0]=[1,0];targetAmps[0]=[1,0];
+  isCollapsed=false;collapsedState=-1;phaseActive=false;
+  document.getElementById('sPhase').textContent='off';
+}
+
+function togglePhaseAnim(){
+  if(isCollapsed)return;
+  phaseActive=!phaseActive;
+  document.getElementById('sPhase').textContent=phaseActive?'active':'off';
+}
+
+function toBin(n){
+  let s='';
+  for(let i=N-1;i>=0;i--)s+=(n>>i)&1?'1':'0';
+  return s;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  time+=0.016;
+
+  // Animated phase rotations
+  if(phaseActive&&!isCollapsed){
+    for(let i=0;i<DIM;i++){
+      let phase=0;
+      for(let b=0;b<N;b++){
+        if((i>>b)&1) phase+=primes[b]*0.008;
+      }
+      let c=Math.cos(phase),s=Math.sin(phase);
+      let re=amps[i][0]*c-amps[i][1]*s;
+      let im=amps[i][0]*s+amps[i][1]*c;
+      amps[i]=[re,im];
+      targetAmps[i]=[re,im];
+    }
+  }
+
+  // Smooth interpolation for display
+  for(let i=0;i<DIM;i++){
+    displayAmps[i][0]+=(amps[i][0]-displayAmps[i][0])*0.1;
+    displayAmps[i][1]+=(amps[i][1]-displayAmps[i][1])*0.1;
+  }
+
+  // Collapse interpolation
+  if(isCollapsed){
+    for(let i=0;i<DIM;i++){
+      amps[i][0]+=(targetAmps[i][0]-amps[i][0])*0.1;
+      amps[i][1]+=(targetAmps[i][1]-amps[i][1])*0.1;
+    }
+  }
+
+  // Measure flash
+  if(measureFlash>0)measureFlash*=0.95;
+
+  // Particles
+  particles=particles.filter(p=>{
+    p.x+=p.vx;p.y+=p.vy;p.life-=0.018;p.vy+=0.08;
+    return p.life>0;
+  });
+
+  // Clear
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+
+  // Flash
+  if(measureFlash>0.01){
+    ctx.fillStyle=`rgba(170,68,255,${measureFlash*0.15})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Bar chart area
+  let margin=100;
+  let chartW=W-margin*2;
+  let chartH=H*0.55;
+  let chartY=H*0.2;
+  let barW=chartW/DIM;
+  let maxBarH=chartH*0.8;
+
+  // Baseline
+  let baseY=chartY+chartH;
+  ctx.beginPath();ctx.moveTo(margin,baseY);ctx.lineTo(margin+chartW,baseY);
+  ctx.strokeStyle='#a4f';ctx.globalAlpha=0.15;ctx.stroke();ctx.globalAlpha=1;
+
+  // Grid lines
+  for(let g=0;g<5;g++){
+    let gy=baseY-maxBarH*(g+1)/5;
+    ctx.beginPath();ctx.moveTo(margin,gy);ctx.lineTo(margin+chartW,gy);
+    ctx.strokeStyle='#a4f';ctx.globalAlpha=0.04;ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // Bars
+  let maxAmp=0,nonzero=0,entropy=0;
+  for(let i=0;i<DIM;i++){
+    let mag=complexMag(displayAmps[i][0],displayAmps[i][1]);
+    let mag2=mag*mag;
+    if(mag>maxAmp)maxAmp=mag;
+    if(mag2>0.001)nonzero++;
+    if(mag2>1e-10)entropy-=mag2*Math.log2(mag2);
+
+    let h=mag*maxBarH;
+    if(h<0.3)continue;
+
+    let x=margin+i*barW;
+    let phase=Math.atan2(displayAmps[i][1],displayAmps[i][0]);
+    // Color from phase
+    let hue=(phase/(Math.PI*2)+0.5)*360;
+    let r2=hslToRgb(hue,0.8,0.55);
+
+    // Bar
+    ctx.fillStyle=`rgba(${r2[0]},${r2[1]},${r2[2]},0.7)`;
+    ctx.fillRect(x+0.5,baseY-h,Math.max(barW-1,1.5),h);
+
+    // Glow on top
+    let grad=ctx.createLinearGradient(0,baseY-h,0,baseY-h+10);
+    grad.addColorStop(0,`rgba(${r2[0]},${r2[1]},${r2[2]},0.8)`);
+    grad.addColorStop(1,`rgba(${r2[0]},${r2[1]},${r2[2]},0)`);
+    ctx.fillStyle=grad;
+    ctx.fillRect(x,baseY-h-5,barW,15);
+
+    // Collapsed highlight
+    if(isCollapsed&&i===collapsedState){
+      ctx.strokeStyle='#fff';ctx.lineWidth=2;
+      ctx.strokeRect(x,baseY-h,barW,h);ctx.lineWidth=1;
+    }
+  }
+
+  // State labels on x axis (sparse)
+  ctx.font='9px Courier New';ctx.fillStyle='#668';
+  let labelStep=Math.ceil(DIM/16);
+  for(let i=0;i<DIM;i+=labelStep){
+    let x=margin+i*barW+barW/2;
+    ctx.save();ctx.translate(x,baseY+8);ctx.rotate(Math.PI/3);
+    ctx.fillText(toBin(i),0,0);
+    ctx.restore();
+  }
+
+  // Qubit labels at top
+  ctx.font='12px Courier New';ctx.fillStyle='#a4f';
+  for(let b=0;b<N;b++){
+    ctx.fillText(`q${b}:p=${primes[b]}`,margin+b*75,chartY-15);
+  }
+
+  // Probability wave overlay (interference pattern)
+  if(!isCollapsed&&(phaseActive||nonzero>1)){
+    ctx.beginPath();
+    for(let i=0;i<DIM;i++){
+      let mag=complexMag(displayAmps[i][0],displayAmps[i][1]);
+      let x=margin+i*barW+barW/2;
+      let y=baseY-mag*maxBarH;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle='rgba(170,68,255,0.3)';ctx.lineWidth=1.5;ctx.stroke();ctx.lineWidth=1;
+  }
+
+  // Particles
+  for(let p of particles){
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);
+    ctx.fillStyle='#a4f';ctx.globalAlpha=p.life*0.8;ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Phase color legend
+  ctx.font='10px Courier New';ctx.fillStyle='#668';
+  ctx.fillText('phase:',margin,H-35);
+  for(let i=0;i<60;i++){
+    let hue=i/60*360;
+    let rgb=hslToRgb(hue,0.8,0.55);
+    ctx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    ctx.fillRect(margin+50+i*2,H-40,2,10);
+  }
+  ctx.fillStyle='#668';
+  ctx.fillText('0',margin+48,H-28);
+  ctx.fillText('2\u03C0',margin+160,H-28);
+
+  // Update stats
+  document.getElementById('sBasis').textContent='128';
+  document.getElementById('sNonzero').textContent=nonzero;
+  document.getElementById('sEntropy').textContent=entropy.toFixed(3);
+  document.getElementById('sMax').textContent=maxAmp.toFixed(3);
+  if(isCollapsed){
+    document.getElementById('sState').textContent='|'+toBin(collapsedState)+'\u27E9';
+  }else if(nonzero>1){
+    document.getElementById('sState').textContent='superposition';
+  }else{
+    document.getElementById('sState').textContent='|0000000\u27E9';
+  }
+}
+
+function hslToRgb(h,s,l){
+  h=h%360;if(h<0)h+=360;
+  let c=(1-Math.abs(2*l-1))*s;
+  let x=c*(1-Math.abs((h/60)%2-1));
+  let m=l-c/2;
+  let r=0,g=0,b=0;
+  if(h<60){r=c;g=x;}
+  else if(h<120){r=x;g=c;}
+  else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;}
+  else if(h<300){r=x;b=c;}
+  else{r=c;b=x;}
+  return[Math.round((r+m)*255),Math.round((g+m)*255),Math.round((b+m)*255)];
+}
+
+animate();
+</script>
+</body>
+</html>

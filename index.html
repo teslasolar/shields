@@ -171,6 +171,51 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   </div>
 
   <div class="nav-group">
+    <button class="nav-group-btn" style="color:#e4a">TOPOLOGY <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#knot" data-id="knot"><span class="dot" style="background:#f4a"></span><span style="color:#f4a">KNOT</span></a>
+      <a href="#mobius" data-id="mobius"><span class="dot" style="background:#e8a"></span><span style="color:#e8a">MÖBIUS</span></a>
+      <a href="#klein" data-id="klein"><span class="dot" style="background:#d6a"></span><span style="color:#d6a">KLEIN</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#f84">CHAOS <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#lorenz" data-id="lorenz"><span class="dot" style="background:#f84"></span><span style="color:#f84">LORENZ</span></a>
+      <a href="#logistic" data-id="logistic"><span class="dot" style="background:#fa4"></span><span style="color:#fa4">LOGISTIC</span></a>
+      <a href="#bifurcation" data-id="bifurcation"><span class="dot" style="background:#fc4"></span><span style="color:#fc4">BIFURCATION</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#a4f">QUANTUM <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#bloch" data-id="bloch"><span class="dot" style="background:#a4f"></span><span style="color:#a4f">BLOCH</span></a>
+      <a href="#entangle" data-id="entangle"><span class="dot" style="background:#c6f"></span><span style="color:#c6f">ENTANGLE</span></a>
+      <a href="#superpos" data-id="superpos"><span class="dot" style="background:#84f"></span><span style="color:#84f">SUPERPOS</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#4f8">CRYPTO <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#rsa" data-id="rsa"><span class="dot" style="background:#4f8"></span><span style="color:#4f8">RSA</span></a>
+      <a href="#diffie" data-id="diffie"><span class="dot" style="background:#2e8"></span><span style="color:#2e8">DIFFIE-HELLMAN</span></a>
+      <a href="#elliptic" data-id="elliptic"><span class="dot" style="background:#0d8"></span><span style="color:#0d8">ELLIPTIC</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#f4a">MUSIC <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <a href="#rhythm" data-id="rhythm"><span class="dot" style="background:#f4a"></span><span style="color:#f4a">RHYTHM</span></a>
+      <a href="#spectral" data-id="spectral"><span class="dot" style="background:#f28"></span><span style="color:#f28">SPECTRAL</span></a>
+      <a href="#overtone" data-id="overtone"><span class="dot" style="background:#f06"></span><span style="color:#f06">OVERTONE</span></a>
+    </div>
+  </div>
+
+  <div class="nav-group">
     <button class="nav-group-btn" style="color:#0f8">WEBLLM <span class="arrow">▼</span></button>
     <div class="nav-dropdown">
       <div class="cat-label">AUDIO</div>
@@ -196,7 +241,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div id="gallery">
     <div class="header">
       <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">65 SHIELDS · 9 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
+      <div class="sub">80 SHIELDS · 14 CATEGORIES · 7 PRIMES · 127 DIMENSIONS</div>
     </div>
 
     <div class="category">
@@ -269,6 +314,51 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
         <span class="cat-count">6 SHIELDS</span>
       </div>
       <div class="grid" id="grid-structures"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#e4a">TOPOLOGY</span>
+        <div class="cat-line" style="background:#e4a"></div>
+        <span class="cat-count">3 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-topology"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#f84">CHAOS</span>
+        <div class="cat-line" style="background:#f84"></div>
+        <span class="cat-count">3 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-chaos"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#a4f">QUANTUM</span>
+        <div class="cat-line" style="background:#a4f"></div>
+        <span class="cat-count">3 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-quantum"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#4f8">CRYPTO</span>
+        <div class="cat-line" style="background:#4f8"></div>
+        <span class="cat-count">3 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-crypto"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#f4a">MUSIC</span>
+        <div class="cat-line" style="background:#f4a"></div>
+        <span class="cat-count">3 SHIELDS</span>
+      </div>
+      <div class="grid" id="grid-music"></div>
     </div>
 
     <div class="category">
@@ -391,6 +481,46 @@ const CATEGORIES = {
       { id:'lattice',   name:'SHIELD-LATTICE',      desc:'Divisibility Hasse diagram for 1-120. Primes on level 1, products on higher levels. Edge colors match prime factors.', tag:'LATTICE', tagColor:'#fa8', colors:['#fa8','#f86','#f64','#f42','#f20','#f00','#fff'] },
       { id:'pascal',    name:'SHIELD-PASCAL',       desc:'Pascal\'s triangle mod p reveals Sierpinski fractals. Switch between mod 2,3,5,7,11,13,17. Residue coloring by prime palette.', tag:'PASCAL', tagColor:'#f0f', colors:['#f0f','#c0f','#a0f','#80f','#60f','#40f','#fff'] },
       { id:'catalan',   name:'SHIELD-CATALAN',      desc:'Catalan numbers: Dyck paths, parenthesizations, binary trees. Prime-index Catalans glow gold. Only C₂=2 and C₃=5 are prime.', tag:'CATALAN', tagColor:'#0ff', colors:['#0ff','#0ef','#0df','#0cf','#0bf','#0af','#fff'] },
+    ]
+  },
+  topology: {
+    grid: 'grid-topology',
+    variants: [
+      { id:'knot',   name:'SHIELD-KNOT',   desc:'Prime knot topology. Trefoil and torus knots from (p,q) prime pairs. 3D parametric curves projected with slow rotation. 7 knot types.', tag:'KNOT', tagColor:'#f4a', colors:['#f4a','#f28','#f06','#e04','#c02','#a00','#fff'] },
+      { id:'mobius', name:'SHIELD-MÖBIUS', desc:'Non-orientable Möbius strip with 127 prime-indexed points. Particle traces the single surface. Wireframe rotation reveals the twist.', tag:'MÖBIUS', tagColor:'#e8a', colors:['#e8a','#e6a','#e4a','#e2a','#e0a','#dea','#fff'] },
+      { id:'klein', name:'SHIELD-KLEIN',   desc:'Klein bottle immersion from 4D→3D→2D. Wireframe mesh with 127 grid lines. Prime intersections pulse. Genus-1, χ=0.', tag:'KLEIN', tagColor:'#d6a', colors:['#d6a','#d4a','#d2a','#d0a','#cea','#cca','#fff'] },
+    ]
+  },
+  chaos: {
+    grid: 'grid-chaos',
+    variants: [
+      { id:'lorenz',       name:'SHIELD-LORENZ',       desc:'Lorenz strange attractor. RK4 integration of the butterfly system (σ=10, ρ=28, β=8/3). Rainbow trailing particles in 3D rotation.', tag:'ATTRACTOR', tagColor:'#f84', colors:['#f84','#f62','#f40','#d20','#b00','#900','#fff'] },
+      { id:'logistic',     name:'SHIELD-LOGISTIC',     desc:'Logistic map x(n+1)=rx(1-x). Bifurcation diagram across r=[2.5,4]. Orbits highlighted. Prime-r values flash gold.', tag:'LOGISTIC', tagColor:'#fa4', colors:['#fa4','#f82','#f60','#d40','#b20','#900','#fff'] },
+      { id:'bifurcation',  name:'SHIELD-BIFURCATION',  desc:'Period-doubling cascade to chaos. Feigenbaum δ=4.669 computed live. Branches colored by period. Universal function overlay.', tag:'FEIGENBAUM', tagColor:'#fc4', colors:['#fc4','#fa2','#f80','#d60','#b40','#920','#fff'] },
+    ]
+  },
+  quantum: {
+    grid: 'grid-quantum',
+    variants: [
+      { id:'bloch',     name:'SHIELD-BLOCH',     desc:'Bloch sphere qubit visualization. State vector traces paths under prime-frequency Rabi oscillations. Apply X/Y/Z/H gates.', tag:'QUBIT', tagColor:'#a4f', colors:['#a4f','#84f','#64f','#44f','#24f','#04f','#fff'] },
+      { id:'entangle',  name:'SHIELD-ENTANGLE',  desc:'Quantum entanglement of two qubits. Bell state |Φ+⟩ correlation. Measure one, collapse both. CHSH inequality violation.', tag:'BELL STATE', tagColor:'#c6f', colors:['#c6f','#a4f','#84f','#64f','#44f','#24f','#fff'] },
+      { id:'superpos',  name:'SHIELD-SUPERPOS',  desc:'7-qubit quantum register (2⁷=128 states). Hadamard superposition, prime-frequency phase kicks, measurement collapse animation.', tag:'REGISTER', tagColor:'#84f', colors:['#84f','#64f','#44f','#24f','#04f','#02f','#fff'] },
+    ]
+  },
+  crypto: {
+    grid: 'grid-crypto',
+    variants: [
+      { id:'rsa',      name:'SHIELD-RSA',      desc:'RSA key generation from shield primes. Animated p×q=n, φ(n), e/d computation. Encrypt/decrypt demo. Brute-force factoring race.', tag:'RSA', tagColor:'#4f8', colors:['#4f8','#2f6','#0f4','#0e2','#0d0','#0c0','#fff'] },
+      { id:'diffie',   name:'SHIELD-DIFFIE',   desc:'Diffie-Hellman key exchange animated. Alice & Bob compute g^a, g^b mod p on circle diagrams. Shared secret revealed.', tag:'DH', tagColor:'#2e8', colors:['#2e8','#0d8','#0c8','#0b8','#0a8','#098','#fff'] },
+      { id:'elliptic', name:'SHIELD-ELLIPTIC', desc:'Elliptic curve y²=x³+ax+b over prime fields. Geometric point addition. Scalar multiplication animation. Discrete log difficulty.', tag:'ECC', tagColor:'#0d8', colors:['#0d8','#0c8','#0b8','#0a8','#098','#088','#fff'] },
+    ]
+  },
+  music: {
+    grid: 'grid-music',
+    variants: [
+      { id:'rhythm',   name:'SHIELD-RHYTHM',   desc:'Prime polyrhythm machine. 7 concentric rings for shield primes. Sweep hand triggers beats via Web Audio. Cycle = 510,510.', tag:'POLYRHYTHM', tagColor:'#f4a', colors:['#f4a','#f28','#f06','#e04','#c02','#a00','#fff'] },
+      { id:'spectral', name:'SHIELD-SPECTRAL', desc:'Prime spectrum analyzer. 7 prime-frequency sinusoids synthesized. Waveform + FFT + waterfall spectrogram. Peak colors per prime.', tag:'SPECTRUM', tagColor:'#f28', colors:['#f28','#f06','#e04','#c02','#a00','#800','#fff'] },
+      { id:'overtone', name:'SHIELD-OVERTONE', desc:'Harmonic overtone series. Vibrating string with standing waves 1-17. Prime harmonics pulse gold. Composite waveform visualization.', tag:'HARMONICS', tagColor:'#f06', colors:['#f06','#e04','#c02','#a00','#800','#600','#fff'] },
     ]
   },
   webllmAudio: {

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-RSA — RSA Prime Factoring</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0c0c0;font-family:'Courier New',monospace;cursor:crosshair;overflow:hidden;width:100vw;height:100vh}
+canvas{display:block;position:fixed;top:0;left:0}
+#stats{position:fixed;top:20px;right:20px;background:rgba(6,6,16,0.85);border:1px solid #4f8;padding:16px 20px;font-size:13px;line-height:1.8;min-width:260px;z-index:10;pointer-events:none}
+#stats h2{color:#4f8;font-size:14px;margin-bottom:8px;letter-spacing:2px}
+#stats .label{color:#888}
+#stats .val{color:#4f8;font-weight:bold}
+#stats .val2{color:#f84;font-weight:bold}
+#controls{position:fixed;bottom:20px;left:20px;z-index:10;display:flex;flex-direction:column;gap:8px}
+#controls button{background:rgba(6,6,16,0.85);border:1px solid #4f8;color:#4f8;padding:8px 16px;font-family:'Courier New',monospace;font-size:12px;cursor:pointer;text-align:left;letter-spacing:1px;transition:all 0.2s}
+#controls button:hover{background:#4f8;color:#060610}
+#title{position:fixed;top:20px;left:20px;z-index:10;pointer-events:none}
+#title h1{color:#4f8;font-size:16px;letter-spacing:3px;font-family:'Courier New',monospace}
+#title p{color:#555;font-size:11px;margin-top:4px;font-family:'Courier New',monospace}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><h1>SHIELD-RSA</h1><p>RSA Prime Factoring Visualization</p></div>
+<div id="stats">
+<h2>// RSA PARAMETERS</h2>
+<div><span class="label">p = </span><span class="val" id="sp">—</span></div>
+<div><span class="label">q = </span><span class="val" id="sq">—</span></div>
+<div><span class="label">n = p×q = </span><span class="val" id="sn">—</span></div>
+<div><span class="label">φ(n) = </span><span class="val" id="sphi">—</span></div>
+<div><span class="label">e = </span><span class="val" id="se">—</span></div>
+<div><span class="label">d = </span><span class="val" id="sd">—</span></div>
+<div style="margin-top:8px;border-top:1px solid #333;padding-top:8px">
+<div><span class="label">plaintext = </span><span class="val2" id="spt">—</span></div>
+<div><span class="label">ciphertext = </span><span class="val2" id="sct">—</span></div>
+<div><span class="label">decrypted = </span><span class="val2" id="sdc">—</span></div>
+</div>
+<div style="margin-top:8px;border-top:1px solid #333;padding-top:8px">
+<div><span class="label">factor search: </span><span class="val" id="sfact">idle</span></div>
+</div>
+</div>
+<div id="controls">
+<button onclick="pickPrimes()">[ P ] Pick Primes</button>
+<button onclick="doEncrypt()">[ E ] Encrypt</button>
+<button onclick="doDecrypt()">[ D ] Decrypt</button>
+<button onclick="doFactor()">[ F ] Factor n</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+const PRIMES=[2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97];
+const SHIELD_PRIMES=PRIMES.filter(p=>p>=11&&p<=97);
+
+let p=0,q=0,n=0,phi=0,e=0,d=0,plaintext=0,ciphertext=0,decrypted=0;
+let animSteps=[],currentStep=0,stepTimer=0;
+let particles=[],factorSearch={active:false,current:2,found:false,foundP:0,foundQ:0};
+let mouseX=W/2,mouseY=H/2;
+let bgStars=[];
+for(let i=0;i<200;i++)bgStars.push({x:Math.random(),y:Math.random(),s:Math.random()*1.5+0.3,b:Math.random()});
+
+document.addEventListener('mousemove',ev=>{mouseX=ev.clientX;mouseY=ev.clientY});
+document.addEventListener('keydown',ev=>{
+  if(ev.key==='p'||ev.key==='P')pickPrimes();
+  if(ev.key==='e'||ev.key==='E')doEncrypt();
+  if(ev.key==='d'||ev.key==='D')doDecrypt();
+  if(ev.key==='f'||ev.key==='F')doFactor();
+});
+
+function gcd(a,b){while(b){[a,b]=[b,a%b]}return a}
+function modpow(base,exp,mod){let r=1n;base=BigInt(base)%BigInt(mod);exp=BigInt(exp);mod=BigInt(mod);while(exp>0n){if(exp%2n===1n)r=r*base%mod;exp>>=1n;base=base*base%mod}return Number(r)}
+function modInverse(a,m){let[old_r,r_]=[a,m],[old_s,s]=[1,0];while(r_!==0){let q=Math.floor(old_r/r_);[old_r,r_]=[r_,old_r-q*r_];[old_s,s]=[s,old_s-q*s]}return((old_s%m)+m)%m}
+
+function addParticle(x,y,color,count=10){
+  for(let i=0;i<count;i++){
+    let a=Math.random()*Math.PI*2,sp=Math.random()*3+1;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,color,size:Math.random()*3+1});
+  }
+}
+
+function pickPrimes(){
+  factorSearch={active:false,current:2,found:false,foundP:0,foundQ:0};
+  let idx1=Math.floor(Math.random()*SHIELD_PRIMES.length);
+  let idx2=Math.floor(Math.random()*SHIELD_PRIMES.length);
+  while(idx2===idx1)idx2=Math.floor(Math.random()*SHIELD_PRIMES.length);
+  p=SHIELD_PRIMES[idx1];q=SHIELD_PRIMES[idx2];
+  n=p*q;phi=(p-1)*(q-1);
+  e=0;
+  for(let candidate of[3,5,7,11,13,17,19,23,29,31,37]){
+    if(candidate<phi&&gcd(candidate,phi)===1){e=candidate;break}
+  }
+  d=modInverse(e,phi);
+  plaintext=Math.floor(Math.random()*(n-2))+2;
+  ciphertext=0;decrypted=0;
+  animSteps=[
+    {type:'pick_p',val:p,text:`Choose prime p = ${p}`},
+    {type:'pick_q',val:q,text:`Choose prime q = ${q}`},
+    {type:'compute_n',val:n,text:`n = p × q = ${p} × ${q} = ${n}`},
+    {type:'compute_phi',val:phi,text:`φ(n) = (p-1)(q-1) = ${p-1} × ${q-1} = ${phi}`},
+    {type:'choose_e',val:e,text:`Choose e = ${e} (gcd(${e}, ${phi}) = 1)`},
+    {type:'compute_d',val:d,text:`d = e⁻¹ mod φ(n) = ${d}`},
+  ];
+  currentStep=0;stepTimer=0;
+  updateStats();
+  addParticle(W/2,H/2,'#4f8',30);
+}
+
+function doEncrypt(){
+  if(!n||!e)return;
+  ciphertext=modpow(plaintext,e,n);
+  animSteps=[{type:'encrypt',text:`C = M^e mod n = ${plaintext}^${e} mod ${n} = ${ciphertext}`}];
+  currentStep=0;stepTimer=0;
+  addParticle(W/2,H/2,'#f84',20);
+  updateStats();
+}
+
+function doDecrypt(){
+  if(!ciphertext||!d)return;
+  decrypted=modpow(ciphertext,d,n);
+  animSteps=[{type:'decrypt',text:`M = C^d mod n = ${ciphertext}^${d} mod ${n} = ${decrypted}`}];
+  currentStep=0;stepTimer=0;
+  addParticle(W/2,H/2,'#48f',20);
+  updateStats();
+}
+
+function doFactor(){
+  if(!n)return;
+  factorSearch={active:true,current:2,found:false,foundP:0,foundQ:0};
+  animSteps=[];
+  document.getElementById('sfact').textContent='searching...';
+}
+
+function updateStats(){
+  document.getElementById('sp').textContent=p||'—';
+  document.getElementById('sq').textContent=q||'—';
+  document.getElementById('sn').textContent=n||'—';
+  document.getElementById('sphi').textContent=phi||'—';
+  document.getElementById('se').textContent=e||'—';
+  document.getElementById('sd').textContent=d||'—';
+  document.getElementById('spt').textContent=plaintext||'—';
+  document.getElementById('sct').textContent=ciphertext||'—';
+  document.getElementById('sdc').textContent=decrypted||'—';
+}
+
+let time=0,stepMessages=[],fadeSteps=[];
+
+function drawGrid(){
+  ctx.strokeStyle='rgba(79,255,136,0.04)';
+  ctx.lineWidth=1;
+  let gs=60;
+  for(let x=0;x<W;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+}
+
+function drawStars(){
+  for(let s of bgStars){
+    let b=0.3+0.2*Math.sin(time*0.5+s.b*10);
+    ctx.fillStyle=`rgba(79,255,136,${b*0.3})`;
+    ctx.fillRect(s.x*W,s.y*H,s.s,s.s);
+  }
+}
+
+function drawPrimeGrid(){
+  let cx=W*0.35,cy=H*0.45,spacing=55;
+  let cols=5,rows=Math.ceil(SHIELD_PRIMES.length/cols);
+  let startX=cx-cols*spacing/2,startY=cy-rows*spacing/2;
+  ctx.font='11px Courier New';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  for(let i=0;i<SHIELD_PRIMES.length;i++){
+    let col=i%cols,row=Math.floor(i/cols);
+    let x=startX+col*spacing+spacing/2,y=startY+row*spacing+spacing/2;
+    let pr=SHIELD_PRIMES[i];
+    let isP=pr===p,isQ=pr===q;
+    let isFact=factorSearch.active&&pr<=factorSearch.current;
+    if(isP||isQ){
+      ctx.fillStyle=isP?'rgba(79,255,136,0.15)':'rgba(255,136,68,0.15)';
+      ctx.beginPath();ctx.arc(x,y,22,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle=isP?'#4f8':'#f84';
+      ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,22,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle=isP?'#4f8':'#f84';
+      ctx.font='bold 14px Courier New';
+      ctx.fillText(pr,x,y);
+      ctx.font='9px Courier New';
+      ctx.fillText(isP?'p':'q',x,y+16);
+      ctx.font='11px Courier New';
+    } else if(isFact&&factorSearch.active&&!factorSearch.found){
+      ctx.fillStyle='rgba(255,68,68,0.1)';
+      ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='rgba(255,68,68,0.3)';
+      ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='#f44';
+      ctx.fillText(pr,x,y);
+    } else {
+      ctx.fillStyle='rgba(79,255,136,0.05)';
+      ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='rgba(79,255,136,0.15)';
+      ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='#555';
+      ctx.fillText(pr,x,y);
+    }
+  }
+  ctx.font='11px Courier New';
+  ctx.fillStyle='#4f8';
+  ctx.textAlign='center';
+  ctx.fillText('SHIELD PRIMES',cx,startY-20);
+}
+
+function drawRSADiagram(){
+  if(!n)return;
+  let cx=W*0.65,cy=H*0.5;
+  // Draw key pair visual
+  let r=80+10*Math.sin(time*0.8);
+  // Public key circle
+  ctx.strokeStyle='rgba(79,255,136,0.4)';
+  ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(cx-80,cy-60,r*0.5,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(79,255,136,0.05)';
+  ctx.fill();
+  ctx.fillStyle='#4f8';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font='bold 12px Courier New';
+  ctx.fillText('PUBLIC',cx-80,cy-80);
+  ctx.font='11px Courier New';
+  ctx.fillText(`(${e}, ${n})`,cx-80,cy-60);
+
+  // Private key circle
+  ctx.strokeStyle='rgba(255,136,68,0.4)';
+  ctx.beginPath();ctx.arc(cx+80,cy-60,r*0.5,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(255,136,68,0.05)';
+  ctx.fill();
+  ctx.fillStyle='#f84';
+  ctx.font='bold 12px Courier New';
+  ctx.fillText('PRIVATE',cx+80,cy-80);
+  ctx.font='11px Courier New';
+  ctx.fillText(`(${d}, ${n})`,cx+80,cy-60);
+
+  // n = p × q visual
+  if(p&&q){
+    ctx.font='13px Courier New';
+    ctx.fillStyle='#888';
+    ctx.fillText(`n = ${p} × ${q} = ${n}`,cx,cy+50);
+    ctx.fillText(`φ(n) = ${p-1} × ${q-1} = ${phi}`,cx,cy+70);
+    ctx.fillText(`e × d ≡ 1 (mod φ)`,cx,cy+90);
+    ctx.fillStyle='#555';
+    ctx.fillText(`${e} × ${d} = ${e*d} ≡ 1 (mod ${phi})`,cx,cy+110);
+  }
+
+  // Encrypt/decrypt flow
+  if(ciphertext){
+    let ey=cy+150;
+    ctx.fillStyle='#f84';
+    ctx.font='12px Courier New';
+    ctx.fillText(`${plaintext}`,cx-120,ey);
+    ctx.fillStyle='#888';
+    ctx.fillText('──▶',cx-70,ey);
+    ctx.fillStyle='#4f8';
+    ctx.fillText(`M^e mod n`,cx,ey);
+    ctx.fillStyle='#888';
+    ctx.fillText('──▶',cx+70,ey);
+    ctx.fillStyle='#f84';
+    ctx.fillText(`${ciphertext}`,cx+120,ey);
+    // Animated arrow
+    let ax=cx-120+240*((time*0.3)%1);
+    ctx.fillStyle=`rgba(79,255,136,${0.5+0.5*Math.sin(time*3)})`;
+    ctx.fillRect(ax,ey-1,4,2);
+  }
+  if(decrypted){
+    let ey=cy+180;
+    ctx.fillStyle='#f84';
+    ctx.font='12px Courier New';
+    ctx.fillText(`${ciphertext}`,cx-120,ey);
+    ctx.fillStyle='#888';
+    ctx.fillText('──▶',cx-70,ey);
+    ctx.fillStyle='#48f';
+    ctx.fillText(`C^d mod n`,cx,ey);
+    ctx.fillStyle='#888';
+    ctx.fillText('──▶',cx+70,ey);
+    ctx.fillStyle='#4f8';
+    ctx.fillText(`${decrypted}`,cx+120,ey);
+  }
+}
+
+function drawStepMessages(){
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  let y=H-120;
+  for(let i=fadeSteps.length-1;i>=0;i--){
+    let fs=fadeSteps[i];
+    fs.alpha-=0.005;
+    if(fs.alpha<=0){fadeSteps.splice(i,1);continue}
+    ctx.fillStyle=`rgba(79,255,136,${fs.alpha})`;
+    ctx.font='13px Courier New';
+    ctx.fillText(fs.text,W/2,y);
+    y-=25;
+  }
+}
+
+function drawFactorAnimation(){
+  if(!factorSearch.active)return;
+  let cx=W*0.5,cy=H*0.85;
+  ctx.textAlign='center';
+  if(factorSearch.found){
+    ctx.fillStyle='#4f8';
+    ctx.font='bold 14px Courier New';
+    ctx.fillText(`FACTORED: ${n} = ${factorSearch.foundP} × ${factorSearch.foundQ}`,cx,cy);
+    // pulsing glow
+    let gl=0.3+0.3*Math.sin(time*4);
+    ctx.fillStyle=`rgba(79,255,136,${gl})`;
+    ctx.fillText(`FACTORED: ${n} = ${factorSearch.foundP} × ${factorSearch.foundQ}`,cx,cy);
+  } else {
+    ctx.fillStyle='#f44';
+    ctx.font='12px Courier New';
+    ctx.fillText(`Trying to factor ${n}... testing divisor ${factorSearch.current}`,cx,cy);
+    // progress bar
+    let maxTry=Math.sqrt(n)+1;
+    let prog=Math.min(factorSearch.current/maxTry,1);
+    ctx.fillStyle='rgba(255,68,68,0.2)';
+    ctx.fillRect(cx-150,cy+15,300,6);
+    ctx.fillStyle='#f44';
+    ctx.fillRect(cx-150,cy+15,300*prog,6);
+  }
+}
+
+function drawMouseGlow(){
+  let grad=ctx.createRadialGradient(mouseX,mouseY,0,mouseX,mouseY,120);
+  grad.addColorStop(0,'rgba(79,255,136,0.03)');
+  grad.addColorStop(1,'rgba(79,255,136,0)');
+  ctx.fillStyle=grad;
+  ctx.fillRect(mouseX-120,mouseY-120,240,240);
+}
+
+let lastTime=0;
+function animate(ts){
+  let dt=(ts-lastTime)/1000;lastTime=ts;
+  time+=dt;
+  ctx.fillStyle='rgba(6,6,16,0.15)';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,W,H);
+
+  drawGrid();
+  drawStars();
+  drawMouseGlow();
+  drawPrimeGrid();
+  drawRSADiagram();
+  drawStepMessages();
+  drawFactorAnimation();
+
+  // Animate steps
+  if(animSteps.length>0&&currentStep<animSteps.length){
+    stepTimer+=dt;
+    if(stepTimer>0.8){
+      stepTimer=0;
+      let step=animSteps[currentStep];
+      fadeSteps.push({text:step.text,alpha:1.5});
+      addParticle(W/2,H-120,'#4f8',5);
+      currentStep++;
+      if(currentStep>=animSteps.length)updateStats();
+    }
+  }
+
+  // Factor search animation (slow for drama)
+  if(factorSearch.active&&!factorSearch.found){
+    factorSearch.current++;
+    if(n%factorSearch.current===0){
+      factorSearch.found=true;
+      factorSearch.foundP=factorSearch.current;
+      factorSearch.foundQ=n/factorSearch.current;
+      document.getElementById('sfact').textContent=`${n} = ${factorSearch.foundP} × ${factorSearch.foundQ}`;
+      addParticle(W/2,H*0.85,'#4f8',40);
+    } else if(factorSearch.current>Math.sqrt(n)+1){
+      factorSearch.found=true;
+      factorSearch.foundP=1;factorSearch.foundQ=n;
+      document.getElementById('sfact').textContent='prime!';
+    }
+  }
+
+  // Update particles
+  for(let i=particles.length-1;i>=0;i--){
+    let pt=particles[i];
+    pt.x+=pt.vx;pt.y+=pt.vy;pt.life-=dt*0.8;pt.vx*=0.98;pt.vy*=0.98;
+    if(pt.life<=0){particles.splice(i,1);continue}
+    ctx.fillStyle=pt.color.replace(')',`,${pt.life})`).replace('rgb','rgba').replace('#','');
+    // hex to rgba
+    let c=pt.color;
+    if(c.startsWith('#')){
+      let r_=parseInt(c.length===4?c[1]+c[1]:c.slice(1,3),16);
+      let g_=parseInt(c.length===4?c[2]+c[2]:c.slice(3,5),16);
+      let b_=parseInt(c.length===4?c[3]+c[3]:c.slice(5,7),16);
+      ctx.fillStyle=`rgba(${r_},${g_},${b_},${pt.life})`;
+    }
+    ctx.beginPath();ctx.arc(pt.x,pt.y,pt.size*pt.life,0,Math.PI*2);ctx.fill();
+  }
+
+  // Scanline effect
+  ctx.fillStyle='rgba(6,6,16,0.03)';
+  for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
+
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+pickPrimes();
+</script>
+</body>
+</html>
