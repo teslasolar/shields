@@ -5,28 +5,28 @@
 
   const GROUPS = [
     { label:'GEOMETRY', color:'#604', items:[
-      {id:'orb',color:'#604'},{id:'flat',color:'#0f8'},{id:'spiral',color:'#f0f'},{id:'hexagon',color:'#ff4'},{id:'fractal',color:'#f0a'}
+      {id:'orb',color:'#604'},{id:'flat',color:'#0f8'},{id:'spiral',color:'#f0f'},{id:'hexagon',color:'#ff4'},{id:'fractal',color:'#f0a'},{id:'voronoi',color:'#0af'}
     ]},
     { label:'NUMBER THEORY', color:'#0ad', items:[
       {id:'number',color:'#0ff'},{id:'sieve',color:'#8f0'},{id:'twin',color:'#f80'},{id:'perfect',color:'#0cf'},{id:'fibonacci',color:'#fc0'},{id:'goldbach',color:'#4ff'}
     ]},
     { label:'ORGANIC', color:'#4a4', items:[
-      {id:'breath',color:'#a4f'},{id:'tree',color:'#4a4'},{id:'cascade',color:'#fa0'},{id:'flow',color:'#0f8'}
+      {id:'breath',color:'#a4f'},{id:'tree',color:'#4a4'},{id:'cascade',color:'#fa0'},{id:'flow',color:'#0f8'},{id:'wave',color:'#0af'},{id:'mycelium',color:'#0f8'}
     ]},
     { label:'SYSTEMS', color:'#fc0', items:[
-      {id:'drug',color:'#f44'},{id:'network',color:'#fc0'},{id:'harmony',color:'#f4a'}
+      {id:'drug',color:'#f44'},{id:'network',color:'#fc0'},{id:'harmony',color:'#f4a'},{id:'automata',color:'#0ff'},{id:'pendulum',color:'#f4a'},{id:'clock',color:'#fc0'}
     ]},
     { label:'PRIME TYPES', color:'#f48', items:[
       {id:'mersenne',color:'#48f'},{id:'fermat',color:'#f84'},{id:'sophie',color:'#c6f'},{id:'emirp',color:'#0fc'},{id:'palindrome',color:'#f8f'},{id:'chen',color:'#8f8'},{id:'wieferich',color:'#f90'},{id:'carmichael',color:'#f44'},{id:'balanced',color:'#fd0'},{id:'isolated',color:'#70c'}
     ]},
     { label:'PRIME PAIRS', color:'#8af', items:[
-      {id:'sexy',color:'#f4c'},{id:'cousin',color:'#4af'},{id:'quadruplet',color:'#fa4'},{id:'cunningham',color:'#4fc'}
+      {id:'sexy',color:'#f4c'},{id:'cousin',color:'#4af'},{id:'quadruplet',color:'#fa4'},{id:'cunningham',color:'#4fc'},{id:'triplet',color:'#0af'},{id:'safe',color:'#48f'}
     ]},
     { label:'ANALYSIS', color:'#af4', items:[
       {id:'gaps',color:'#f64'},{id:'riemann',color:'#84f'},{id:'gaussian',color:'#4f8'},{id:'pi',color:'#0ff'},{id:'wilson',color:'#ff8'},{id:'primorial',color:'#f80'},{id:'eisenstein',color:'#0e8'},{id:'dirichlet',color:'#8cf'}
     ]},
     { label:'STRUCTURES', color:'#fa8', items:[
-      {id:'factor',color:'#8f4'},{id:'collatz',color:'#f48'},{id:'modular',color:'#48f'},{id:'lattice',color:'#fa8'},{id:'clock',color:'#ffd700'}
+      {id:'factor',color:'#8f4'},{id:'collatz',color:'#f48'},{id:'modular',color:'#48f'},{id:'lattice',color:'#fa8'},{id:'pascal',color:'#f0f'},{id:'catalan',color:'#0ff'}
     ]}
   ];
 
