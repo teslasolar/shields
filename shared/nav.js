@@ -26,7 +26,7 @@
       {id:'gaps',color:'#f64'},{id:'riemann',color:'#84f'},{id:'gaussian',color:'#4f8'},{id:'pi',color:'#0ff'},{id:'wilson',color:'#ff8'},{id:'primorial',color:'#f80'},{id:'eisenstein',color:'#0e8'},{id:'dirichlet',color:'#8cf'}
     ]},
     { label:'STRUCTURES', color:'#fa8', items:[
-      {id:'factor',color:'#8f4'},{id:'collatz',color:'#f48'},{id:'modular',color:'#48f'},{id:'lattice',color:'#fa8'}
+      {id:'factor',color:'#8f4'},{id:'collatz',color:'#f48'},{id:'modular',color:'#48f'},{id:'lattice',color:'#fa8'},{id:'clock',color:'#ffd700'}
     ]}
   ];
 

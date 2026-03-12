@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SAFE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Courier New',monospace;overflow-x:hidden;min-height:100vh}
+h1{text-align:center;font-size:26px;color:#4ff;margin:48px 0 4px;text-shadow:0 0 20px rgba(68,255,255,.4),0 0 60px rgba(68,255,255,.15);letter-spacing:6px}
+.subtitle{text-align:center;color:#556;font-size:11px;margin-bottom:12px;letter-spacing:2px}
+#controls{display:flex;justify-content:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+#controls button{background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.25);color:#0af;padding:6px 16px;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1.5px;cursor:pointer;border-radius:3px;transition:all .2s}
+#controls button:hover,#controls button.active{background:rgba(0,170,255,.12);border-color:#0af;text-shadow:0 0 6px rgba(0,170,255,.5)}
+#main-wrap{display:flex;gap:10px;padding:0 10px 10px;height:calc(100vh - 140px);min-height:500px}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;border:1px solid rgba(0,170,255,.15);border-radius:4px;background:rgba(6,6,16,.92);backdrop-filter:blur(6px)}
+#canvas-wrap canvas{display:block;width:100%;height:100%}
+#stats-panel{width:280px;flex-shrink:0;background:rgba(6,6,16,.92);border:1px solid rgba(0,170,255,.15);border-radius:4px;backdrop-filter:blur(6px);padding:14px;overflow-y:auto;font-size:11px}
+#stats-panel h2{font-size:11px;color:#0af;letter-spacing:2px;margin:0 0 10px;border-bottom:1px solid rgba(0,170,255,.15);padding-bottom:6px}
+.stat-row{display:flex;justify-content:space-between;margin:5px 0;color:#889}
+.stat-row .val{color:#4ff;font-weight:bold}
+.stat-section{margin:14px 0 0}
+.stat-section h3{font-size:10px;color:#667;letter-spacing:1.5px;margin-bottom:6px}
+.chain-list{max-height:180px;overflow-y:auto;font-size:10px}
+.chain-item{padding:4px 6px;margin:2px 0;border:1px solid rgba(0,170,255,.08);border-radius:2px;cursor:pointer;transition:all .2s}
+.chain-item:hover{border-color:rgba(0,170,255,.3);background:rgba(0,170,255,.05)}
+.chain-item .chain-vals{color:#8cf;margin-top:2px}
+.dist-bar{display:flex;align-items:center;gap:6px;margin:3px 0}
+.dist-bar .label{width:60px;color:#667;font-size:10px}
+.dist-bar .bar{height:8px;border-radius:2px;min-width:2px;transition:width .3s}
+.dist-bar .cnt{color:#889;font-size:10px;width:30px;text-align:right}
+#tooltip{position:fixed;background:rgba(6,6,20,.94);border:1px solid #4ff;color:#4ff;padding:8px 14px;font-size:11px;font-family:'Courier New',monospace;pointer-events:none;display:none;z-index:200;border-radius:3px;box-shadow:0 0 16px rgba(68,255,255,.3);max-width:300px;line-height:1.6}
+#tooltip .chain-label{color:#fc0;font-size:10px;letter-spacing:1px}
+#tooltip .chain-arrow{color:#0af}
+@keyframes glow-pulse{0%,100%{text-shadow:0 0 10px rgba(68,255,255,.3)}50%{text-shadow:0 0 25px rgba(68,255,255,.6),0 0 50px rgba(68,255,255,.2)}}
+.glow{animation:glow-pulse 2s ease-in-out infinite}
+@media(max-width:800px){#main-wrap{flex-direction:column;height:auto}#stats-panel{width:100%;max-height:300px}}
+</style>
+</head>
+<body>
+
+<h1 class="glow">SHIELD-SAFE</h1>
+<div class="subtitle">SAFE PRIMES &amp; SOPHIE GERMAIN CHAINS &mdash; FORTIFIED TOWERS OF PRIMALITY</div>
+
+<div id="controls">
+  <button id="btn-side" class="active" onclick="setView('side')">SIDE VIEW</button>
+  <button id="btn-top" onclick="setView('top')">TOP-DOWN VIEW</button>
+  <button id="btn-reset" onclick="resetView()">RESET ZOOM</button>
+</div>
+
+<div id="main-wrap">
+  <div id="canvas-wrap">
+    <canvas id="mainCanvas"></canvas>
+  </div>
+  <div id="stats-panel">
+    <h2>STATISTICS</h2>
+    <div class="stat-row">SAFE PRIMES <span class="val" id="s-safe">--</span></div>
+    <div class="stat-row">SOPHIE GERMAIN <span class="val" id="s-sophie">--</span></div>
+    <div class="stat-row">CUNNINGHAM CHAINS <span class="val" id="s-chains">--</span></div>
+    <div class="stat-row">LONGEST CHAIN <span class="val" id="s-longest">--</span></div>
+    <div class="stat-section">
+      <h3>CHAIN LENGTH DISTRIBUTION</h3>
+      <div id="dist-bars"></div>
+    </div>
+    <div class="stat-section">
+      <h3>LONGEST CHAINS</h3>
+      <div class="chain-list" id="chain-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// --- Prime sieve and chain computation ---
+const MAX = 5000;
+const sieve = new Uint8Array(MAX + 1);
+sieve[0] = sieve[1] = 1;
+for (let i = 2; i * i <= MAX; i++) {
+  if (!sieve[i]) for (let j = i * i; j <= MAX; j += i) sieve[j] = 1;
+}
+function isPrime(n) { return n >= 2 && n <= MAX && !sieve[n]; }
+
+// Find all Cunningham chains of the first kind (Sophie Germain chains)
+// A chain: p1, 2p1+1, 2(2p1+1)+1, ...
+// Start from primes where (p-1)/2 is NOT prime (chain roots)
+const safePrimes = new Set();
+const sophieGermainPrimes = new Set();
+const chains = []; // Each chain: [p1, p2, p3, ...]
+const primeToChain = new Map(); // prime -> chain index
+
+for (let p = 2; p <= MAX; p++) {
+  if (!isPrime(p)) continue;
+  // Check if p is a chain root: (p-1)/2 is not prime or p==2
+  const prev = (p - 1) / 2;
+  if (prev >= 2 && isPrime(prev) && Number.isInteger(prev)) continue; // not a root
+  // Build chain from p
+  const chain = [p];
+  let q = 2 * p + 1;
+  while (q <= MAX && isPrime(q)) {
+    chain.push(q);
+    q = 2 * q + 1;
+  }
+  if (chain.length >= 2) {
+    const idx = chains.length;
+    chains.push(chain);
+    for (const v of chain) primeToChain.set(v, idx);
+    // Mark safe/sophie
+    for (let i = 0; i < chain.length - 1; i++) sophieGermainPrimes.add(chain[i]);
+    for (let i = 1; i < chain.length; i++) safePrimes.add(chain[i]);
+  }
+}
+
+// Also find isolated safe prime pairs (length 1 chain = just a pair)
+for (let p = 2; p <= MAX; p++) {
+  if (!isPrime(p)) continue;
+  const q = 2 * p + 1;
+  if (q <= MAX && isPrime(q)) {
+    if (!primeToChain.has(p) && !primeToChain.has(q)) {
+      // This is an isolated pair not part of any longer chain already found
+      // Actually this shouldn't happen since we build all chains from roots
+    }
+    safePrimes.add(q);
+    sophieGermainPrimes.add(p);
+  }
+}
+
+// Collect ALL chains including length-1 pairs and singletons
+// Rebuild properly: find all chain roots
+const allChains = [];
+const allPrimeToChain = new Map();
+for (let p = 2; p <= MAX; p++) {
+  if (!isPrime(p)) continue;
+  const prev = (p - 1) / 2;
+  const isRoot = !(prev >= 2 && Number.isInteger(prev) && isPrime(prev));
+  if (!isRoot) continue;
+  const chain = [p];
+  let q = 2 * p + 1;
+  while (q <= MAX && isPrime(q)) {
+    chain.push(q);
+    q = 2 * q + 1;
+  }
+  if (chain.length >= 2) {
+    const idx = allChains.length;
+    allChains.push(chain);
+    for (const v of chain) allPrimeToChain.set(v, idx);
+  }
+}
+
+// Sort by length descending
+const sortedChains = [...allChains].sort((a, b) => b.length - a.length);
+const longestLen = sortedChains.length ? sortedChains[0].length : 0;
+
+// Chain length distribution
+const distMap = {};
+for (const c of allChains) {
+  distMap[c.length] = (distMap[c.length] || 0) + 1;
+}
+
+// Color by chain length
+function chainColor(len) {
+  if (len >= 5) return { base: '#eee', top: '#fff', glow: 'rgba(255,255,255,.6)' };
+  if (len === 4) return { base: '#c90', top: '#fc0', glow: 'rgba(255,204,0,.5)' };
+  if (len === 3) return { base: '#0a6', top: '#0f8', glow: 'rgba(0,255,136,.4)' };
+  return { base: '#06a', top: '#0af', glow: 'rgba(0,170,255,.35)' };
+}
+
+// --- Stats panel ---
+document.getElementById('s-safe').textContent = safePrimes.size;
+document.getElementById('s-sophie').textContent = sophieGermainPrimes.size;
+document.getElementById('s-chains').textContent = allChains.length;
+document.getElementById('s-longest').textContent = longestLen + (sortedChains.length ? ' (' + sortedChains[0].join('\u2192') + ')' : '');
+
+const distBars = document.getElementById('dist-bars');
+const maxDist = Math.max(...Object.values(distMap), 1);
+const distColors = { 2: '#0af', 3: '#0f8', 4: '#fc0', 5: '#fff' };
+for (const [len, cnt] of Object.entries(distMap).sort((a, b) => +a[0] - +b[0])) {
+  const pct = (cnt / maxDist) * 100;
+  const col = distColors[+len] || '#f4a';
+  distBars.innerHTML += `<div class="dist-bar"><span class="label">LEN ${len}</span><div class="bar" style="width:${pct}%;background:${col}"></div><span class="cnt">${cnt}</span></div>`;
+}
+
+const chainListEl = document.getElementById('chain-list');
+for (let i = 0; i < Math.min(sortedChains.length, 20); i++) {
+  const c = sortedChains[i];
+  const col = chainColor(c.length);
+  const div = document.createElement('div');
+  div.className = 'chain-item';
+  div.innerHTML = `<span style="color:${col.top}">LENGTH ${c.length}</span><div class="chain-vals">${c.join(' \u2192 ')}</div>`;
+  div.onclick = () => { animateChain(c); };
+  chainListEl.appendChild(div);
+}
+
+// --- Canvas rendering ---
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W, H;
+let viewMode = 'side'; // 'side' or 'top'
+let scrollX = 0, scrollY = 0, zoom = 1;
+let dragging = false, dragStartX = 0, dragStartY = 0, dragScrollX = 0, dragScrollY = 0;
+let hoveredChain = null;
+let animatingChain = null, animStep = 0, animTimer = null;
+
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  W = wrap.clientWidth;
+  H = wrap.clientHeight;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  draw();
+}
+window.addEventListener('resize', resize);
+
+function setView(mode) {
+  viewMode = mode;
+  document.getElementById('btn-side').classList.toggle('active', mode === 'side');
+  document.getElementById('btn-top').classList.toggle('active', mode === 'top');
+  resetView();
+}
+
+function resetView() {
+  scrollX = 0; scrollY = 0; zoom = 1;
+  draw();
+}
+
+// Tower geometry
+function getTowerPositions() {
+  const towers = [];
+  const spacing = viewMode === 'side' ? 48 : 32;
+  let x = 20;
+  for (let i = 0; i < allChains.length; i++) {
+    const c = allChains[i];
+    towers.push({ chain: c, x: x, idx: i });
+    x += spacing + (c.length - 1) * 6;
+  }
+  return towers;
+}
+
+function drawSideView() {
+  ctx.save();
+  ctx.translate(scrollX, scrollY);
+  ctx.scale(zoom, zoom);
+
+  const towers = getTowerPositions();
+  const baseY = H / zoom - 60;
+  const levelH = 40;
+  const baseW = 34;
+
+  // Draw ground line
+  ctx.strokeStyle = 'rgba(0,170,255,.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-200, baseY);
+  ctx.lineTo(towers.length ? towers[towers.length - 1].x + 100 : W, baseY);
+  ctx.stroke();
+
+  for (const t of towers) {
+    const c = t.chain;
+    const col = chainColor(c.length);
+    const isHovered = hoveredChain === t.idx;
+    const isLongest = c.length === longestLen && longestLen >= 3;
+    const animLevels = animatingChain && animatingChain.join() === c.join() ? animStep : c.length;
+
+    for (let lvl = 0; lvl < Math.min(c.length, animLevels); lvl++) {
+      const w = baseW - lvl * 4;
+      const yTop = baseY - (lvl + 1) * levelH;
+      const yBot = baseY - lvl * levelH;
+      const cx = t.x;
+
+      // Tower block
+      const grad = ctx.createLinearGradient(cx - w / 2, yTop, cx + w / 2, yBot);
+      if (lvl === 0) {
+        grad.addColorStop(0, isHovered ? '#0af' : col.base);
+        grad.addColorStop(1, '#024');
+      } else {
+        grad.addColorStop(0, isHovered ? '#4ff' : col.top);
+        grad.addColorStop(1, isHovered ? col.base : '#013');
+      }
+
+      // Golden glow for longest
+      if (isLongest) {
+        ctx.shadowColor = 'rgba(255,200,0,.6)';
+        ctx.shadowBlur = 18;
+      } else if (isHovered) {
+        ctx.shadowColor = col.glow;
+        ctx.shadowBlur = 14;
+      } else {
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+      }
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      // Slight taper
+      const taper = 2;
+      ctx.moveTo(cx - w / 2, yBot);
+      ctx.lineTo(cx - w / 2 + taper, yTop);
+      ctx.lineTo(cx + w / 2 - taper, yTop);
+      ctx.lineTo(cx + w / 2, yBot);
+      ctx.closePath();
+      ctx.fill();
+
+      // Border
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+      ctx.strokeStyle = isLongest ? 'rgba(255,200,0,.5)' : isHovered ? col.top : 'rgba(0,170,255,.2)';
+      ctx.lineWidth = isHovered || isLongest ? 1.5 : 0.5;
+      ctx.stroke();
+
+      // Number label
+      ctx.fillStyle = isHovered ? '#fff' : (lvl === 0 ? '#8ab' : col.top);
+      ctx.font = (w > 20 ? '9px' : '7px') + " 'Courier New',monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText(c[lvl], cx, (yTop + yBot) / 2 + 3);
+
+      // Crenellation on top level
+      if (lvl === Math.min(c.length, animLevels) - 1) {
+        const cw = 3, ch = 4, gap = 3;
+        const nCren = Math.floor(w / (cw + gap));
+        ctx.fillStyle = isLongest ? 'rgba(255,200,0,.4)' : (isHovered ? col.top : col.base);
+        for (let ci = 0; ci < nCren; ci++) {
+          const bx = cx - w / 2 + taper + gap / 2 + ci * (cw + gap);
+          ctx.fillRect(bx, yTop - ch, cw, ch);
+        }
+      }
+    }
+
+    // Chain label below
+    ctx.fillStyle = isLongest ? '#fc0' : '#445';
+    ctx.font = "8px 'Courier New',monospace";
+    ctx.textAlign = 'center';
+    ctx.fillText('L' + c.length, t.x, baseY + 14);
+  }
+
+  ctx.restore();
+}
+
+function drawTopView() {
+  ctx.save();
+  ctx.translate(scrollX + W / 2, scrollY + H / 2);
+  ctx.scale(zoom, zoom);
+
+  const towers = getTowerPositions();
+  // Arrange in a grid
+  const cols = Math.ceil(Math.sqrt(allChains.length));
+  const cellW = 60, cellH = 60;
+  const startX = -cols * cellW / 2;
+  const startY = -Math.ceil(allChains.length / cols) * cellH / 2;
+
+  for (let i = 0; i < allChains.length; i++) {
+    const c = allChains[i];
+    const col = chainColor(c.length);
+    const isHovered = hoveredChain === i;
+    const isLongest = c.length === longestLen && longestLen >= 3;
+    const gx = startX + (i % cols) * cellW + cellW / 2;
+    const gy = startY + Math.floor(i / cols) * cellH + cellH / 2;
+    const animLevels = animatingChain && animatingChain.join() === c.join() ? animStep : c.length;
+
+    // Draw concentric rings from outside in
+    for (let lvl = Math.min(c.length, animLevels) - 1; lvl >= 0; lvl--) {
+      const r = 22 - lvl * 3;
+      if (r < 3) continue;
+
+      if (isLongest) {
+        ctx.shadowColor = 'rgba(255,200,0,.5)';
+        ctx.shadowBlur = 12;
+      } else if (isHovered) {
+        ctx.shadowColor = col.glow;
+        ctx.shadowBlur = 10;
+      }
+
+      ctx.beginPath();
+      ctx.arc(gx, gy, r, 0, Math.PI * 2);
+      const alpha = 0.15 + lvl * 0.15;
+      ctx.fillStyle = lvl === 0 ? col.base : col.top;
+      ctx.globalAlpha = isHovered ? 0.9 : 0.3 + lvl * 0.15;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+
+      ctx.strokeStyle = isLongest ? 'rgba(255,200,0,.4)' : 'rgba(0,170,255,.2)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Center label
+    ctx.fillStyle = isHovered ? '#fff' : (isLongest ? '#fc0' : '#8ab');
+    ctx.font = "8px 'Courier New',monospace";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(c[0], gx, gy);
+
+    // Store position for hit testing
+    allChains[i]._topX = gx;
+    allChains[i]._topY = gy;
+    allChains[i]._topIdx = i;
+  }
+
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid background
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,170,255,.03)';
+  ctx.lineWidth = 0.5;
+  const gridSize = 50;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  if (viewMode === 'side') drawSideView();
+  else drawTopView();
+
+  // Title overlay
+  ctx.fillStyle = 'rgba(0,170,255,.06)';
+  ctx.font = "bold 60px 'Courier New',monospace";
+  ctx.textAlign = 'center';
+  ctx.fillText('SAFE PRIMES', W / 2, H / 2);
+}
+
+// --- Interaction ---
+function hitTest(mx, my) {
+  if (viewMode === 'side') {
+    const towers = getTowerPositions();
+    const baseY = H / zoom - 60;
+    const levelH = 40;
+    const baseW = 34;
+    for (let i = 0; i < towers.length; i++) {
+      const t = towers[i];
+      const c = t.chain;
+      const totalH = c.length * levelH;
+      const lx = (mx - scrollX) / zoom;
+      const ly = (my - scrollY) / zoom;
+      if (lx >= t.x - baseW / 2 - 4 && lx <= t.x + baseW / 2 + 4 &&
+          ly >= baseY - totalH - 10 && ly <= baseY + 5) {
+        return i;
+      }
+    }
+  } else {
+    const cols = Math.ceil(Math.sqrt(allChains.length));
+    const cellW = 60, cellH = 60;
+    const startX = -cols * cellW / 2;
+    const startY = -Math.ceil(allChains.length / cols) * cellH / 2;
+    for (let i = 0; i < allChains.length; i++) {
+      const gx = startX + (i % cols) * cellW + cellW / 2;
+      const gy = startY + Math.floor(i / cols) * cellH + cellH / 2;
+      const lx = (mx - scrollX - W / 2) / zoom;
+      const ly = (my - scrollY - H / 2) / zoom;
+      const dist = Math.hypot(lx - gx, ly - gy);
+      if (dist < 26) return i;
+    }
+  }
+  return null;
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const hit = hitTest(mx, my);
+
+  if (hit !== hoveredChain) {
+    hoveredChain = hit;
+    draw();
+  }
+
+  if (hit !== null) {
+    const c = allChains[hit];
+    const col = chainColor(c.length);
+    const arrows = c.map((v, i) => {
+      const label = i === 0 ? 'FOUNDATION' : (i === c.length - 1 ? 'TOWER TOP' : 'LEVEL ' + (i + 1));
+      return `<span style="color:${i === 0 ? col.base : col.top}">${v}</span> <span style="color:#556">(${label})</span>`;
+    }).join(' <span class="chain-arrow">\u2192</span> ');
+    tooltip.innerHTML = `<div class="chain-label">CUNNINGHAM CHAIN &mdash; LENGTH ${c.length}</div>${arrows}<br><span style="color:#667">Formula: 2p+1 chain</span>`;
+    tooltip.style.display = 'block';
+    tooltip.style.left = Math.min(e.clientX + 14, window.innerWidth - 320) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    canvas.style.cursor = 'pointer';
+  } else {
+    tooltip.style.display = 'none';
+    canvas.style.cursor = dragging ? 'grabbing' : 'grab';
+  }
+
+  if (dragging) {
+    scrollX = dragScrollX + (e.clientX - dragStartX);
+    scrollY = dragScrollY + (e.clientY - dragStartY);
+    draw();
+  }
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  dragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragScrollX = scrollX;
+  dragScrollY = scrollY;
+  canvas.style.cursor = 'grabbing';
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  const moved = Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY);
+  dragging = false;
+  canvas.style.cursor = 'grab';
+  if (moved < 5 && hoveredChain !== null) {
+    animateChain(allChains[hoveredChain]);
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  dragging = false;
+  hoveredChain = null;
+  tooltip.style.display = 'none';
+  draw();
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  // Zoom toward cursor
+  const newZoom = Math.max(0.2, Math.min(5, zoom * zoomFactor));
+  const scale = newZoom / zoom;
+  scrollX = mx - scale * (mx - scrollX);
+  scrollY = my - scale * (my - scrollY);
+  zoom = newZoom;
+  draw();
+}, { passive: false });
+
+// --- Chain animation ---
+function animateChain(chain) {
+  if (animTimer) clearInterval(animTimer);
+  animatingChain = chain;
+  animStep = 0;
+  animTimer = setInterval(() => {
+    animStep++;
+    draw();
+    if (animStep >= chain.length) {
+      clearInterval(animTimer);
+      animTimer = null;
+      // Keep showing full chain, then fade after delay
+      setTimeout(() => {
+        animatingChain = null;
+        draw();
+      }, 2000);
+    }
+  }, 400);
+}
+
+// Init
+resize();
+</script>
+<script src="../shared/nav.js"></script>
+</body>
+</html>
