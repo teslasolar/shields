@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-SORT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#e0e0e0;font-family:'Courier New',monospace;overflow:hidden;user-select:none}
+canvas{display:block;position:fixed;top:0;left:0;z-index:0}
+
+nav#shield-nav{
+  position:fixed;top:0;left:0;right:0;z-index:9999;
+  display:flex;align-items:center;gap:8px;padding:6px 12px;
+  background:rgba(6,6,16,.92);border-bottom:1px solid rgba(100,180,255,.15);
+  font-size:9px;letter-spacing:2px;backdrop-filter:blur(6px);
+  overflow-x:auto;white-space:nowrap;
+}
+nav a{color:#6a8caf;text-decoration:none;transition:color .2s}
+nav a:hover{color:gold}
+nav a.active{color:gold;text-shadow:0 0 6px rgba(255,215,0,.5)}
+
+#stats-panel{
+  position:fixed;top:38px;right:12px;z-index:100;
+  background:rgba(6,6,16,0.88);border:1px solid rgba(100,180,255,0.15);
+  border-radius:8px;padding:12px 16px;font-size:11px;letter-spacing:1px;
+  backdrop-filter:blur(6px);min-width:200px;
+}
+#stats-panel .label{color:#6a8caf;font-size:9px;letter-spacing:2px}
+#stats-panel .value{color:#e0e0e0;margin-bottom:6px}
+#stats-panel .algo-name{color:#ffd700;font-size:14px;letter-spacing:3px;margin-bottom:8px;text-shadow:0 0 10px rgba(255,215,0,0.3)}
+#stats-panel .complexity{color:#00e5ff;font-size:10px;margin-top:4px}
+
+#controls-panel{
+  position:fixed;bottom:36px;left:12px;z-index:100;
+  background:rgba(6,6,16,0.88);border:1px solid rgba(100,180,255,0.15);
+  border-radius:8px;padding:12px 16px;font-size:11px;letter-spacing:1px;
+  backdrop-filter:blur(6px);
+}
+#controls-panel .row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+#controls-panel .row:last-child{margin-bottom:0}
+#controls-panel button{
+  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);
+  color:#ccc;font-family:'Courier New',monospace;font-size:10px;
+  padding:5px 12px;border-radius:4px;cursor:pointer;letter-spacing:1px;
+  transition:all .2s;
+}
+#controls-panel button:hover{background:rgba(255,255,255,0.15);color:#fff;border-color:rgba(255,215,0,0.3)}
+#controls-panel button.active{color:#ffd700;border-color:rgba(255,215,0,0.4);background:rgba(255,215,0,0.08)}
+#controls-panel select{
+  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);
+  color:#ccc;font-family:'Courier New',monospace;font-size:10px;
+  padding:4px 8px;border-radius:4px;cursor:pointer;
+}
+#controls-panel select option{background:#060610;color:#ccc}
+#controls-panel label{color:#6a8caf;font-size:9px;letter-spacing:2px}
+#controls-panel input[type=range]{width:80px;accent-color:#ffd700}
+#controls-panel .section-label{color:#ffd700;font-size:9px;letter-spacing:3px;margin-bottom:6px;text-shadow:0 0 6px rgba(255,215,0,0.2)}
+
+#footer{
+  position:fixed;bottom:0;left:0;right:0;text-align:center;
+  padding:8px;font-size:11px;letter-spacing:4px;color:#555;
+  background:linear-gradient(0deg,rgba(6,6,16,0.9) 0%,transparent 100%);
+  pointer-events:none;z-index:20;
+}
+#footer span{color:#ffd700;text-shadow:0 0 8px rgba(255,215,0,0.3)}
+</style>
+</head>
+<body>
+
+<nav id="shield-nav">
+<a href="../" style="margin-right:4px" title="Gallery">&#9664; GALLERY</a>
+<span style="color:#334">|</span>
+<a href="../orb/">ORB</a>
+<a href="../cascade/">CASCADE</a>
+<a href="../breath/">BREATH</a>
+<a href="../flat/">FLAT</a>
+<a href="../tree/">TREE</a>
+<a href="../drug/">DRUG</a>
+<a href="../network/">NETWORK</a>
+<a href="../number/">NUMBER</a>
+<a href="../spiral/">SPIRAL</a>
+<a href="../sieve/">SIEVE</a>
+<a href="../twin/">TWIN</a>
+<a href="../perfect/">PERFECT</a>
+<a href="../fibonacci/">FIBONACCI</a>
+<a href="../fractal/">FRACTAL</a>
+<a href="../goldbach/">GOLDBACH</a>
+<a href="../hexagon/">HEXAGON</a>
+<a href="../flow/">FLOW</a>
+<a href="../harmony/">HARMONY</a>
+<a href="../rsa/">RSA</a>
+<a href="../diffie/">DIFFIE</a>
+<a href="../elliptic/">ELLIPTIC</a>
+<a href="../sort/" class="active">SORT</a>
+<a href="../lorenz/">LORENZ</a>
+<a href="../fourier/">FOURIER</a>
+</nav>
+
+<canvas id="c"></canvas>
+
+<div id="stats-panel">
+  <div class="algo-name" id="algo-label">BUBBLE SORT</div>
+  <div class="label">COMPARISONS</div><div class="value" id="stat-comp">0</div>
+  <div class="label">SWAPS</div><div class="value" id="stat-swap">0</div>
+  <div class="label">ARRAY ACCESSES</div><div class="value" id="stat-access">0</div>
+  <div class="label">STEPS</div><div class="value" id="stat-steps">0</div>
+  <div class="complexity" id="stat-complexity">O(n&sup2;) avg / O(n&sup2;) worst</div>
+</div>
+
+<div id="controls-panel">
+  <div class="section-label">ALGORITHM</div>
+  <div class="row">
+    <button class="algo-btn active" data-algo="bubble">BUBBLE</button>
+    <button class="algo-btn" data-algo="selection">SELECTION</button>
+    <button class="algo-btn" data-algo="insertion">INSERTION</button>
+    <button class="algo-btn" data-algo="merge">MERGE</button>
+    <button class="algo-btn" data-algo="quick">QUICK</button>
+    <button class="algo-btn" data-algo="heap">HEAP</button>
+  </div>
+  <div class="section-label">PATTERN</div>
+  <div class="row">
+    <button class="pat-btn active" data-pat="random">RANDOM</button>
+    <button class="pat-btn" data-pat="nearly">NEARLY SORTED</button>
+    <button class="pat-btn" data-pat="reversed">REVERSED</button>
+    <button class="pat-btn" data-pat="few">FEW UNIQUE</button>
+  </div>
+  <div class="section-label">CONTROLS</div>
+  <div class="row">
+    <button id="btn-start">START</button>
+    <button id="btn-pause" disabled>PAUSE</button>
+    <button id="btn-step">STEP</button>
+    <button id="btn-new">NEW ARRAY</button>
+  </div>
+  <div class="row">
+    <label>SPEED</label>
+    <input type="range" id="speed-slider" min="1" max="100" value="50">
+    <span id="speed-label" style="color:#888;font-size:9px">MEDIUM</span>
+  </div>
+  <div class="row">
+    <label>SIZE</label>
+    <input type="range" id="size-slider" min="20" max="200" value="100">
+    <span id="size-label" style="color:#888;font-size:9px">100</span>
+  </div>
+  <div class="row">
+    <button id="btn-sound">SOUND: OFF</button>
+  </div>
+</div>
+
+<div id="footer"><span>510,510</span> = 2 &times; 3 &times; 5 &times; 7 &times; 11 &times; 13 &times; 17</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+// ── State ──
+let arr = [];
+let arrSize = 100;
+let pattern = 'random';
+let algorithm = 'bubble';
+let sorting = false;
+let paused = false;
+let stepping = false;
+let soundOn = false;
+let speed = 50;
+let comparisons = 0, swaps = 0, accesses = 0, steps = 0;
+let sortGen = null;
+
+// Colors for bars
+const COL_DEFAULT = '#4080c0';
+const COL_COMPARE = '#ffd700';
+const COL_SWAP    = '#ff4040';
+const COL_SORTED  = '#44ff88';
+const COL_PIVOT   = '#00e5ff';
+
+// Per-bar state
+let barStates = [];  // 'default','compare','swap','sorted','pivot'
+let barPositions = []; // animated x positions
+let barTargets = [];   // target x positions
+
+// Stars
+let stars = [];
+const STAR_COUNT = 200;
+
+// Mouse glow
+let mouseX = -999, mouseY = -999;
+
+// Audio
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playTone(freq, dur) {
+  if (!soundOn || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.value = 0.03;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+
+// ── Resize ──
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  computeTargets();
+}
+window.addEventListener('resize', resize);
+
+// ── Stars ──
+function initStars() {
+  stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push({
+      x: Math.random() * 2000,
+      y: Math.random() * 2000,
+      r: Math.random() * 1.2 + 0.3,
+      a: Math.random() * 0.6 + 0.2,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.02 + 0.005
+    });
+  }
+}
+
+// ── Array Generation ──
+function generateArray() {
+  arr = [];
+  for (let i = 0; i < arrSize; i++) {
+    arr.push(i + 1);
+  }
+  // Shuffle based on pattern
+  if (pattern === 'random') {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  } else if (pattern === 'nearly') {
+    // Mostly sorted, a few swaps
+    const swapCount = Math.floor(arrSize * 0.08);
+    for (let s = 0; s < swapCount; s++) {
+      const i = Math.floor(Math.random() * arrSize);
+      const j = Math.min(arrSize - 1, i + Math.floor(Math.random() * 5) + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  } else if (pattern === 'reversed') {
+    arr.reverse();
+  } else if (pattern === 'few') {
+    const vals = [
+      Math.floor(arrSize * 0.2),
+      Math.floor(arrSize * 0.4),
+      Math.floor(arrSize * 0.6),
+      Math.floor(arrSize * 0.8),
+      arrSize
+    ];
+    for (let i = 0; i < arrSize; i++) {
+      arr[i] = vals[Math.floor(Math.random() * vals.length)];
+    }
+  }
+  resetState();
+}
+
+function resetState() {
+  barStates = new Array(arr.length).fill('default');
+  barPositions = [];
+  barTargets = [];
+  computeTargets();
+  for (let i = 0; i < arr.length; i++) barPositions[i] = barTargets[i];
+  comparisons = 0; swaps = 0; accesses = 0; steps = 0;
+  sorting = false; paused = false; stepping = false;
+  sortGen = null;
+  updateStats();
+  document.getElementById('btn-start').textContent = 'START';
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-pause').disabled = true;
+  document.getElementById('btn-pause').textContent = 'PAUSE';
+  document.getElementById('btn-step').disabled = false;
+}
+
+function computeTargets() {
+  if (!arr.length) return;
+  const margin = 40;
+  const totalW = W - margin * 2;
+  const barW = totalW / arr.length;
+  barTargets = [];
+  for (let i = 0; i < arr.length; i++) {
+    barTargets[i] = margin + i * barW;
+  }
+}
+
+// ── Sorting Generators ──
+// Each yields { type:'compare'|'swap'|'sorted'|'pivot'|'done', indices:[...] }
+
+function* bubbleSort() {
+  const n = arr.length;
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < n - i - 1; j++) {
+      barStates.fill('default');
+      for (let k = n - i; k < n; k++) barStates[k] = 'sorted';
+      barStates[j] = 'compare'; barStates[j + 1] = 'compare';
+      comparisons++; accesses += 2; steps++;
+      yield { type: 'compare', indices: [j, j + 1] };
+      if (arr[j] > arr[j + 1]) {
+        barStates[j] = 'swap'; barStates[j + 1] = 'swap';
+        yield { type: 'swap', indices: [j, j + 1] };
+        [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
+        [barPositions[j], barPositions[j + 1]] = [barPositions[j + 1], barPositions[j]];
+        swaps++; accesses += 4;
+      }
+    }
+    barStates[n - i - 1] = 'sorted';
+  }
+  barStates[0] = 'sorted';
+  barStates.fill('sorted');
+  yield { type: 'done' };
+}
+
+function* selectionSort() {
+  const n = arr.length;
+  for (let i = 0; i < n - 1; i++) {
+    let minIdx = i;
+    barStates.fill('default');
+    for (let k = 0; k < i; k++) barStates[k] = 'sorted';
+    barStates[i] = 'pivot';
+    for (let j = i + 1; j < n; j++) {
+      barStates.fill('default');
+      for (let k = 0; k < i; k++) barStates[k] = 'sorted';
+      barStates[minIdx] = 'pivot';
+      barStates[j] = 'compare';
+      comparisons++; accesses += 2; steps++;
+      yield { type: 'compare', indices: [minIdx, j] };
+      if (arr[j] < arr[minIdx]) {
+        minIdx = j;
+      }
+    }
+    if (minIdx !== i) {
+      barStates[i] = 'swap'; barStates[minIdx] = 'swap';
+      yield { type: 'swap', indices: [i, minIdx] };
+      [arr[i], arr[minIdx]] = [arr[minIdx], arr[i]];
+      [barPositions[i], barPositions[minIdx]] = [barPositions[minIdx], barPositions[i]];
+      swaps++; accesses += 4;
+    }
+    barStates[i] = 'sorted';
+  }
+  barStates.fill('sorted');
+  yield { type: 'done' };
+}
+
+function* insertionSort() {
+  const n = arr.length;
+  barStates[0] = 'sorted';
+  for (let i = 1; i < n; i++) {
+    let key = arr[i];
+    let j = i - 1;
+    barStates[i] = 'compare';
+    accesses++; steps++;
+    yield { type: 'compare', indices: [i] };
+    while (j >= 0 && arr[j] > key) {
+      comparisons++; accesses += 2;
+      barStates.fill('default');
+      for (let k = 0; k <= i; k++) if (k !== j && k !== j + 1) barStates[k] = 'sorted';
+      barStates[j] = 'swap'; barStates[j + 1] = 'swap';
+      yield { type: 'swap', indices: [j, j + 1] };
+      arr[j + 1] = arr[j];
+      [barPositions[j], barPositions[j + 1]] = [barPositions[j + 1], barPositions[j]];
+      swaps++; accesses += 2; steps++;
+      j--;
+    }
+    if (j >= 0) { comparisons++; accesses += 2; }
+    arr[j + 1] = key;
+    accesses++;
+    barStates.fill('default');
+    for (let k = 0; k <= i; k++) barStates[k] = 'sorted';
+  }
+  barStates.fill('sorted');
+  yield { type: 'done' };
+}
+
+function* mergeSort() {
+  yield* mergeSortHelper(0, arr.length - 1);
+  barStates.fill('sorted');
+  yield { type: 'done' };
+}
+
+function* mergeSortHelper(lo, hi) {
+  if (lo >= hi) return;
+  const mid = Math.floor((lo + hi) / 2);
+  yield* mergeSortHelper(lo, mid);
+  yield* mergeSortHelper(mid + 1, hi);
+  yield* merge(lo, mid, hi);
+}
+
+function* merge(lo, mid, hi) {
+  const left = arr.slice(lo, mid + 1);
+  const right = arr.slice(mid + 1, hi + 1);
+  const leftPos = barPositions.slice(lo, mid + 1);
+  const rightPos = barPositions.slice(mid + 1, hi + 1);
+  accesses += (hi - lo + 1);
+  let i = 0, j = 0, k = lo;
+  while (i < left.length && j < right.length) {
+    barStates.fill('default');
+    barStates[lo + i] = 'compare';
+    barStates[mid + 1 + j] = 'compare';
+    comparisons++; accesses += 2; steps++;
+    yield { type: 'compare', indices: [lo + i, mid + 1 + j] };
+    if (left[i] <= right[j]) {
+      arr[k] = left[i];
+      barPositions[k] = leftPos[i];
+      barStates[k] = 'sorted';
+      accesses++; i++;
+    } else {
+      arr[k] = right[j];
+      barPositions[k] = rightPos[j];
+      barStates[k] = 'swap';
+      swaps++; accesses++; j++;
+      yield { type: 'swap', indices: [k] };
+    }
+    k++;
+  }
+  while (i < left.length) {
+    arr[k] = left[i]; barPositions[k] = leftPos[i];
+    barStates[k] = 'sorted'; accesses++; i++; k++;
+  }
+  while (j < right.length) {
+    arr[k] = right[j]; barPositions[k] = rightPos[j];
+    barStates[k] = 'sorted'; accesses++; j++; k++;
+  }
+  steps++;
+  computeTargets();
+  for (let x = 0; x < arr.length; x++) barPositions[x] = barTargets[x];
+  yield { type: 'compare', indices: [] };
+}
+
+function* quickSort() {
+  yield* quickSortHelper(0, arr.length - 1);
+  barStates.fill('sorted');
+  yield { type: 'done' };
+}
+
+function* quickSortHelper(lo, hi) {
+  if (lo >= hi) {
+    if (lo === hi) barStates[lo] = 'sorted';
+    return;
+  }
+  const pivotIdx = yield* partition(lo, hi);
+  barStates[pivotIdx] = 'sorted';
+  yield* quickSortHelper(lo, pivotIdx - 1);
+  yield* quickSortHelper(pivotIdx + 1, hi);
+}
+
+function* partition(lo, hi) {
+  const pivot = arr[hi];
+  accesses++;
+  barStates[hi] = 'pivot';
+  let i = lo - 1;
+  for (let j = lo; j < hi; j++) {
+    barStates.fill('default');
+    for (let k = 0; k < arr.length; k++) if (barStates[k] === 'sorted') continue;
+    barStates[hi] = 'pivot';
+    barStates[j] = 'compare';
+    comparisons++; accesses++; steps++;
+    yield { type: 'compare', indices: [j, hi] };
+    if (arr[j] < pivot) {
+      i++;
+      if (i !== j) {
+        barStates[i] = 'swap'; barStates[j] = 'swap';
+        yield { type: 'swap', indices: [i, j] };
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        [barPositions[i], barPositions[j]] = [barPositions[j], barPositions[i]];
+        swaps++; accesses += 4;
+      }
+    }
+  }
+  i++;
+  if (i !== hi) {
+    barStates[i] = 'swap'; barStates[hi] = 'swap';
+    yield { type: 'swap', indices: [i, hi] };
+    [arr[i], arr[hi]] = [arr[hi], arr[i]];
+    [barPositions[i], barPositions[hi]] = [barPositions[hi], barPositions[i]];
+    swaps++; accesses += 4;
+  }
+  steps++;
+  return i;
+}
+
+function* heapSort() {
+  const n = arr.length;
+  // Build max heap
+  for (let i = Math.floor(n / 2) - 1; i >= 0; i--) {
+    yield* heapify(n, i);
+  }
+  // Extract
+  for (let i = n - 1; i > 0; i--) {
+    barStates.fill('default');
+    for (let k = i + 1; k < n; k++) barStates[k] = 'sorted';
+    barStates[0] = 'swap'; barStates[i] = 'swap';
+    yield { type: 'swap', indices: [0, i] };
+    [arr[0], arr[i]] = [arr[i], arr[0]];
+    [barPositions[0], barPositions[i]] = [barPositions[i], barPositions[0]];
+    swaps++; accesses += 4; steps++;
+    barStates[i] = 'sorted';
+    yield* heapify(i, 0);
+  }
+  barStates.fill('sorted');
+  yield { type: 'done' };
+}
+
+function* heapify(n, i) {
+  let largest = i;
+  const l = 2 * i + 1;
+  const r = 2 * i + 2;
+  if (l < n) {
+    barStates[i] = 'compare'; barStates[l] = 'compare';
+    comparisons++; accesses += 2; steps++;
+    yield { type: 'compare', indices: [i, l] };
+    if (arr[l] > arr[largest]) largest = l;
+  }
+  if (r < n) {
+    barStates[largest] = 'compare'; barStates[r] = 'compare';
+    comparisons++; accesses += 2; steps++;
+    yield { type: 'compare', indices: [largest, r] };
+    if (arr[r] > arr[largest]) largest = r;
+  }
+  if (largest !== i) {
+    barStates[i] = 'swap'; barStates[largest] = 'swap';
+    yield { type: 'swap', indices: [i, largest] };
+    [arr[i], arr[largest]] = [arr[largest], arr[i]];
+    [barPositions[i], barPositions[largest]] = [barPositions[largest], barPositions[i]];
+    swaps++; accesses += 4;
+    yield* heapify(n, largest);
+  }
+}
+
+// ── Algorithm info ──
+const ALGO_INFO = {
+  bubble:    { name: 'BUBBLE SORT',    complexity: 'O(n\u00B2) avg / O(n\u00B2) worst' },
+  selection: { name: 'SELECTION SORT', complexity: 'O(n\u00B2) avg / O(n\u00B2) worst' },
+  insertion: { name: 'INSERTION SORT', complexity: 'O(n\u00B2) avg / O(n\u00B2) worst' },
+  merge:     { name: 'MERGE SORT',     complexity: 'O(n log n) avg / O(n log n) worst' },
+  quick:     { name: 'QUICK SORT',     complexity: 'O(n log n) avg / O(n\u00B2) worst' },
+  heap:      { name: 'HEAP SORT',      complexity: 'O(n log n) avg / O(n log n) worst' },
+};
+
+function getGenerator() {
+  switch (algorithm) {
+    case 'bubble': return bubbleSort();
+    case 'selection': return selectionSort();
+    case 'insertion': return insertionSort();
+    case 'merge': return mergeSort();
+    case 'quick': return quickSort();
+    case 'heap': return heapSort();
+  }
+}
+
+// ── Stats ──
+function updateStats() {
+  const info = ALGO_INFO[algorithm];
+  document.getElementById('algo-label').textContent = info.name;
+  document.getElementById('stat-comp').textContent = comparisons.toLocaleString();
+  document.getElementById('stat-swap').textContent = swaps.toLocaleString();
+  document.getElementById('stat-access').textContent = accesses.toLocaleString();
+  document.getElementById('stat-steps').textContent = steps.toLocaleString();
+  document.getElementById('stat-complexity').innerHTML = info.complexity;
+}
+
+// ── Step logic ──
+let stepsPerFrame = 1;
+let sortDone = false;
+
+function computeStepsPerFrame() {
+  if (speed <= 20) return 1;
+  if (speed <= 40) return 2;
+  if (speed <= 60) return 4;
+  if (speed <= 80) return 8;
+  return Math.max(1, Math.floor(arrSize / 4));
+}
+
+function doStep() {
+  if (!sortGen || sortDone) return;
+  const result = sortGen.next();
+  if (result.done || (result.value && result.value.type === 'done')) {
+    sortDone = true;
+    sorting = false;
+    barStates.fill('sorted');
+    computeTargets();
+    for (let i = 0; i < arr.length; i++) barPositions[i] = barTargets[i];
+    document.getElementById('btn-start').textContent = 'START';
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-pause').disabled = true;
+    updateStats();
+    return;
+  }
+  if (result.value && soundOn) {
+    const indices = result.value.indices || [];
+    if (indices.length > 0) {
+      const val = arr[indices[0]];
+      const freq = 150 + (val / arrSize) * 800;
+      playTone(freq, 0.05);
+    }
+  }
+  computeTargets();
+  updateStats();
+}
+
+// ── Sorting loop ──
+let lastSortTime = 0;
+
+function sortTick(now) {
+  if (!sorting || paused) return;
+  const delay = speed >= 95 ? 0 : Math.max(1, 200 - speed * 2);
+  if (now - lastSortTime >= delay) {
+    const sPerFrame = computeStepsPerFrame();
+    for (let i = 0; i < sPerFrame; i++) {
+      doStep();
+      if (sortDone) break;
+    }
+    lastSortTime = now;
+  }
+}
+
+// ── Drawing ──
+let time = 0;
+
+function draw(now) {
+  requestAnimationFrame(draw);
+  time = now * 0.001;
+  ctx.clearRect(0, 0, W, H);
+
+  // Stars
+  for (const s of stars) {
+    s.twinkle += s.speed;
+    const alpha = s.a * (0.5 + 0.5 * Math.sin(s.twinkle));
+    ctx.fillStyle = `rgba(180,200,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillRect(0, y, W, 1);
+  }
+
+  // Mouse glow
+  if (mouseX > 0 && mouseY > 0) {
+    const g = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 180);
+    g.addColorStop(0, 'rgba(100,180,255,0.06)');
+    g.addColorStop(1, 'rgba(100,180,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(mouseX - 180, mouseY - 180, 360, 360);
+  }
+
+  // Sort step
+  sortTick(now);
+
+  // Animate bar positions smoothly
+  const lerp = 0.2;
+  computeTargets();
+  for (let i = 0; i < arr.length; i++) {
+    if (barPositions[i] === undefined) barPositions[i] = barTargets[i];
+    barPositions[i] += (barTargets[i] - barPositions[i]) * lerp;
+  }
+
+  // Draw bars
+  if (arr.length === 0) return;
+  const margin = 40;
+  const totalW = W - margin * 2;
+  const barW = totalW / arr.length;
+  const maxH = H - 120;
+  const baseY = H - 40;
+  const maxVal = Math.max(...arr);
+
+  for (let i = 0; i < arr.length; i++) {
+    const val = arr[i];
+    const h = (val / maxVal) * maxH;
+    const x = barPositions[i];
+    const y = baseY - h;
+
+    let color;
+    switch (barStates[i]) {
+      case 'compare': color = COL_COMPARE; break;
+      case 'swap':    color = COL_SWAP; break;
+      case 'sorted':  color = COL_SORTED; break;
+      case 'pivot':   color = COL_PIVOT; break;
+      default:        color = COL_DEFAULT;
+    }
+
+    // Gradient bar
+    const grad = ctx.createLinearGradient(x, y, x, baseY);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, shadeColor(color, -40));
+    ctx.fillStyle = grad;
+
+    const gap = Math.max(1, barW * 0.1);
+    const bw = barW - gap;
+    ctx.fillRect(x, y, bw, h);
+
+    // Glow for active bars
+    if (barStates[i] === 'compare' || barStates[i] === 'swap' || barStates[i] === 'pivot') {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.fillRect(x, y, bw, h);
+      ctx.shadowBlur = 0;
+    }
+  }
+}
+
+function shadeColor(hex, amt) {
+  let r = parseInt(hex.slice(1, 3), 16) + amt;
+  let g = parseInt(hex.slice(3, 5), 16) + amt;
+  let b = parseInt(hex.slice(5, 7), 16) + amt;
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── Event Handlers ──
+document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+document.addEventListener('mouseleave', () => { mouseX = -999; mouseY = -999; });
+
+// Algorithm buttons
+document.querySelectorAll('.algo-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (sorting && !sortDone) return;
+    document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    algorithm = btn.dataset.algo;
+    generateArray();
+    updateStats();
+  });
+});
+
+// Pattern buttons
+document.querySelectorAll('.pat-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (sorting && !sortDone) return;
+    document.querySelectorAll('.pat-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    pattern = btn.dataset.pat;
+    generateArray();
+  });
+});
+
+// Start
+document.getElementById('btn-start').addEventListener('click', () => {
+  if (sorting) return;
+  initAudio();
+  sorting = true;
+  paused = false;
+  sortDone = false;
+  comparisons = 0; swaps = 0; accesses = 0; steps = 0;
+  barStates.fill('default');
+  sortGen = getGenerator();
+  document.getElementById('btn-start').textContent = 'RUNNING';
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-pause').disabled = false;
+  document.getElementById('btn-step').disabled = true;
+});
+
+// Pause
+document.getElementById('btn-pause').addEventListener('click', () => {
+  if (!sorting) return;
+  paused = !paused;
+  document.getElementById('btn-pause').textContent = paused ? 'RESUME' : 'PAUSE';
+  document.getElementById('btn-step').disabled = !paused;
+});
+
+// Step
+document.getElementById('btn-step').addEventListener('click', () => {
+  initAudio();
+  if (!sortGen) {
+    sorting = true;
+    paused = true;
+    sortDone = false;
+    comparisons = 0; swaps = 0; accesses = 0; steps = 0;
+    barStates.fill('default');
+    sortGen = getGenerator();
+    document.getElementById('btn-start').textContent = 'RUNNING';
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-pause').disabled = false;
+    document.getElementById('btn-pause').textContent = 'RESUME';
+  }
+  doStep();
+});
+
+// New array
+document.getElementById('btn-new').addEventListener('click', () => {
+  sortDone = false;
+  sorting = false;
+  sortGen = null;
+  generateArray();
+});
+
+// Speed slider
+document.getElementById('speed-slider').addEventListener('input', e => {
+  speed = parseInt(e.target.value);
+  const lbl = speed < 20 ? 'SLOW' : speed < 50 ? 'MEDIUM' : speed < 80 ? 'FAST' : 'INSTANT';
+  document.getElementById('speed-label').textContent = lbl;
+});
+
+// Size slider
+document.getElementById('size-slider').addEventListener('input', e => {
+  if (sorting && !sortDone) return;
+  arrSize = parseInt(e.target.value);
+  document.getElementById('size-label').textContent = arrSize;
+  generateArray();
+});
+
+// Sound toggle
+document.getElementById('btn-sound').addEventListener('click', () => {
+  initAudio();
+  soundOn = !soundOn;
+  document.getElementById('btn-sound').textContent = 'SOUND: ' + (soundOn ? 'ON' : 'OFF');
+  if (soundOn) document.getElementById('btn-sound').classList.add('active');
+  else document.getElementById('btn-sound').classList.remove('active');
+});
+
+// ── Init ──
+initStars();
+resize();
+generateArray();
+updateStats();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
