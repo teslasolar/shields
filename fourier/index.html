@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHIELD-FOURIER - Epicycle Drawing Machine</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#c0d8f0;font-family:'Courier New',monospace;overflow:hidden;width:100vw;height:100vh}
+canvas{position:fixed;top:0;left:0;z-index:0}
+
+nav#shield-nav{position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(6,6,16,.92);border-bottom:1px solid rgba(100,180,255,.15);font-size:9px;letter-spacing:2px;backdrop-filter:blur(6px);overflow-x:auto;white-space:nowrap}
+nav#shield-nav a{color:#6a8caf;text-decoration:none;transition:color .2s}
+nav#shield-nav a:hover{color:gold}
+nav#shield-nav a.active{color:gold;text-shadow:0 0 8px rgba(255,215,0,.4)}
+nav#shield-nav .sep{color:#334;margin:0 2px}
+
+#stats-panel{position:fixed;top:50px;right:16px;width:260px;z-index:100;background:rgba(6,6,16,.88);border:1px solid rgba(100,180,255,.15);border-radius:6px;padding:14px 16px;backdrop-filter:blur(6px)}
+.stat-title{font-size:10px;letter-spacing:3px;color:rgba(120,180,255,.5);margin-bottom:10px;text-transform:uppercase}
+.stat-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}
+.stat-label{color:rgba(140,170,210,.6)}
+.stat-value{color:#c0d8f0}
+.stat-value.gold{color:#ffd700}
+.stat-value.cyan{color:#00e5ff}
+.stat-value.green{color:#4f8}
+#spectrum-bar{margin-top:8px;height:40px;display:flex;align-items:flex-end;gap:1px}
+.spec-bar{background:rgba(0,229,255,.6);min-width:3px;flex:1;border-radius:1px 1px 0 0;transition:height .2s}
+
+#controls-panel{position:fixed;bottom:50px;left:16px;z-index:100;background:rgba(6,6,16,.88);border:1px solid rgba(100,180,255,.15);border-radius:6px;padding:14px 16px;backdrop-filter:blur(6px);width:300px}
+.ctrl-title{font-size:10px;letter-spacing:3px;color:rgba(120,180,255,.5);margin-bottom:10px;text-transform:uppercase}
+.ctrl-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ctrl-row label{font-size:10px;color:rgba(140,170,210,.6);letter-spacing:1px;min-width:50px}
+select,input[type=range]{font-family:'Courier New',monospace;background:rgba(20,30,50,.6);border:1px solid rgba(100,180,255,.2);color:#c0d8f0;border-radius:3px;padding:3px 6px;font-size:11px;outline:none}
+select{cursor:pointer;min-width:120px}
+select:focus,input[type=range]:focus{border-color:rgba(100,180,255,.5)}
+input[type=range]{-webkit-appearance:none;width:120px;height:3px;background:rgba(100,180,255,.2);border:none;border-radius:2px;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#ffd700;border-radius:50%;cursor:pointer;box-shadow:0 0 6px rgba(255,215,0,.4)}
+.ctrl-val{font-size:11px;color:#ffd700;min-width:28px;text-align:right}
+.ctrl-buttons{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.btn{background:rgba(40,60,100,.3);border:1px solid rgba(100,180,255,.25);color:#6a8caf;padding:4px 10px;border-radius:4px;font-family:'Courier New',monospace;font-size:10px;cursor:pointer;letter-spacing:1px;transition:all .2s}
+.btn:hover{background:rgba(60,100,160,.3);border-color:rgba(100,180,255,.5);color:#fff}
+.btn.active{background:rgba(255,215,0,.15);border-color:rgba(255,215,0,.4);color:#ffd700}
+.btn.draw-btn{background:rgba(80,255,130,.1);border-color:rgba(80,255,130,.3);color:#4f8}
+.btn.draw-btn:hover{background:rgba(80,255,130,.2)}
+.btn.draw-btn.active{background:rgba(255,215,0,.15);border-color:rgba(255,215,0,.4);color:#ffd700}
+
+#component-canvas{position:fixed;bottom:50px;right:16px;z-index:100;background:rgba(6,6,16,.88);border:1px solid rgba(100,180,255,.15);border-radius:6px;backdrop-filter:blur(6px);padding:8px}
+#comp-label{font-size:9px;letter-spacing:2px;color:rgba(120,180,255,.5);text-transform:uppercase;margin-bottom:4px;text-align:center}
+
+#footer{position:fixed;bottom:0;left:0;right:0;height:36px;background:linear-gradient(0deg,rgba(10,14,30,.95),rgba(6,6,16,.9));border-top:1px solid rgba(100,180,255,.15);display:flex;align-items:center;justify-content:center;z-index:100;font-size:11px;color:rgba(120,160,200,.5);letter-spacing:3px}
+#footer span{color:#ffd700}
+
+#draw-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:5000;background:rgba(6,6,16,.7);display:none;cursor:crosshair}
+#draw-overlay.visible{display:block}
+#draw-canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+#draw-instructions{position:absolute;top:60px;left:50%;transform:translateX(-50%);font-size:12px;color:#ffd700;letter-spacing:2px;text-align:center}
+#draw-done-btn{position:absolute;bottom:60px;left:50%;transform:translateX(-50%)}
+
+.scanlines{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px)}
+
+#mouse-glow{position:fixed;width:200px;height:200px;border-radius:50%;pointer-events:none;z-index:2;background:radial-gradient(circle,rgba(100,180,255,.06) 0%,transparent 70%);transform:translate(-50%,-50%);transition:left .05s,top .05s}
+</style>
+</head>
+<body>
+
+<nav id="shield-nav">
+<a href="../" title="Gallery">&#9664; GALLERY</a>
+<span class="sep">|</span>
+<a href="../orb/">ORB</a>
+<a href="../cascade/">CASCADE</a>
+<a href="../breath/">BREATH</a>
+<a href="../flat/">FLAT</a>
+<a href="../tree/">TREE</a>
+<a href="../drug/">DRUG</a>
+<a href="../network/">NETWORK</a>
+<span class="sep">|</span>
+<a href="../number/">NUMBER</a>
+<a href="../spiral/">SPIRAL</a>
+<a href="../sieve/">SIEVE</a>
+<a href="../twin/">TWIN</a>
+<a href="../perfect/">PERFECT</a>
+<a href="../fibonacci/">FIBONACCI</a>
+<a href="../fractal/">FRACTAL</a>
+<a href="../goldbach/">GOLDBACH</a>
+<a href="../hexagon/">HEXAGON</a>
+<a href="../flow/">FLOW</a>
+<a href="../harmony/">HARMONY</a>
+<span class="sep">|</span>
+<a href="../rsa/">RSA</a>
+<a href="../diffie/">DIFFIE</a>
+<a href="../elliptic/">ELLIPTIC</a>
+<span class="sep">|</span>
+<a href="../sort/">SORT</a>
+<a href="../lorenz/">LORENZ</a>
+<a href="./" class="active">FOURIER</a>
+</nav>
+
+<canvas id="mainCanvas"></canvas>
+<div class="scanlines"></div>
+<div id="mouse-glow"></div>
+
+<div id="stats-panel">
+  <div class="stat-title">Fourier Analysis</div>
+  <div class="stat-row"><span class="stat-label">SHAPE</span><span class="stat-value gold" id="s-shape">Square Wave</span></div>
+  <div class="stat-row"><span class="stat-label">TERMS</span><span class="stat-value cyan" id="s-terms">8</span></div>
+  <div class="stat-row"><span class="stat-label">TIME</span><span class="stat-value" id="s-time">0.000</span></div>
+  <div class="stat-row"><span class="stat-label">FREQUENCY</span><span class="stat-value green" id="s-freq">1.00 Hz</span></div>
+  <div class="stat-row"><span class="stat-label">AMPLITUDE</span><span class="stat-value" id="s-amp">1.000</span></div>
+  <div class="stat-row"><span class="stat-label">HARMONICS</span><span class="stat-value cyan" id="s-harmonics">odd 1-15</span></div>
+  <div style="margin-top:8px"><div class="stat-title">Frequency Spectrum</div></div>
+  <div id="spectrum-bar"></div>
+</div>
+
+<div id="controls-panel">
+  <div class="ctrl-title">Controls</div>
+  <div class="ctrl-row">
+    <label>SHAPE</label>
+    <select id="shape-select">
+      <option value="square">Square Wave</option>
+      <option value="sawtooth">Sawtooth</option>
+      <option value="triangle">Triangle Wave</option>
+      <option value="circle">Circle</option>
+      <option value="star">Star</option>
+      <option value="heart">Heart</option>
+      <option value="pi">Letter π</option>
+    </select>
+  </div>
+  <div class="ctrl-row">
+    <label>TERMS</label>
+    <input type="range" id="terms-slider" min="1" max="50" value="8">
+    <span class="ctrl-val" id="terms-val">8</span>
+  </div>
+  <div class="ctrl-row">
+    <label>SPEED</label>
+    <input type="range" id="speed-slider" min="0.1" max="3" step="0.1" value="1">
+    <span class="ctrl-val" id="speed-val">1.0</span>
+  </div>
+  <div class="ctrl-buttons">
+    <button class="btn" id="btn-play">&#9646;&#9646; PAUSE</button>
+    <button class="btn" id="btn-reset">RESET</button>
+    <button class="btn draw-btn" id="btn-draw">&#9998; DRAW CUSTOM</button>
+  </div>
+</div>
+
+<div id="component-canvas">
+  <div id="comp-label">Components</div>
+  <canvas id="compCanvas" width="240" height="160"></canvas>
+</div>
+
+<div id="footer"><span>510,510</span>&ensp;=&ensp;2 &times; 3 &times; 5 &times; 7 &times; 11 &times; 13 &times; 17</div>
+
+<div id="draw-overlay">
+  <div id="draw-instructions">DRAW A SHAPE WITH YOUR MOUSE &mdash; PRESS DONE WHEN FINISHED</div>
+  <canvas id="draw-canvas" width="500" height="500"></canvas>
+  <button class="btn draw-btn" id="draw-done-btn" style="font-size:14px;padding:8px 24px">DONE</button>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+const compCanvas = document.getElementById('compCanvas');
+const compCtx = compCanvas.getContext('2d');
+
+let W, H;
+function resize(){
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Stars
+const stars = [];
+for(let i=0;i<200;i++){
+  stars.push({x:Math.random(),y:Math.random(),s:Math.random()*1.5+0.3,b:Math.random()*0.5+0.3,sp:Math.random()*0.0005+0.0002});
+}
+
+// Mouse glow
+const mouseGlow = document.getElementById('mouse-glow');
+let mx=W/2, my=H/2;
+document.addEventListener('mousemove', e=>{
+  mx=e.clientX; my=e.clientY;
+  mouseGlow.style.left=mx+'px';
+  mouseGlow.style.top=my+'px';
+});
+
+// State
+let numTerms = 8;
+let speed = 1;
+let playing = true;
+let time = 0;
+let currentShape = 'square';
+let trailPoints = [];
+let wavePoints = [];
+const MAX_TRAIL = 800;
+let customCoeffs = null;
+
+// DOM
+const shapeSelect = document.getElementById('shape-select');
+const termsSlider = document.getElementById('terms-slider');
+const termsVal = document.getElementById('terms-val');
+const speedSlider = document.getElementById('speed-slider');
+const speedVal = document.getElementById('speed-val');
+const btnPlay = document.getElementById('btn-play');
+const btnReset = document.getElementById('btn-reset');
+const btnDraw = document.getElementById('btn-draw');
+
+shapeSelect.addEventListener('change', ()=>{
+  currentShape = shapeSelect.value;
+  customCoeffs = null;
+  resetAnim();
+});
+termsSlider.addEventListener('input', ()=>{
+  numTerms = parseInt(termsSlider.value);
+  termsVal.textContent = numTerms;
+});
+speedSlider.addEventListener('input', ()=>{
+  speed = parseFloat(speedSlider.value);
+  speedVal.textContent = speed.toFixed(1);
+});
+btnPlay.addEventListener('click', ()=>{
+  playing = !playing;
+  btnPlay.innerHTML = playing ? '&#9646;&#9646; PAUSE' : '&#9654; PLAY';
+});
+btnReset.addEventListener('click', resetAnim);
+
+function resetAnim(){
+  time = 0;
+  trailPoints = [];
+  wavePoints = [];
+}
+
+// ========== SHAPE COEFFICIENTS ==========
+// Returns array of {re, im, freq, amp, phase} for 2D epicycles
+// For 1D waveforms we use the Y-epicycle approach
+// For 2D shapes (circle, star, heart, pi, custom) we use complex DFT
+
+function getWaveformCoeffs(shape, N){
+  // 1D waveforms: returns [{amp, freq, phase}]
+  const coeffs = [];
+  if(shape === 'square'){
+    for(let k=0;k<N;k++){
+      const n = 2*k+1;
+      coeffs.push({amp: 4/(Math.PI*n), freq: n, phase: 0});
+    }
+  } else if(shape === 'sawtooth'){
+    for(let k=1;k<=N;k++){
+      coeffs.push({amp: 2*(Math.pow(-1,k+1))/(Math.PI*k), freq: k, phase: 0});
+    }
+  } else if(shape === 'triangle'){
+    for(let k=0;k<N;k++){
+      const n = 2*k+1;
+      coeffs.push({amp: 8*(Math.pow(-1,k))/(Math.PI*Math.PI*n*n), freq: n, phase: 0});
+    }
+  }
+  return coeffs;
+}
+
+function sampleShape(shape, numSamples){
+  const pts = [];
+  const N = numSamples;
+  for(let i=0;i<N;i++){
+    const t = (i/N)*2*Math.PI;
+    let x, y;
+    if(shape === 'circle'){
+      x = Math.cos(t);
+      y = Math.sin(t);
+    } else if(shape === 'star'){
+      const r = (i%2===0) ? 1 : 0.4;
+      const angle = t - Math.PI/2;
+      const si = Math.floor(i/2);
+      const a2 = (si/(N/2))*2*Math.PI - Math.PI/2;
+      const rr = (i%2===0) ? 1 : 0.38;
+      const off = Math.PI/5;
+      const a = (i/N)*2*Math.PI - Math.PI/2;
+      const rStar = (i % (N/5) < N/10) ? 1 : 0.4;
+      // parametric star
+      const k = 5;
+      const angle5 = t;
+      const rs = 0.5 + 0.5 * ((Math.cos(k * angle5) + 1)/2);
+      x = rs * Math.cos(t);
+      y = rs * Math.sin(t);
+    } else if(shape === 'heart'){
+      const ht = t;
+      x = 16 * Math.pow(Math.sin(ht),3)/17;
+      y = -(13*Math.cos(ht) - 5*Math.cos(2*ht) - 2*Math.cos(3*ht) - Math.cos(4*ht))/17;
+    } else if(shape === 'pi'){
+      // Approximate the letter π as a path
+      x = piPathX(t);
+      y = piPathY(t);
+    } else {
+      x = Math.cos(t);
+      y = Math.sin(t);
+    }
+    pts.push({x, y});
+  }
+  return pts;
+}
+
+function piPathX(t){
+  const s = t/(2*Math.PI);
+  // π shape: top bar, left leg, right leg
+  if(s < 0.15){
+    // top bar left to right
+    return -0.7 + (1.4)*(s/0.15);
+  } else if(s < 0.30){
+    // right end down curve
+    const u = (s-0.15)/0.15;
+    return 0.7 - 0.15*Math.sin(u*Math.PI);
+  } else if(s < 0.50){
+    // right leg going down
+    const u = (s-0.30)/0.20;
+    return 0.45 + 0.05*Math.sin(u*Math.PI*2);
+  } else if(s < 0.55){
+    // right leg bottom to transition
+    const u = (s-0.50)/0.05;
+    return 0.45 - 0.9*u;
+  } else if(s < 0.75){
+    // left leg going down
+    const u = (s-0.55)/0.20;
+    return -0.45 - 0.05*Math.sin(u*Math.PI*2);
+  } else if(s < 0.85){
+    // left leg bottom curve
+    const u = (s-0.75)/0.10;
+    return -0.45 - 0.2*Math.sin(u*Math.PI);
+  } else {
+    // back to start
+    const u = (s-0.85)/0.15;
+    return -0.65 + (-0.7 - (-0.65))*u;
+  }
+}
+
+function piPathY(t){
+  const s = t/(2*Math.PI);
+  if(s < 0.15){
+    return -0.6;
+  } else if(s < 0.30){
+    const u = (s-0.15)/0.15;
+    return -0.6 + 0.15*(1-Math.cos(u*Math.PI));
+  } else if(s < 0.50){
+    const u = (s-0.30)/0.20;
+    return -0.3 + 1.0*u;
+  } else if(s < 0.55){
+    const u = (s-0.50)/0.05;
+    return 0.7 - 1.0*u;
+  } else if(s < 0.75){
+    const u = (s-0.55)/0.20;
+    return -0.3 + 1.0*u;
+  } else if(s < 0.85){
+    const u = (s-0.75)/0.10;
+    return 0.7 - 0.3*u;
+  } else {
+    const u = (s-0.85)/0.15;
+    return 0.4 - 1.0*u;
+  }
+}
+
+function computeDFT(pts){
+  const N = pts.length;
+  const coeffs = [];
+  for(let k=0;k<N;k++){
+    let re=0, im=0;
+    for(let n=0;n<N;n++){
+      const angle = (2*Math.PI*k*n)/N;
+      re += pts[n].x*Math.cos(angle) + pts[n].y*Math.sin(angle);
+      im += -pts[n].x*Math.sin(angle) + pts[n].y*Math.cos(angle);
+    }
+    re /= N;
+    im /= N;
+    const amp = Math.sqrt(re*re+im*im);
+    const phase = Math.atan2(im, re);
+    coeffs.push({re, im, freq:k, amp, phase});
+  }
+  // sort by amplitude descending
+  coeffs.sort((a,b)=>b.amp-a.amp);
+  return coeffs;
+}
+
+function is2DShape(shape){
+  return shape==='circle'||shape==='star'||shape==='heart'||shape==='pi'||shape==='custom';
+}
+
+// ========== DRAWING CUSTOM ==========
+const drawOverlay = document.getElementById('draw-overlay');
+const drawCanvas = document.getElementById('draw-canvas');
+const drawCtx = drawCanvas.getContext('2d');
+const drawDoneBtn = document.getElementById('draw-done-btn');
+let drawingPoints = [];
+let isDrawing = false;
+
+btnDraw.addEventListener('click', ()=>{
+  drawOverlay.classList.add('visible');
+  drawCtx.clearRect(0,0,500,500);
+  drawCtx.strokeStyle='rgba(100,180,255,0.3)';
+  drawCtx.lineWidth=1;
+  drawCtx.strokeRect(0,0,500,500);
+  drawingPoints = [];
+  isDrawing = false;
+});
+
+drawCanvas.addEventListener('mousedown', e=>{
+  isDrawing = true;
+  drawingPoints = [];
+  const r = drawCanvas.getBoundingClientRect();
+  drawingPoints.push({x:e.clientX-r.left, y:e.clientY-r.top});
+});
+drawCanvas.addEventListener('mousemove', e=>{
+  if(!isDrawing) return;
+  const r = drawCanvas.getBoundingClientRect();
+  const px = e.clientX-r.left;
+  const py = e.clientY-r.top;
+  drawingPoints.push({x:px, y:py});
+  drawCtx.clearRect(0,0,500,500);
+  drawCtx.strokeStyle='rgba(100,180,255,0.3)';
+  drawCtx.lineWidth=1;
+  drawCtx.strokeRect(0,0,500,500);
+  drawCtx.beginPath();
+  drawCtx.strokeStyle='#00e5ff';
+  drawCtx.lineWidth=2;
+  for(let i=0;i<drawingPoints.length;i++){
+    if(i===0) drawCtx.moveTo(drawingPoints[i].x, drawingPoints[i].y);
+    else drawCtx.lineTo(drawingPoints[i].x, drawingPoints[i].y);
+  }
+  drawCtx.stroke();
+});
+drawCanvas.addEventListener('mouseup', ()=>{ isDrawing=false; });
+
+drawDoneBtn.addEventListener('click', ()=>{
+  drawOverlay.classList.remove('visible');
+  if(drawingPoints.length < 10) return;
+  // Resample to 128 points
+  const resampled = resamplePath(drawingPoints, 128);
+  // Normalize to -1..1
+  let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity;
+  resampled.forEach(p=>{
+    if(p.x<mnx)mnx=p.x;if(p.x>mxx)mxx=p.x;
+    if(p.y<mny)mny=p.y;if(p.y>mxy)mxy=p.y;
+  });
+  const cx=(mnx+mxx)/2, cy=(mny+mxy)/2;
+  const sc=Math.max(mxx-mnx,mxy-mny)/2||1;
+  const normalized = resampled.map(p=>({x:(p.x-cx)/sc, y:(p.y-cy)/sc}));
+  customCoeffs = computeDFT(normalized);
+  currentShape = 'custom';
+  shapeSelect.value = 'square'; // no matching option, that's fine
+  resetAnim();
+});
+
+function resamplePath(pts, n){
+  // compute total length
+  let totalLen = 0;
+  for(let i=1;i<pts.length;i++){
+    const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
+    totalLen += Math.sqrt(dx*dx+dy*dy);
+  }
+  const step = totalLen/n;
+  const result = [pts[0]];
+  let dist=0, idx=1;
+  for(let i=1;i<n;i++){
+    const target = i*step;
+    while(idx<pts.length){
+      const dx=pts[idx].x-pts[idx-1].x, dy=pts[idx].y-pts[idx-1].y;
+      const seg=Math.sqrt(dx*dx+dy*dy);
+      if(dist+seg>=target){
+        const t=(target-dist)/seg;
+        result.push({x:pts[idx-1].x+t*dx, y:pts[idx-1].y+t*dy});
+        break;
+      }
+      dist+=seg;
+      idx++;
+    }
+    if(idx>=pts.length) result.push(pts[pts.length-1]);
+  }
+  return result;
+}
+
+// ========== MAIN RENDER ==========
+let lastTime = 0;
+let dftCoeffs2D = null;
+let cachedShape = null;
+let cachedN = 0;
+
+function getCoeffs2D(){
+  if(currentShape==='custom' && customCoeffs) return customCoeffs;
+  if(cachedShape===currentShape && cachedN>=128){
+    return dftCoeffs2D;
+  }
+  const pts = sampleShape(currentShape, 128);
+  dftCoeffs2D = computeDFT(pts);
+  cachedShape = currentShape;
+  cachedN = 128;
+  return dftCoeffs2D;
+}
+
+function drawStars(t){
+  for(const s of stars){
+    const bright = s.b + 0.2*Math.sin(t*s.sp*1000);
+    ctx.fillStyle = `rgba(180,200,240,${bright.toFixed(2)})`;
+    ctx.fillRect(s.x*W, s.y*H, s.s, s.s);
+  }
+}
+
+function drawEpicycles1D(cx, cy, radius, coeffs, t, N){
+  let x = cx, y = cy;
+  const pts = [];
+  const n = Math.min(N, coeffs.length);
+  for(let i=0;i<n;i++){
+    const c = coeffs[i];
+    const r = Math.abs(c.amp)*radius;
+    const angle = c.freq*t + c.phase;
+    const opacity = Math.max(0.15, 1 - i*0.7/n);
+    // Draw circle
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2*Math.PI);
+    ctx.strokeStyle = `rgba(0,229,255,${(opacity*0.35).toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Glow
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2*Math.PI);
+    ctx.strokeStyle = `rgba(0,229,255,${(opacity*0.1).toFixed(2)})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Radius line
+    const nx = x + r*Math.cos(angle);
+    const ny = y - r*Math.sin(angle);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(nx, ny);
+    ctx.strokeStyle = `rgba(255,215,0,${(opacity*0.6).toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Dot at joint
+    ctx.beginPath();
+    ctx.arc(nx, ny, 2, 0, 2*Math.PI);
+    ctx.fillStyle = `rgba(255,215,0,${opacity.toFixed(2)})`;
+    ctx.fill();
+    x = nx;
+    y = ny;
+    pts.push({amp:c.amp, freq:c.freq});
+  }
+  return {tipX: x, tipY: y, components: pts};
+}
+
+function drawEpicycles2D(cx, cy, radius, coeffs, t, N){
+  let x = cx, y = cy;
+  const n = Math.min(N, coeffs.length);
+  for(let i=0;i<n;i++){
+    const c = coeffs[i];
+    const r = c.amp * radius;
+    if(r < 0.3) continue;
+    const angle = c.freq*t + c.phase;
+    const opacity = Math.max(0.12, 1 - i*0.8/n);
+    // Circle
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2*Math.PI);
+    ctx.strokeStyle = `rgba(0,229,255,${(opacity*0.3).toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Glow circle
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2*Math.PI);
+    ctx.strokeStyle = `rgba(0,229,255,${(opacity*0.08).toFixed(2)})`;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Radius
+    const nx = x + r*Math.cos(c.freq*t + c.phase);
+    const ny = y + r*Math.sin(c.freq*t + c.phase);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(nx, ny);
+    ctx.strokeStyle = `rgba(255,215,0,${(opacity*0.5).toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Dot
+    ctx.beginPath();
+    ctx.arc(nx, ny, 2, 0, 2*Math.PI);
+    ctx.fillStyle = `rgba(255,215,0,${opacity.toFixed(2)})`;
+    ctx.fill();
+    x = nx;
+    y = ny;
+  }
+  return {tipX: x, tipY: y};
+}
+
+function drawTrail(pts, color){
+  if(pts.length < 2) return;
+  for(let i=1;i<pts.length;i++){
+    const alpha = (i/pts.length);
+    ctx.beginPath();
+    ctx.moveTo(pts[i-1].x, pts[i-1].y);
+    ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.strokeStyle = `rgba(${color},${(alpha*0.9).toFixed(2)})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  // Glow on recent points
+  const last = Math.min(30, pts.length);
+  for(let i=pts.length-last;i<pts.length;i++){
+    const alpha = ((i-(pts.length-last))/last)*0.3;
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, 4, 0, 2*Math.PI);
+    ctx.fillStyle = `rgba(${color},${alpha.toFixed(2)})`;
+    ctx.fill();
+  }
+}
+
+function drawWaveform(startX, startY, tipY, width){
+  // Shift existing wave points left
+  wavePoints.unshift(tipY);
+  if(wavePoints.length > width) wavePoints.length = width;
+
+  // Connection line from tip to waveform
+  ctx.beginPath();
+  ctx.setLineDash([4,4]);
+  ctx.moveTo(startX - 20, tipY);
+  ctx.lineTo(startX, tipY);
+  ctx.strokeStyle = 'rgba(255,215,0,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw waveform
+  if(wavePoints.length < 2) return;
+  for(let i=1;i<wavePoints.length;i++){
+    const alpha = 1 - i/wavePoints.length;
+    ctx.beginPath();
+    ctx.moveTo(startX+i-1, wavePoints[i-1]);
+    ctx.lineTo(startX+i, wavePoints[i]);
+    ctx.strokeStyle = `rgba(79,255,136,${(alpha*0.8).toFixed(2)})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function drawComponents(coeffs, t, N){
+  compCtx.clearRect(0,0,240,160);
+  const n = Math.min(N, coeffs.length, 6);
+  const h = 160/n;
+  for(let i=0;i<n;i++){
+    const c = coeffs[i];
+    const yc = i*h + h/2;
+    // Axis
+    compCtx.beginPath();
+    compCtx.moveTo(0, yc);
+    compCtx.lineTo(240, yc);
+    compCtx.strokeStyle = 'rgba(100,180,255,0.15)';
+    compCtx.lineWidth = 1;
+    compCtx.stroke();
+    // Sine wave
+    compCtx.beginPath();
+    const amp = Math.min(Math.abs(c.amp||c.amp)*h*0.4, h*0.45);
+    for(let x=0;x<240;x++){
+      const tt = t + (x/240)*2*Math.PI;
+      const freq = c.freq||1;
+      const phase = c.phase||0;
+      const yy = yc - amp*Math.sin(freq*tt + phase);
+      if(x===0) compCtx.moveTo(x, yy);
+      else compCtx.lineTo(x, yy);
+    }
+    const hue = (i*50+180)%360;
+    compCtx.strokeStyle = `hsla(${hue},80%,60%,0.7)`;
+    compCtx.lineWidth = 1.5;
+    compCtx.stroke();
+    // Label
+    compCtx.fillStyle = `rgba(200,220,240,0.5)`;
+    compCtx.font = '8px Courier New';
+    compCtx.fillText(`n=${typeof c.freq==='number'?c.freq:'?'}`, 2, yc-h*0.35);
+  }
+}
+
+function updateStats(shapeName, N, t, coeffs){
+  document.getElementById('s-shape').textContent = shapeName;
+  document.getElementById('s-terms').textContent = N;
+  document.getElementById('s-time').textContent = t.toFixed(3);
+  document.getElementById('s-freq').textContent = (speed).toFixed(2)+' Hz';
+
+  let topAmp = coeffs.length>0 ? (coeffs[0].amp||Math.abs(coeffs[0].amp)):0;
+  document.getElementById('s-amp').textContent = topAmp.toFixed(3);
+
+  // Harmonics description
+  let desc = '';
+  if(currentShape==='square') desc = 'odd 1-'+(2*(N-1)+1);
+  else if(currentShape==='sawtooth') desc = 'all 1-'+N;
+  else if(currentShape==='triangle') desc = 'odd 1-'+(2*(N-1)+1);
+  else desc = 'DFT 0-'+(N-1);
+  document.getElementById('s-harmonics').textContent = desc;
+
+  // Spectrum
+  const specEl = document.getElementById('spectrum-bar');
+  const bars = Math.min(N, 20);
+  let html = '';
+  for(let i=0;i<bars;i++){
+    const a = i<coeffs.length ? (coeffs[i].amp||Math.abs(coeffs[i].amp)) : 0;
+    const maxA = coeffs.length>0 ? (coeffs[0].amp||Math.abs(coeffs[0].amp)) : 1;
+    const h = Math.max(1, (a/maxA)*36);
+    const op = 0.4 + 0.6*(a/maxA);
+    html += `<div class="spec-bar" style="height:${h}px;opacity:${op.toFixed(2)}"></div>`;
+  }
+  specEl.innerHTML = html;
+}
+
+function getShapeName(){
+  const names = {square:'Square Wave',sawtooth:'Sawtooth',triangle:'Triangle Wave',circle:'Circle',star:'Star',heart:'Heart',pi:'Letter π',custom:'Custom'};
+  return names[currentShape]||currentShape;
+}
+
+function animate(ts){
+  const dt = lastTime ? (ts-lastTime)/1000 : 0.016;
+  lastTime = ts;
+
+  if(playing) time += dt * speed;
+
+  ctx.clearRect(0,0,W,H);
+
+  // Stars
+  drawStars(ts);
+
+  const is2D = is2DShape(currentShape);
+
+  if(is2D){
+    // 2D epicycle mode
+    const coeffs = getCoeffs2D();
+    const n = Math.min(numTerms, coeffs.length);
+    const epicX = W*0.35;
+    const epicY = H*0.48;
+    const radius = Math.min(W,H)*0.22;
+    const t2d = (2*Math.PI*time)/4;
+
+    const tip = drawEpicycles2D(epicX, epicY, radius, coeffs, t2d, n);
+
+    // Trail
+    if(playing){
+      trailPoints.push({x:tip.tipX, y:tip.tipY});
+      if(trailPoints.length>MAX_TRAIL) trailPoints.shift();
+    }
+    drawTrail(trailPoints, '79,255,136');
+
+    // Glow at tip
+    ctx.beginPath();
+    ctx.arc(tip.tipX, tip.tipY, 5, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(255,215,0,0.8)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tip.tipX, tip.tipY, 12, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(255,215,0,0.15)';
+    ctx.fill();
+
+    // Also draw the target shape faintly on the right
+    const targetPts = (currentShape==='custom'&&customCoeffs) ? null : sampleShape(currentShape, 200);
+    if(targetPts){
+      ctx.beginPath();
+      const ox = W*0.72, oy = H*0.48;
+      const sc = radius*0.8;
+      for(let i=0;i<targetPts.length;i++){
+        const px = ox + targetPts[i].x*sc;
+        const py = oy + targetPts[i].y*sc;
+        if(i===0) ctx.moveTo(px,py);
+        else ctx.lineTo(px,py);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(100,180,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3,6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw the approximation trail on the right too
+    if(trailPoints.length>1){
+      const ox = W*0.72 - epicX;
+      const oy = H*0.48 - epicY;
+      ctx.beginPath();
+      for(let i=0;i<trailPoints.length;i++){
+        const px = trailPoints[i].x + ox;
+        const py = trailPoints[i].y + oy;
+        if(i===0) ctx.moveTo(px,py);
+        else ctx.lineTo(px,py);
+      }
+      ctx.strokeStyle = 'rgba(255,215,0,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Label
+    ctx.fillStyle = 'rgba(255,215,0,0.5)';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('EPICYCLES', epicX, epicY + radius + 30);
+    ctx.fillText('TRACED SHAPE', W*0.72, H*0.48 + radius + 30);
+    ctx.textAlign = 'left';
+
+    drawComponents(coeffs, t2d, n);
+    updateStats(getShapeName(), n, time, coeffs);
+
+  } else {
+    // 1D waveform mode
+    const coeffs = getWaveformCoeffs(currentShape, numTerms);
+    const epicX = W*0.28;
+    const epicY = H*0.48;
+    const radius = Math.min(W,H)*0.18;
+    const t1d = 2*Math.PI*time;
+
+    const result = drawEpicycles1D(epicX, epicY, radius, coeffs, t1d, numTerms);
+
+    // Connection line + waveform
+    const waveStartX = epicX + radius*1.6;
+    const waveWidth = W*0.55;
+
+    // Horizontal dashed line from tip to waveform start
+    ctx.beginPath();
+    ctx.setLineDash([4,4]);
+    ctx.moveTo(result.tipX, result.tipY);
+    ctx.lineTo(waveStartX, result.tipY);
+    ctx.strokeStyle = 'rgba(255,215,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Wave trace
+    if(playing){
+      wavePoints.unshift(result.tipY);
+      if(wavePoints.length > waveWidth) wavePoints.length = Math.floor(waveWidth);
+    }
+
+    if(wavePoints.length > 1){
+      for(let i=1;i<wavePoints.length;i++){
+        const alpha = 1 - i/wavePoints.length;
+        ctx.beginPath();
+        ctx.moveTo(waveStartX+i-1, wavePoints[i-1]);
+        ctx.lineTo(waveStartX+i, wavePoints[i]);
+        ctx.strokeStyle = `rgba(79,255,136,${(alpha*0.85).toFixed(2)})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      // Glow trail
+      for(let i=0;i<Math.min(20,wavePoints.length);i++){
+        const a = (1-i/20)*0.2;
+        ctx.beginPath();
+        ctx.arc(waveStartX+i, wavePoints[i], 3, 0, 2*Math.PI);
+        ctx.fillStyle = `rgba(79,255,136,${a.toFixed(2)})`;
+        ctx.fill();
+      }
+    }
+
+    // Tip glow
+    ctx.beginPath();
+    ctx.arc(result.tipX, result.tipY, 5, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(255,215,0,0.8)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(result.tipX, result.tipY, 14, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(255,215,0,0.12)';
+    ctx.fill();
+
+    // Dot at waveform connection
+    ctx.beginPath();
+    ctx.arc(waveStartX, result.tipY, 4, 0, 2*Math.PI);
+    ctx.fillStyle = 'rgba(79,255,136,0.8)';
+    ctx.fill();
+
+    // Draw ideal target waveform faintly
+    ctx.beginPath();
+    for(let i=0;i<waveWidth;i++){
+      const tt = t1d - (i/waveWidth)*4*Math.PI;
+      let val = 0;
+      if(currentShape==='square') val = (Math.sin(tt)>=0)?1:-1;
+      else if(currentShape==='sawtooth') val = 1 - 2*((tt/(2*Math.PI))%1+1)%1;
+      else if(currentShape==='triangle') val = 2*Math.abs(2*((tt/(2*Math.PI))%1+1)%1 - 1)-1;
+      const py = epicY - val*radius*0.8;
+      if(i===0) ctx.moveTo(waveStartX+i, py);
+      else ctx.lineTo(waveStartX+i, py);
+    }
+    ctx.strokeStyle = 'rgba(100,180,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3,6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Labels
+    ctx.fillStyle = 'rgba(255,215,0,0.5)';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('EPICYCLES', epicX, epicY + radius + 30);
+    ctx.fillText('OUTPUT WAVEFORM', waveStartX + waveWidth*0.3, epicY + radius + 30);
+    ctx.textAlign = 'left';
+
+    // Axis line for waveform
+    ctx.beginPath();
+    ctx.moveTo(waveStartX, epicY);
+    ctx.lineTo(waveStartX + waveWidth, epicY);
+    ctx.strokeStyle = 'rgba(100,180,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    drawComponents(coeffs, t1d, numTerms);
+    updateStats(getShapeName(), numTerms, time, coeffs);
+  }
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+
+})();
+</script>
+</body>
+</html>
