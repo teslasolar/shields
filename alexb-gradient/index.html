@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALEXB · GRADIENT DESCENT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#8f4;opacity:0.7;text-align:center;pointer-events:none;line-height:2}
+#controls{position:fixed;top:16px;right:16px;font-family:'Courier New',monospace;font-size:8px;letter-spacing:1px;color:#668}
+#controls button{background:rgba(136,255,68,0.1);border:1px solid rgba(136,255,68,0.3);color:#8f4;font-family:inherit;font-size:8px;letter-spacing:2px;padding:6px 14px;cursor:pointer;border-radius:4px;margin:2px;display:block;width:100%;margin-bottom:4px}
+#controls button:hover{background:rgba(136,255,68,0.2)}
+#controls .lr{color:#fc0;font-size:9px;margin:8px 0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="controls">
+  <button onclick="resetBalls()">RESET</button>
+  <button onclick="cycleLR()">LR: <span id="lrVal">0.05</span></button>
+  <button onclick="cycleLandscape()">LANDSCAPE</button>
+  <div class="lr">
+    <span id="optLabel">SGD vs MOMENTUM vs ADAM</span>
+  </div>
+</div>
+<div id="info">ALEXB · GRADIENT DESCENT · FEEL THE MATH<br>THREE OPTIMIZERS RACE DOWN THE LOSS LANDSCAPE</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Loss landscape functions
+const landscapes = [
+  { name: 'RASTRIGIN', fn: (x, y) => 20 + x*x - 10*Math.cos(TAU*x) + y*y - 10*Math.cos(TAU*y) },
+  { name: 'ROSENBROCK', fn: (x, y) => (1-x)*(1-x) + 100*(y-x*x)*(y-x*x) },
+  { name: 'HIMMELBLAU', fn: (x, y) => (x*x+y-11)*(x*x+y-11) + (x+y*y-7)*(x+y*y-7) },
+  { name: 'SADDLE', fn: (x, y) => x*x - y*y + 0.5*Math.sin(x*3)*Math.cos(y*3) },
+];
+let currentLandscape = 0;
+let lossFn = landscapes[0].fn;
+
+// Gradient (numerical)
+function gradient(fn, x, y) {
+  const h = 0.001;
+  const dx = (fn(x + h, y) - fn(x - h, y)) / (2 * h);
+  const dy = (fn(x, y + h) - fn(x, y - h)) / (2 * h);
+  return { dx, dy };
+}
+
+// Learning rates
+const LR_OPTIONS = [0.005, 0.01, 0.05, 0.1, 0.3];
+let lrIndex = 2;
+let lr = LR_OPTIONS[lrIndex];
+
+// Three optimizer balls
+class OptimizerBall {
+  constructor(name, color, type) {
+    this.name = name;
+    this.color = color;
+    this.type = type;
+    this.reset();
+  }
+  reset() {
+    this.x = -2 + Math.random() * 0.2;
+    this.y = -2 + Math.random() * 0.2;
+    this.vx = 0;
+    this.vy = 0;
+    this.m1x = 0; this.m1y = 0; // first moment (Adam)
+    this.m2x = 0; this.m2y = 0; // second moment (Adam)
+    this.step = 0;
+    this.trail = [];
+    this.loss = lossFn(this.x, this.y);
+  }
+  update() {
+    const g = gradient(lossFn, this.x, this.y);
+    this.step++;
+    const clamp = (v, m) => Math.max(-m, Math.min(m, v));
+    const gdx = clamp(g.dx, 50);
+    const gdy = clamp(g.dy, 50);
+
+    if (this.type === 'sgd') {
+      this.x -= lr * gdx;
+      this.y -= lr * gdy;
+    } else if (this.type === 'momentum') {
+      const beta = 0.9;
+      this.vx = beta * this.vx + lr * gdx;
+      this.vy = beta * this.vy + lr * gdy;
+      this.x -= this.vx;
+      this.y -= this.vy;
+    } else if (this.type === 'adam') {
+      const b1 = 0.9, b2 = 0.999, eps = 1e-8;
+      this.m1x = b1 * this.m1x + (1 - b1) * gdx;
+      this.m1y = b1 * this.m1y + (1 - b1) * gdy;
+      this.m2x = b2 * this.m2x + (1 - b2) * gdx * gdx;
+      this.m2y = b2 * this.m2y + (1 - b2) * gdy * gdy;
+      const m1xh = this.m1x / (1 - Math.pow(b1, this.step));
+      const m1yh = this.m1y / (1 - Math.pow(b1, this.step));
+      const m2xh = this.m2x / (1 - Math.pow(b2, this.step));
+      const m2yh = this.m2y / (1 - Math.pow(b2, this.step));
+      this.x -= lr * m1xh / (Math.sqrt(m2xh) + eps);
+      this.y -= lr * m1yh / (Math.sqrt(m2yh) + eps);
+    }
+
+    // Clamp to domain
+    this.x = Math.max(-4, Math.min(4, this.x));
+    this.y = Math.max(-4, Math.min(4, this.y));
+
+    this.loss = lossFn(this.x, this.y);
+    this.trail.push({ x: this.x, y: this.y, loss: this.loss });
+    if (this.trail.length > 500) this.trail.shift();
+  }
+}
+
+const balls = [
+  new OptimizerBall('SGD', '#f48', 'sgd'),
+  new OptimizerBall('MOMENTUM', '#fc0', 'momentum'),
+  new OptimizerBall('ADAM', '#4af', 'adam'),
+];
+
+function resetBalls() {
+  balls.forEach(b => b.reset());
+}
+
+function cycleLR() {
+  lrIndex = (lrIndex + 1) % LR_OPTIONS.length;
+  lr = LR_OPTIONS[lrIndex];
+  document.getElementById('lrVal').textContent = lr;
+  resetBalls();
+}
+
+function cycleLandscape() {
+  currentLandscape = (currentLandscape + 1) % landscapes.length;
+  lossFn = landscapes[currentLandscape].fn;
+  resetBalls();
+}
+
+// Map domain [-4,4] to screen
+function toScreen(x, y) {
+  const margin = 80;
+  const plotW = W - margin * 2;
+  const plotH = H - margin * 2;
+  return {
+    sx: margin + ((x + 4) / 8) * plotW,
+    sy: margin + ((y + 4) / 8) * plotH
+  };
+}
+
+// Render loss landscape as heatmap
+function drawLandscape() {
+  const step = 6;
+  const margin = 80;
+  const plotW = W - margin * 2;
+  const plotH = H - margin * 2;
+
+  // Find max for normalization
+  let maxLoss = 0;
+  for (let sy = margin; sy < H - margin; sy += step) {
+    for (let sx = margin; sx < W - margin; sx += step) {
+      const x = ((sx - margin) / plotW) * 8 - 4;
+      const y = ((sy - margin) / plotH) * 8 - 4;
+      const l = lossFn(x, y);
+      if (l > maxLoss && l < 1000) maxLoss = l;
+    }
+  }
+
+  for (let sy = margin; sy < H - margin; sy += step) {
+    for (let sx = margin; sx < W - margin; sx += step) {
+      const x = ((sx - margin) / plotW) * 8 - 4;
+      const y = ((sy - margin) / plotH) * 8 - 4;
+      const l = Math.min(lossFn(x, y), maxLoss);
+      const norm = Math.pow(l / maxLoss, 0.4); // gamma for visibility
+
+      // Color: dark blue (low) → teal → green → yellow (high)
+      const r = Math.round(norm * norm * 200);
+      const g = Math.round(norm * 100 + (1 - norm) * 40);
+      const b = Math.round((1 - norm) * 150 + 20);
+      ctx.fillStyle = `rgba(${r},${g},${b},0.15)`;
+      ctx.fillRect(sx, sy, step, step);
+    }
+  }
+
+  // Contour lines
+  const contours = 12;
+  for (let c = 0; c < contours; c++) {
+    const threshold = (c / contours) * maxLoss;
+    ctx.beginPath();
+    let started = false;
+
+    for (let sx = margin; sx < W - margin; sx += 3) {
+      for (let sy = margin; sy < H - margin; sy += 3) {
+        const x = ((sx - margin) / plotW) * 8 - 4;
+        const y = ((sy - margin) / plotH) * 8 - 4;
+        const l = lossFn(x, y);
+        if (Math.abs(l - threshold) < maxLoss * 0.015) {
+          ctx.rect(sx, sy, 1, 1);
+        }
+      }
+    }
+    ctx.fillStyle = `rgba(100,200,255,${0.03 + (1 - c / contours) * 0.04})`;
+    ctx.fill();
+  }
+
+  // Landscape name
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(100,160,200,0.4)';
+  ctx.fillText(landscapes[currentLandscape].name, margin, margin - 10);
+}
+
+// Draw optimizer balls and trails
+function drawBalls() {
+  for (const b of balls) {
+    // Trail
+    if (b.trail.length > 1) {
+      for (let i = 1; i < b.trail.length; i++) {
+        const p0 = toScreen(b.trail[i - 1].x, b.trail[i - 1].y);
+        const p1 = toScreen(b.trail[i].x, b.trail[i].y);
+        const alpha = (i / b.trail.length) * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(p0.sx, p0.sy);
+        ctx.lineTo(p1.sx, p1.sy);
+        ctx.strokeStyle = b.color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Ball
+    const p = toScreen(b.x, b.y);
+
+    // Glow
+    const glow = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, 25);
+    glow.addColorStop(0, b.color + '33');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(p.sx - 25, p.sy - 25, 50, 50);
+
+    // Ball body
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, 6, 0, TAU);
+    ctx.fillStyle = b.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff3';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Gradient arrow
+    const g = gradient(lossFn, b.x, b.y);
+    const gLen = Math.sqrt(g.dx * g.dx + g.dy * g.dy);
+    if (gLen > 0.01) {
+      const scale = Math.min(30, gLen * 3);
+      const ax = -g.dx / gLen * scale;
+      const ay = -g.dy / gLen * scale;
+      ctx.beginPath();
+      ctx.moveTo(p.sx, p.sy);
+      ctx.lineTo(p.sx + ax, p.sy + ay);
+      ctx.strokeStyle = b.color + '88';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();
+      ctx.arc(p.sx + ax, p.sy + ay, 3, 0, TAU);
+      ctx.fillStyle = b.color + '88';
+      ctx.fill();
+    }
+
+    // Label
+    ctx.font = '8px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = b.color;
+    ctx.fillText(b.name, p.sx, p.sy - 14);
+    ctx.fillStyle = b.color + 'aa';
+    ctx.fillText('L=' + b.loss.toFixed(2), p.sx, p.sy + 20);
+  }
+}
+
+// Loss history chart
+function drawLossChart() {
+  const chartW = 200;
+  const chartH = 80;
+  const ox = 20;
+  const oy = H - 100;
+
+  ctx.fillStyle = 'rgba(20,25,40,0.5)';
+  ctx.fillRect(ox, oy, chartW, chartH);
+  ctx.strokeStyle = 'rgba(100,130,180,0.2)';
+  ctx.strokeRect(ox, oy, chartW, chartH);
+
+  ctx.font = '7px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(100,160,200,0.4)';
+  ctx.fillText('LOSS OVER TIME', ox + 4, oy - 4);
+
+  for (const b of balls) {
+    if (b.trail.length < 2) continue;
+    const maxL = Math.max(...b.trail.map(p => p.loss), 1);
+
+    ctx.beginPath();
+    for (let i = 0; i < b.trail.length; i++) {
+      const x = ox + (i / b.trail.length) * chartW;
+      const y = oy + chartH - (Math.min(b.trail[i].loss, maxL) / maxL) * chartH;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = b.color + '88';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function draw() {
+  t += 0.016;
+
+  ctx.fillStyle = 'rgba(6,6,16,0.3)';
+  ctx.fillRect(0, 0, W, H);
+
+  drawLandscape();
+
+  // Update balls
+  if (t > 0.5) { // wait a bit before starting
+    for (const b of balls) b.update();
+  }
+
+  drawBalls();
+  drawLossChart();
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

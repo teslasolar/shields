@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALEXB · ATTENTION</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#4af;opacity:0.7;text-align:center;pointer-events:none;line-height:2}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">ALEXB · SELF-ATTENTION · Q·K^T / √d → SOFTMAX → V<br>CLICK TOKENS TO SEE WHAT THEY ATTEND TO</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Tokens in a sentence
+const TOKENS = ['The', 'neural', 'network', 'learns', 'to', 'attend', 'to', 'patterns'];
+const N = TOKENS.length;
+const DIM = 4; // embedding dimension (simplified)
+
+// Random Q, K, V matrices for visualization
+function randMatrix(rows, cols) {
+  const m = [];
+  for (let i = 0; i < rows; i++) {
+    const row = [];
+    for (let j = 0; j < cols; j++) row.push((Math.random() - 0.5) * 2);
+    m.push(row);
+  }
+  return m;
+}
+
+let Q = randMatrix(N, DIM);
+let K = randMatrix(N, DIM);
+let V = randMatrix(N, DIM);
+let attnWeights = []; // N x N attention matrix
+let selectedToken = -1;
+
+function computeAttention() {
+  attnWeights = [];
+  const scale = Math.sqrt(DIM);
+
+  for (let i = 0; i < N; i++) {
+    const scores = [];
+    let maxScore = -Infinity;
+
+    // QK^T
+    for (let j = 0; j < N; j++) {
+      let dot = 0;
+      for (let d = 0; d < DIM; d++) {
+        dot += Q[i][d] * K[j][d];
+      }
+      dot /= scale;
+      scores.push(dot);
+      if (dot > maxScore) maxScore = dot;
+    }
+
+    // Softmax
+    let sum = 0;
+    const expScores = scores.map(s => {
+      const e = Math.exp(s - maxScore);
+      sum += e;
+      return e;
+    });
+    attnWeights.push(expScores.map(e => e / sum));
+  }
+}
+
+computeAttention();
+
+// Slowly evolve the matrices for visual interest
+function evolveMatrices() {
+  for (let i = 0; i < N; i++) {
+    for (let d = 0; d < DIM; d++) {
+      Q[i][d] += (Math.random() - 0.5) * 0.005;
+      K[i][d] += (Math.random() - 0.5) * 0.005;
+      V[i][d] += (Math.random() - 0.5) * 0.003;
+    }
+  }
+  computeAttention();
+}
+
+// Token positions (arranged in an arc)
+function getTokenPos(i) {
+  const arcW = W * 0.7;
+  const startX = W * 0.15;
+  const x = startX + (i / (N - 1)) * arcW;
+  const arcY = H * 0.35 + Math.sin((i / (N - 1)) * Math.PI) * 30;
+  return { x, y: arcY };
+}
+
+// Click handling
+C.addEventListener('click', e => {
+  const rect = C.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top) * (H / rect.height);
+
+  selectedToken = -1;
+  for (let i = 0; i < N; i++) {
+    const p = getTokenPos(i);
+    const dx = mx - p.x, dy = my - p.y;
+    if (dx * dx + dy * dy < 900) {
+      selectedToken = i;
+      break;
+    }
+  }
+});
+
+function drawAttentionMatrix() {
+  // Small attention heatmap in corner
+  const size = 18;
+  const ox = W - N * size - 30;
+  const oy = H * 0.55;
+
+  ctx.font = '7px Courier New';
+  ctx.textAlign = 'center';
+
+  // Title
+  ctx.fillStyle = 'rgba(68,170,255,0.5)';
+  ctx.fillText('ATTENTION WEIGHTS', ox + N * size / 2, oy - 10);
+
+  for (let i = 0; i < N; i++) {
+    // Row label
+    ctx.fillStyle = 'rgba(160,180,220,0.3)';
+    ctx.textAlign = 'right';
+    ctx.fillText(TOKENS[i].slice(0, 3), ox - 4, oy + i * size + size / 2 + 2);
+
+    for (let j = 0; j < N; j++) {
+      const w = attnWeights[i][j];
+      const highlight = selectedToken === i ? 1.5 : 1;
+      ctx.fillStyle = `rgba(68,170,255,${w * 0.7 * highlight})`;
+      ctx.fillRect(ox + j * size, oy + i * size, size - 1, size - 1);
+
+      // Value text
+      if (size > 14) {
+        ctx.fillStyle = `rgba(255,255,255,${0.3 + w * 0.5})`;
+        ctx.textAlign = 'center';
+        ctx.fillText(w.toFixed(1), ox + j * size + size / 2, oy + i * size + size / 2 + 2);
+      }
+    }
+  }
+
+  // Column labels
+  ctx.textAlign = 'center';
+  for (let j = 0; j < N; j++) {
+    ctx.save();
+    ctx.translate(ox + j * size + size / 2, oy - 4);
+    ctx.rotate(-0.5);
+    ctx.fillStyle = 'rgba(160,180,220,0.3)';
+    ctx.fillText(TOKENS[j].slice(0, 3), 0, 0);
+    ctx.restore();
+  }
+}
+
+function drawQKVDiagram() {
+  // Show Q, K, V pipeline on the left
+  const ox = 30;
+  const oy = H * 0.6;
+  const boxW = 50;
+  const boxH = 20;
+
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+
+  const steps = [
+    { label: 'EMBED', color: '#556', y: 0 },
+    { label: 'Q', color: '#f48', y: 35 },
+    { label: 'K', color: '#4af', y: 35 },
+    { label: 'V', color: '#8f4', y: 35 },
+    { label: 'Q·K^T', color: '#fa4', y: 40 },
+    { label: '÷ √d', color: '#fc0', y: 30 },
+    { label: 'SOFTMAX', color: '#f4a', y: 30 },
+    { label: '× V', color: '#0f8', y: 30 },
+  ];
+
+  let cy = oy;
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (i === 1) {
+      // Q, K, V branch out
+      for (let j = 1; j <= 3; j++) {
+        const bx = ox + (j - 2) * 60;
+        const s2 = steps[j];
+        ctx.strokeStyle = s2.color + '44';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ox, cy);
+        ctx.lineTo(bx, cy + s2.y);
+        ctx.stroke();
+
+        ctx.fillStyle = s2.color + '33';
+        ctx.fillRect(bx - boxW / 2, cy + s2.y - boxH / 2, boxW, boxH);
+        ctx.strokeStyle = s2.color + '55';
+        ctx.strokeRect(bx - boxW / 2, cy + s2.y - boxH / 2, boxW, boxH);
+        ctx.fillStyle = s2.color;
+        ctx.fillText(s2.label, bx, cy + s2.y + 3);
+
+        // Pulse
+        const pulse = Math.sin(t * 2 + j) * 0.5 + 0.5;
+        ctx.beginPath();
+        ctx.arc(bx, cy + s2.y, boxH * 0.8, 0, TAU);
+        ctx.fillStyle = s2.color + Math.round(pulse * 20).toString(16).padStart(2, '0');
+        ctx.fill();
+      }
+      cy += 35;
+      i = 3; // skip K, V
+      continue;
+    }
+
+    if (i > 3) {
+      cy += s.y;
+      ctx.fillStyle = s.color + '33';
+      ctx.fillRect(ox - boxW / 2, cy - boxH / 2, boxW, boxH);
+      ctx.strokeStyle = s.color + '55';
+      ctx.strokeRect(ox - boxW / 2, cy - boxH / 2, boxW, boxH);
+      ctx.fillStyle = s.color;
+      ctx.fillText(s.label, ox, cy + 3);
+
+      // Arrow from above
+      ctx.strokeStyle = s.color + '33';
+      ctx.beginPath();
+      ctx.moveTo(ox, cy - s.y + boxH / 2);
+      ctx.lineTo(ox, cy - boxH / 2);
+      ctx.stroke();
+    } else if (i === 0) {
+      ctx.fillStyle = s.color + '33';
+      ctx.fillRect(ox - boxW / 2, cy - boxH / 2, boxW, boxH);
+      ctx.strokeStyle = s.color + '55';
+      ctx.strokeRect(ox - boxW / 2, cy - boxH / 2, boxW, boxH);
+      ctx.fillStyle = s.color;
+      ctx.fillText(s.label, ox, cy + 3);
+    }
+  }
+}
+
+function draw() {
+  t += 0.016;
+
+  if (Math.floor(t * 10) % 5 === 0) evolveMatrices();
+
+  ctx.fillStyle = 'rgba(6,6,16,0.2)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw attention arcs between tokens
+  for (let i = 0; i < N; i++) {
+    const from = getTokenPos(i);
+    for (let j = 0; j < N; j++) {
+      if (i === j) continue;
+      const to = getTokenPos(j);
+      const w = attnWeights[i][j];
+
+      // Only show strong connections or selected token's connections
+      const show = selectedToken === i || (selectedToken === -1 && w > 0.12);
+      if (!show) continue;
+
+      const alpha = selectedToken === i ? w * 0.8 : w * 0.3;
+      const cp = { x: (from.x + to.x) / 2, y: from.y + 60 + w * 80 };
+
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y + 15);
+      ctx.quadraticCurveTo(cp.x, cp.y, to.x, to.y + 15);
+      ctx.strokeStyle = `rgba(68,170,255,${alpha})`;
+      ctx.lineWidth = w * 4;
+      ctx.stroke();
+
+      // Animated particle along the arc
+      const prog = (t * 0.5 + i * 0.15 + j * 0.1) % 1;
+      const px = (1 - prog) * (1 - prog) * from.x + 2 * (1 - prog) * prog * cp.x + prog * prog * to.x;
+      const py = (1 - prog) * (1 - prog) * (from.y + 15) + 2 * (1 - prog) * prog * cp.y + prog * prog * (to.y + 15);
+
+      if (w > 0.15 || selectedToken === i) {
+        ctx.beginPath();
+        ctx.arc(px, py, 2 + w * 3, 0, TAU);
+        ctx.fillStyle = `rgba(100,200,255,${alpha * 0.8})`;
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw tokens
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'center';
+
+  for (let i = 0; i < N; i++) {
+    const p = getTokenPos(i);
+    const isSelected = selectedToken === i;
+
+    // Token background
+    const r = 22;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, TAU);
+    ctx.fillStyle = isSelected ? 'rgba(68,170,255,0.15)' : 'rgba(30,40,60,0.4)';
+    ctx.fill();
+    ctx.strokeStyle = isSelected ? 'rgba(68,170,255,0.6)' : 'rgba(68,170,255,0.2)';
+    ctx.lineWidth = isSelected ? 2 : 1;
+    ctx.stroke();
+
+    // Glow for selected
+    if (isSelected) {
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 2);
+      glow.addColorStop(0, 'rgba(68,170,255,0.1)');
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.fillRect(p.x - r * 2, p.y - r * 2, r * 4, r * 4);
+    }
+
+    // Token text
+    ctx.fillStyle = isSelected ? '#4af' : 'rgba(160,180,220,0.7)';
+    ctx.fillText(TOKENS[i], p.x, p.y + 4);
+
+    // Position index
+    ctx.font = '7px Courier New';
+    ctx.fillStyle = 'rgba(100,120,160,0.4)';
+    ctx.fillText('pos ' + i, p.x, p.y - r - 6);
+    ctx.font = '11px Courier New';
+  }
+
+  // Attention weights label for selected token
+  if (selectedToken >= 0) {
+    ctx.font = '9px Courier New';
+    ctx.fillStyle = 'rgba(68,170,255,0.6)';
+    ctx.fillText(`"${TOKENS[selectedToken]}" ATTENDS TO:`, W / 2, H * 0.2);
+
+    const weights = attnWeights[selectedToken];
+    const sorted = weights.map((w, i) => ({ w, i })).sort((a, b) => b.w - a.w);
+    for (let k = 0; k < Math.min(4, sorted.length); k++) {
+      const { w, i } = sorted[k];
+      ctx.fillStyle = `rgba(68,170,255,${0.3 + w * 0.5})`;
+      ctx.fillText(`${TOKENS[i]}: ${(w * 100).toFixed(1)}%`, W / 2, H * 0.2 + 18 + k * 14);
+    }
+  }
+
+  drawAttentionMatrix();
+  drawQKVDiagram();
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

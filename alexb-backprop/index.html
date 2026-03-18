@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALEXB · BACKPROP</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060610}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#f48;opacity:0.7;text-align:center;pointer-events:none;line-height:2}
+#controls{position:fixed;top:16px;right:16px;font-family:'Courier New',monospace;font-size:8px;letter-spacing:1px;color:#668}
+#controls button{background:rgba(244,68,136,0.1);border:1px solid rgba(244,68,136,0.3);color:#f48;font-family:inherit;font-size:8px;letter-spacing:2px;padding:6px 14px;cursor:pointer;border-radius:4px;margin:2px}
+#controls button:hover{background:rgba(244,68,136,0.2)}
+#loss{position:fixed;top:16px;left:16px;font-family:'Courier New',monospace;font-size:9px;letter-spacing:2px;color:#4af}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loss">LOSS: <span id="lossVal">1.000</span> | EPOCH: <span id="epochVal">0</span></div>
+<div id="controls">
+  <button onclick="resetNet()">RESET</button>
+  <button onclick="stepForward()">FORWARD</button>
+  <button onclick="stepBackward()">BACKWARD</button>
+  <button onclick="toggleAuto()">AUTO</button>
+</div>
+<div id="info">ALEXB · BACKPROP · WATCH THE NETWORK LEARN<br>FORWARD PASS → LOSS → BACKWARD PASS → WEIGHT UPDATE</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Simple 3-layer neural network: 3 → 4 → 4 → 2
+const LAYERS = [3, 4, 4, 2];
+let neurons = [];  // [layer][neuron] = { x, y, activation, gradient, error }
+let weights = [];  // [layer][from][to] = { w, dw, highlight }
+let phase = 'idle'; // idle, forward, backward, update
+let phaseStep = 0;
+let activeLayer = 0;
+let epoch = 0;
+let loss = 1.0;
+let auto = false;
+let autoTimer = 0;
+
+// Training data: XOR-like pattern
+const trainData = [
+  { input: [0, 0, 1], target: [0, 1] },
+  { input: [0, 1, 0], target: [1, 0] },
+  { input: [1, 0, 0], target: [1, 0] },
+  { input: [1, 1, 1], target: [0, 1] },
+];
+let currentSample = 0;
+
+function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+function sigmoidDeriv(x) { return x * (1 - x); }
+
+function initNetwork() {
+  neurons = [];
+  weights = [];
+  const marginX = W * 0.15;
+  const usableW = W * 0.7;
+
+  for (let l = 0; l < LAYERS.length; l++) {
+    const layerNeurons = [];
+    const n = LAYERS[l];
+    const x = marginX + (l / (LAYERS.length - 1)) * usableW;
+    const layerH = H * 0.5;
+    const startY = H / 2 - layerH / 2;
+
+    for (let i = 0; i < n; i++) {
+      const y = startY + ((i + 0.5) / n) * layerH;
+      layerNeurons.push({
+        x, y,
+        activation: 0,
+        gradient: 0,
+        error: 0,
+        lit: 0,     // forward pass glow
+        gradLit: 0  // backward pass glow
+      });
+    }
+    neurons.push(layerNeurons);
+  }
+
+  // Initialize weights
+  for (let l = 0; l < LAYERS.length - 1; l++) {
+    const layerWeights = [];
+    for (let i = 0; i < LAYERS[l]; i++) {
+      const row = [];
+      for (let j = 0; j < LAYERS[l + 1]; j++) {
+        row.push({
+          w: (Math.random() - 0.5) * 2,
+          dw: 0,
+          fwdLit: 0,
+          bwdLit: 0
+        });
+      }
+      layerWeights.push(row);
+    }
+    weights.push(layerWeights);
+  }
+}
+
+function forwardPass(input) {
+  // Set input layer
+  for (let i = 0; i < LAYERS[0]; i++) {
+    neurons[0][i].activation = input[i];
+  }
+
+  // Forward through layers
+  for (let l = 1; l < LAYERS.length; l++) {
+    for (let j = 0; j < LAYERS[l]; j++) {
+      let sum = 0;
+      for (let i = 0; i < LAYERS[l - 1]; i++) {
+        sum += neurons[l - 1][i].activation * weights[l - 1][i][j].w;
+      }
+      neurons[l][j].activation = sigmoid(sum);
+    }
+  }
+}
+
+function computeLoss(target) {
+  let l = 0;
+  const outLayer = neurons[LAYERS.length - 1];
+  for (let i = 0; i < target.length; i++) {
+    const diff = target[i] - outLayer[i].activation;
+    l += diff * diff;
+  }
+  return l / target.length;
+}
+
+function backwardPass(target) {
+  const L = LAYERS.length - 1;
+
+  // Output layer errors
+  for (let i = 0; i < LAYERS[L]; i++) {
+    const a = neurons[L][i].activation;
+    neurons[L][i].error = (target[i] - a) * sigmoidDeriv(a);
+    neurons[L][i].gradient = Math.abs(neurons[L][i].error);
+  }
+
+  // Hidden layers
+  for (let l = L - 1; l >= 1; l--) {
+    for (let i = 0; i < LAYERS[l]; i++) {
+      let err = 0;
+      for (let j = 0; j < LAYERS[l + 1]; j++) {
+        err += neurons[l + 1][j].error * weights[l][i][j].w;
+      }
+      const a = neurons[l][i].activation;
+      neurons[l][i].error = err * sigmoidDeriv(a);
+      neurons[l][i].gradient = Math.abs(neurons[l][i].error);
+    }
+  }
+
+  // Compute weight gradients
+  const lr = 2.0;
+  for (let l = 0; l < L; l++) {
+    for (let i = 0; i < LAYERS[l]; i++) {
+      for (let j = 0; j < LAYERS[l + 1]; j++) {
+        weights[l][i][j].dw = lr * neurons[l + 1][j].error * neurons[l][i].activation;
+      }
+    }
+  }
+}
+
+function updateWeights() {
+  for (let l = 0; l < weights.length; l++) {
+    for (let i = 0; i < weights[l].length; i++) {
+      for (let j = 0; j < weights[l][i].length; j++) {
+        weights[l][i][j].w += weights[l][i][j].dw;
+      }
+    }
+  }
+}
+
+function resetNet() {
+  phase = 'idle';
+  phaseStep = 0;
+  epoch = 0;
+  loss = 1.0;
+  auto = false;
+  initNetwork();
+}
+
+function stepForward() {
+  const sample = trainData[currentSample];
+  forwardPass(sample.input);
+  loss = computeLoss(sample.target);
+  document.getElementById('lossVal').textContent = loss.toFixed(4);
+
+  // Animate forward
+  phase = 'forward';
+  phaseStep = 0;
+  activeLayer = 0;
+
+  // Light up neurons sequentially
+  for (let l = 0; l < LAYERS.length; l++) {
+    for (const n of neurons[l]) { n.lit = 0; n.gradLit = 0; }
+  }
+  for (let l = 0; l < weights.length; l++) {
+    for (const row of weights[l]) {
+      for (const w of row) { w.fwdLit = 0; w.bwdLit = 0; }
+    }
+  }
+}
+
+function stepBackward() {
+  const sample = trainData[currentSample];
+  backwardPass(sample.target);
+  updateWeights();
+  epoch++;
+  currentSample = (currentSample + 1) % trainData.length;
+  document.getElementById('epochVal').textContent = epoch;
+
+  phase = 'backward';
+  phaseStep = 0;
+  activeLayer = LAYERS.length - 1;
+}
+
+let autoRunning = false;
+function toggleAuto() {
+  autoRunning = !autoRunning;
+}
+
+function draw() {
+  t += 0.016;
+  ctx.fillStyle = 'rgba(6,6,16,0.3)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Auto mode
+  if (autoRunning) {
+    autoTimer += 0.016;
+    if (autoTimer > 0.4) {
+      autoTimer = 0;
+      const sample = trainData[currentSample];
+      forwardPass(sample.input);
+      loss = computeLoss(sample.target);
+      backwardPass(sample.target);
+      updateWeights();
+      epoch++;
+      currentSample = (currentSample + 1) % trainData.length;
+      document.getElementById('lossVal').textContent = loss.toFixed(4);
+      document.getElementById('epochVal').textContent = epoch;
+
+      // Light everything
+      for (let l = 0; l < LAYERS.length; l++) {
+        for (const n of neurons[l]) {
+          n.lit = 1;
+          n.gradLit = n.gradient;
+        }
+      }
+      for (let l = 0; l < weights.length; l++) {
+        for (const row of weights[l]) {
+          for (const w of row) {
+            w.fwdLit = 1;
+            w.bwdLit = Math.abs(w.dw);
+          }
+        }
+      }
+    }
+  }
+
+  // Animate phase transitions
+  if (phase === 'forward') {
+    phaseStep += 0.03;
+    const currentL = Math.floor(phaseStep);
+    if (currentL < LAYERS.length) {
+      for (const n of neurons[currentL]) {
+        n.lit = Math.min(1, n.lit + 0.1);
+      }
+      if (currentL > 0) {
+        for (const row of weights[currentL - 1]) {
+          for (const w of row) {
+            w.fwdLit = Math.min(1, w.fwdLit + 0.08);
+          }
+        }
+      }
+    } else {
+      phase = 'idle';
+    }
+  }
+
+  if (phase === 'backward') {
+    phaseStep += 0.03;
+    const L = LAYERS.length - 1;
+    const currentL = L - Math.floor(phaseStep);
+    if (currentL >= 0) {
+      for (const n of neurons[currentL]) {
+        n.gradLit = Math.min(1, n.gradLit + 0.1);
+      }
+      if (currentL < L) {
+        for (const row of weights[currentL]) {
+          for (const w of row) {
+            w.bwdLit = Math.min(1, w.bwdLit + 0.08);
+          }
+        }
+      }
+    } else {
+      phase = 'idle';
+    }
+  }
+
+  // Decay glow
+  for (let l = 0; l < LAYERS.length; l++) {
+    for (const n of neurons[l]) {
+      n.lit *= 0.995;
+      n.gradLit *= 0.995;
+    }
+  }
+  for (let l = 0; l < weights.length; l++) {
+    for (const row of weights[l]) {
+      for (const w of row) {
+        w.fwdLit *= 0.995;
+        w.bwdLit *= 0.995;
+      }
+    }
+  }
+
+  // Draw connections
+  for (let l = 0; l < weights.length; l++) {
+    for (let i = 0; i < weights[l].length; i++) {
+      for (let j = 0; j < weights[l][i].length; j++) {
+        const from = neurons[l][i];
+        const to = neurons[l + 1][j];
+        const w = weights[l][i][j];
+        const absW = Math.min(1, Math.abs(w.w));
+
+        // Forward pass: blue glow
+        if (w.fwdLit > 0.01) {
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.strokeStyle = `rgba(68,170,255,${w.fwdLit * 0.4})`;
+          ctx.lineWidth = 1 + w.fwdLit * 2;
+          ctx.stroke();
+        }
+
+        // Backward pass: red/orange glow
+        if (w.bwdLit > 0.01) {
+          ctx.beginPath();
+          ctx.moveTo(to.x, to.y);
+          ctx.lineTo(from.x, from.y);
+          ctx.strokeStyle = `rgba(244,68,136,${w.bwdLit * 0.5})`;
+          ctx.lineWidth = 1 + w.bwdLit * 3;
+          ctx.stroke();
+
+          // Gradient arrow particles flowing backward
+          const progress = (t * 2 + i * 0.3 + j * 0.5) % 1;
+          const px = to.x + (from.x - to.x) * progress;
+          const py = to.y + (from.y - to.y) * progress;
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, TAU);
+          ctx.fillStyle = `rgba(255,136,68,${w.bwdLit * 0.6})`;
+          ctx.fill();
+        }
+
+        // Base connection
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        const wColor = w.w > 0 ? `rgba(68,170,255,${absW * 0.12})` : `rgba(244,68,136,${absW * 0.12})`;
+        ctx.strokeStyle = wColor;
+        ctx.lineWidth = absW * 1.5 + 0.3;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw neurons
+  for (let l = 0; l < LAYERS.length; l++) {
+    for (let i = 0; i < neurons[l].length; i++) {
+      const n = neurons[l][i];
+      const r = 14;
+
+      // Gradient glow (backward pass - red/orange)
+      if (n.gradLit > 0.01) {
+        const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 3);
+        grad.addColorStop(0, `rgba(244,68,136,${n.gradLit * 0.3})`);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(n.x - r * 3, n.y - r * 3, r * 6, r * 6);
+      }
+
+      // Activation glow (forward pass - blue)
+      if (n.lit > 0.01) {
+        const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 2.5);
+        grad.addColorStop(0, `rgba(68,170,255,${n.lit * 0.25})`);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(n.x - r * 2.5, n.y - r * 2.5, r * 5, r * 5);
+      }
+
+      // Neuron body
+      const act = n.activation;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, TAU);
+      ctx.fillStyle = `rgba(${Math.round(68 + act * 180)},${Math.round(100 + act * 100)},${Math.round(200 + act * 55)},${0.2 + act * 0.5})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(68,170,255,${0.3 + act * 0.4})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Activation value text
+      ctx.font = '8px Courier New';
+      ctx.fillStyle = `rgba(200,220,255,${0.5 + act * 0.5})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(act.toFixed(2), n.x, n.y + 3);
+    }
+  }
+
+  // Layer labels
+  const labels = ['INPUT', 'HIDDEN 1', 'HIDDEN 2', 'OUTPUT'];
+  ctx.font = '8px Courier New';
+  ctx.textAlign = 'center';
+  for (let l = 0; l < LAYERS.length; l++) {
+    const x = neurons[l][0].x;
+    const topY = neurons[l][0].y - 40;
+    ctx.fillStyle = l === 0 ? 'rgba(68,170,255,0.4)' : l === LAYERS.length - 1 ? 'rgba(0,255,136,0.4)' : 'rgba(160,140,200,0.3)';
+    ctx.fillText(labels[l], x, topY);
+  }
+
+  // Phase indicator
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  if (phase === 'forward') {
+    ctx.fillStyle = 'rgba(68,170,255,0.6)';
+    ctx.fillText('→ FORWARD PASS →', W / 2, 60);
+  } else if (phase === 'backward') {
+    ctx.fillStyle = 'rgba(244,68,136,0.6)';
+    ctx.fillText('← BACKWARD PASS (CHAIN RULE) ←', W / 2, 60);
+  }
+
+  requestAnimationFrame(draw);
+}
+
+initNetwork();
+draw();
+</script>
+</body>
+</html>

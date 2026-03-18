@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>130D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</title>
+<title>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
@@ -316,10 +316,14 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div class="nav-group">
     <button class="nav-group-btn" style="color:#0c6">CUSTOM <span class="arrow">▼</span></button>
     <div class="nav-dropdown">
-      <div class="cat-label">PEOPLE</div>
+      <div class="cat-label">MO</div>
       <a href="#mo-geometry" data-id="mo-geometry"><span class="dot" style="background:#0a4"></span><span style="color:#0a4">MO · GEOMETRY</span></a>
       <a href="#mo-calligraphy" data-id="mo-calligraphy"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">MO · CALLIGRAPHY</span></a>
       <a href="#mo-crescent" data-id="mo-crescent"><span class="dot" style="background:#08c"></span><span style="color:#08c">MO · CRESCENT</span></a>
+      <div class="cat-label">ALEXB</div>
+      <a href="#alexb-backprop" data-id="alexb-backprop"><span class="dot" style="background:#f48"></span><span style="color:#f48">ALEXB · BACKPROP</span></a>
+      <a href="#alexb-attention" data-id="alexb-attention"><span class="dot" style="background:#4af"></span><span style="color:#4af">ALEXB · ATTENTION</span></a>
+      <a href="#alexb-gradient" data-id="alexb-gradient"><span class="dot" style="background:#8f4"></span><span style="color:#8f4">ALEXB · GRADIENT</span></a>
     </div>
   </div>
 </nav>
@@ -329,8 +333,8 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 
   <div id="gallery">
     <div class="header">
-      <h1>130D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">130 SHIELDS · 20 CATEGORIES · 7 PRIMES · M₇ = 2⁷-1 = 127</div>
+      <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
+      <div class="sub">133 SHIELDS · 20 CATEGORIES · 7 PRIMES · M₇ = 2⁷-1 = 127</div>
     </div>
 
     <div class="category">
@@ -517,7 +521,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <div class="cat-header">
         <span class="cat-label" style="color:#0c6">CUSTOM · PEOPLE</span>
         <div class="cat-line" style="background:#0c6"></div>
-        <span class="cat-count">3 SHIELDS · MO</span>
+        <span class="cat-count">6 SHIELDS · MO · ALEXB</span>
       </div>
       <div class="grid" id="grid-custom-people"></div>
     </div>
@@ -765,6 +769,9 @@ const CATEGORIES = {
       { id:'mo-geometry',    name:'MO · ISLAMIC GEOMETRY',  desc:'Sacred Islamic geometric patterns. Interlocking stars, arabesques, and tessellations inspired by mosque art. 8-fold and 12-fold symmetry with gold and emerald palette. Bismillah.', tag:'MO · GEOMETRY', tagColor:'#0a4', colors:['#0a4','#0c6','#fc0','#fff','#08c','#064','#0e8'] },
       { id:'mo-calligraphy', name:'MO · DIVINE FLOW',       desc:'Flowing curves inspired by Arabic calligraphic traditions. Golden ink traces sacred spirals on deep emerald. Thuluth-style flourishes bloom into infinite gardens of light.', tag:'MO · CALLIGRAPHY', tagColor:'#fc0', colors:['#fc0','#fa0','#0a4','#0c6','#fff','#f80','#fe0'] },
       { id:'mo-crescent',    name:'MO · CRESCENT LIGHT',    desc:'Crescent moon and stars over a peaceful night sky. Seven celestial rings honor the seven heavens. Stars pulse with dhikr rhythm. Tranquil azure and silver radiance.', tag:'MO · CRESCENT', tagColor:'#08c', colors:['#08c','#0af','#06a','#048','#fff','#fc0','#0cf'] },
+      { id:'alexb-backprop', name:'ALEXB · BACKPROP',        desc:'AI lesson: watch a neural network learn in real-time. Forward pass lights up neurons, loss computes at output, then gradient fire flows backward through every layer. See exactly how weights update. The chain rule, visualized.', tag:'ALEXB · BACKPROP', tagColor:'#f48', colors:['#f48','#f26','#f04','#4af','#08f','#04c','#fff'] },
+      { id:'alexb-attention', name:'ALEXB · ATTENTION',      desc:'AI lesson: how transformer self-attention actually works. Query, Key, Value matrices multiply and softmax into attention weights. Watch tokens attend to each other. The mechanism behind ChatGPT, laid bare.', tag:'ALEXB · ATTENTION', tagColor:'#4af', colors:['#4af','#28f','#06f','#f48','#f26','#f04','#fff'] },
+      { id:'alexb-gradient', name:'ALEXB · GRADIENT DESCENT', desc:'AI lesson: a ball rolls down a 3D loss landscape finding the minimum. Toggle learning rate to see overshooting vs. slow convergence. SGD vs momentum vs Adam optimizers race side by side. Feel the math.', tag:'ALEXB · GRADIENT', tagColor:'#8f4', colors:['#8f4','#6f2','#4f0','#fc0','#fa0','#f80','#fff'] },
     ]
   }
 };
