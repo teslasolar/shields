@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAURIE · DREAMSCAPE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#080818}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#a4f;opacity:0.7;text-align:center;pointer-events:none;line-height:2}
+#status{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:9px;letter-spacing:3px;color:#c6f;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="status">DREAMING · STEP <span id="stepNum">0</span>/50 · <span id="dreamType">FLOWERS</span></div>
+<div id="info">LAURIE · DREAMSCAPE · CLICK TO DREAM AGAIN<br>WATCH NOISE BECOME BEAUTY · DIFFUSION DENOISING</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const DREAMS = ['FLOWERS', 'STARS', 'SPIRALS', 'AURORA', 'CRYSTALS', 'WAVES'];
+let dreamIndex = 0;
+let dreamStep = 0;
+const TOTAL_STEPS = 50;
+let noiseField = [];
+let dreamField = [];
+const RES = 4; // pixel resolution
+let cols, rows;
+
+function initFields() {
+  cols = Math.ceil(W / RES);
+  rows = Math.ceil(H / RES);
+  noiseField = [];
+  dreamField = [];
+  for (let i = 0; i < cols * rows; i++) {
+    noiseField.push({
+      r: Math.random() * 255,
+      g: Math.random() * 255,
+      b: Math.random() * 255
+    });
+    dreamField.push({ r: 0, g: 0, b: 0 });
+  }
+}
+
+// Dream target generators
+function flowerTarget(x, y) {
+  const cx = W / 2, cy = H / 2;
+  const dx = x - cx, dy = y - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
+  const petals = 6;
+  const petalR = Math.sin(angle * petals) * 0.5 + 0.5;
+  const maxR = Math.min(W, H) * 0.4;
+  const inFlower = dist < maxR * petalR;
+  const center = dist < maxR * 0.15;
+
+  if (center) return { r: 255, g: 200, b: 50 }; // golden center
+  if (inFlower) {
+    const hue = (angle / TAU + 0.5) % 1;
+    return hsvToRgb(hue, 0.7, 0.9);
+  }
+  // Background - soft green
+  const leafiness = Math.sin(x * 0.02) * Math.cos(y * 0.02);
+  return { r: 20 + leafiness * 30, g: 60 + leafiness * 40, b: 20 };
+}
+
+function starsTarget(x, y) {
+  const cx = W / 2, cy = H / 2;
+  // Multiple stars at different positions
+  const starPositions = [
+    { x: cx, y: cy, r: 80 },
+    { x: cx - 200, y: cy - 100, r: 40 },
+    { x: cx + 180, y: cy + 80, r: 50 },
+    { x: cx - 100, y: cy + 150, r: 35 },
+    { x: cx + 120, y: cy - 130, r: 45 },
+  ];
+  for (const s of starPositions) {
+    const dx = x - s.x, dy = y - s.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx);
+    const starShape = Math.cos(angle * 5) * 0.3 + 0.7;
+    if (dist < s.r * starShape) {
+      const brightness = 1 - dist / (s.r * starShape);
+      return { r: 255 * brightness, g: 240 * brightness, b: 100 + 155 * brightness };
+    }
+  }
+  // Dark sky with subtle nebula
+  const nebula = Math.sin(x * 0.01 + y * 0.008) * 0.5 + 0.5;
+  return { r: 10 + nebula * 30, g: 5 + nebula * 15, b: 30 + nebula * 40 };
+}
+
+function spiralsTarget(x, y) {
+  const cx = W / 2, cy = H / 2;
+  const dx = x - cx, dy = y - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
+  const spiral = (angle + dist * 0.02) % (TAU / 3);
+  const band = Math.sin(spiral * 3) * 0.5 + 0.5;
+  const maxR = Math.min(W, H) * 0.45;
+  const falloff = Math.max(0, 1 - dist / maxR);
+  const hue = (angle / TAU + dist * 0.002) % 1;
+  const rgb = hsvToRgb(hue, 0.8, band * falloff);
+  return rgb;
+}
+
+function auroraTarget(x, y) {
+  const normY = y / H;
+  const wave1 = Math.sin(x * 0.008 + normY * 4) * 0.5 + 0.5;
+  const wave2 = Math.cos(x * 0.012 - normY * 3) * 0.5 + 0.5;
+  const curtain = wave1 * wave2;
+  const band = Math.max(0, 1 - Math.abs(normY - 0.35) * 4);
+  const intensity = curtain * band;
+  return {
+    r: intensity * 50,
+    g: intensity * 255,
+    b: intensity * 150 + (1 - band) * 20
+  };
+}
+
+function crystalsTarget(x, y) {
+  // Voronoi-like crystal structure
+  const seeds = [];
+  for (let i = 0; i < 12; i++) {
+    seeds.push({
+      x: (Math.sin(i * 2.3) * 0.5 + 0.5) * W,
+      y: (Math.cos(i * 3.1) * 0.5 + 0.5) * H,
+      hue: i / 12
+    });
+  }
+  let minDist = Infinity, minSeed = seeds[0], secondDist = Infinity;
+  for (const s of seeds) {
+    const d = Math.sqrt((x - s.x) ** 2 + (y - s.y) ** 2);
+    if (d < minDist) { secondDist = minDist; minDist = d; minSeed = s; }
+    else if (d < secondDist) secondDist = d;
+  }
+  const edge = Math.abs(minDist - secondDist) < 8 ? 1 : 0;
+  const rgb = hsvToRgb(minSeed.hue, 0.6, 0.5 + edge * 0.5);
+  return rgb;
+}
+
+function wavesTarget(x, y) {
+  const normX = x / W;
+  const normY = y / H;
+  const wave = Math.sin(normX * 8 + normY * 3) * Math.cos(normY * 6 - normX * 2);
+  const hue = (wave * 0.5 + 0.5) * 0.3 + 0.5; // blue-cyan range
+  const brightness = Math.abs(wave) * 0.7 + 0.2;
+  return hsvToRgb(hue, 0.7, brightness);
+}
+
+const dreamFunctions = [flowerTarget, starsTarget, spiralsTarget, auroraTarget, crystalsTarget, wavesTarget];
+
+function hsvToRgb(h, s, v) {
+  let r, g, b;
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  return { r: r * 255, g: g * 255, b: b * 255 };
+}
+
+function startDream() {
+  dreamStep = 0;
+  initFields();
+
+  // Compute dream target
+  const fn = dreamFunctions[dreamIndex % dreamFunctions.length];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = col * RES + RES / 2;
+      const y = row * RES + RES / 2;
+      dreamField[row * cols + col] = fn(x, y);
+    }
+  }
+
+  document.getElementById('dreamType').textContent = DREAMS[dreamIndex % DREAMS.length];
+}
+
+function stepDenoise() {
+  if (dreamStep >= TOTAL_STEPS) return;
+  dreamStep++;
+  document.getElementById('stepNum').textContent = dreamStep;
+
+  const progress = dreamStep / TOTAL_STEPS;
+  // Ease in - slow start, fast finish
+  const blend = Math.pow(progress, 0.7);
+
+  for (let i = 0; i < noiseField.length; i++) {
+    const n = noiseField[i];
+    const d = dreamField[i];
+
+    // Blend noise toward dream + add diminishing noise
+    const noiseAmt = (1 - blend) * 0.3;
+    n.r = n.r * (1 - blend * 0.15) + d.r * blend * 0.15 + (Math.random() - 0.5) * noiseAmt * 255;
+    n.g = n.g * (1 - blend * 0.15) + d.g * blend * 0.15 + (Math.random() - 0.5) * noiseAmt * 255;
+    n.b = n.b * (1 - blend * 0.15) + d.b * blend * 0.15 + (Math.random() - 0.5) * noiseAmt * 255;
+
+    n.r = Math.max(0, Math.min(255, n.r));
+    n.g = Math.max(0, Math.min(255, n.g));
+    n.b = Math.max(0, Math.min(255, n.b));
+  }
+}
+
+C.addEventListener('click', () => {
+  dreamIndex++;
+  startDream();
+});
+
+function draw() {
+  // Run a denoise step each frame
+  stepDenoise();
+
+  // Render field
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const p = noiseField[row * cols + col];
+      // Fill RES x RES block
+      for (let dy = 0; dy < RES && row * RES + dy < H; dy++) {
+        for (let dx = 0; dx < RES && col * RES + dx < W; dx++) {
+          const idx = ((row * RES + dy) * W + col * RES + dx) * 4;
+          data[idx] = p.r;
+          data[idx + 1] = p.g;
+          data[idx + 2] = p.b;
+          data[idx + 3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Progress bar
+  const barW = 200;
+  const barH = 4;
+  const barX = W / 2 - barW / 2;
+  const barY = 50;
+  ctx.fillStyle = 'rgba(20,20,40,0.6)';
+  ctx.fillRect(barX, barY, barW, barH);
+  const progress = dreamStep / TOTAL_STEPS;
+  const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+  grad.addColorStop(0, '#a4f');
+  grad.addColorStop(0.5, '#f4a');
+  grad.addColorStop(1, '#fc0');
+  ctx.fillStyle = grad;
+  ctx.fillRect(barX, barY, barW * progress, barH);
+
+  // Step label
+  ctx.font = '7px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(200,180,255,0.5)';
+  if (dreamStep < TOTAL_STEPS) {
+    ctx.fillText('DENOISING...', W / 2, barY + 16);
+  } else {
+    ctx.fillText('DREAM COMPLETE · CLICK FOR NEXT', W / 2, barY + 16);
+  }
+
+  requestAnimationFrame(draw);
+}
+
+startDream();
+draw();
+</script>
+</body>
+</html>

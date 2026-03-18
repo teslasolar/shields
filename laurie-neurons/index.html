@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAURIE · NEURON PARTY</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0818}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#f4a;opacity:0.7;text-align:center;pointer-events:none;line-height:2}
+#score{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:11px;letter-spacing:3px;color:#fc0;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="score">NEURON PARTY · <span id="acc">0</span>% ACCURACY</div>
+<div id="info">LAURIE · NEURON PARTY · CLICK TO ADD EXCITEMENT</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const COLORS = ['#f4a','#fc0','#0ff','#8f4','#a4f','#f84','#4af','#f48'];
+const NEURON_COUNT = 40;
+const neurons = [];
+const signals = [];
+const confetti = [];
+let accuracy = 0;
+let correctCount = 0;
+let totalGuesses = 0;
+
+class Neuron {
+  constructor(x, y, layer) {
+    this.x = x;
+    this.y = y;
+    this.targetX = x;
+    this.targetY = y;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.r = 12 + Math.random() * 8;
+    this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    this.activation = 0;
+    this.phase = Math.random() * TAU;
+    this.layer = layer;
+    this.happy = 0; // joy level
+    this.connections = [];
+    this.eyeOffset = Math.random() * 2 - 1;
+  }
+  update() {
+    // Gentle bouncing
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Bounce off walls with some padding
+    const pad = 60;
+    if (this.x < pad) { this.x = pad; this.vx = Math.abs(this.vx); }
+    if (this.x > W - pad) { this.x = W - pad; this.vx = -Math.abs(this.vx); }
+    if (this.y < pad + 40) { this.y = pad + 40; this.vy = Math.abs(this.vy); }
+    if (this.y > H - pad) { this.y = H - pad; this.vy = -Math.abs(this.vy); }
+
+    // Slow wobble
+    this.vx += (Math.random() - 0.5) * 0.02;
+    this.vy += (Math.random() - 0.5) * 0.02;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+
+    // Decay activation
+    this.activation *= 0.96;
+    this.happy *= 0.98;
+    this.phase += 0.03;
+  }
+  draw() {
+    const bounce = Math.sin(this.phase) * 3;
+    const drawY = this.y + bounce;
+    const r = this.r + this.activation * 5;
+
+    // Glow when activated
+    if (this.activation > 0.05) {
+      const glow = ctx.createRadialGradient(this.x, drawY, 0, this.x, drawY, r * 3);
+      glow.addColorStop(0, this.color + Math.round(this.activation * 60).toString(16).padStart(2, '0'));
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.fillRect(this.x - r * 3, drawY - r * 3, r * 6, r * 6);
+    }
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(this.x, drawY, r, 0, TAU);
+    ctx.fillStyle = this.color + '44';
+    ctx.fill();
+    ctx.strokeStyle = this.color + (this.activation > 0.3 ? 'cc' : '66');
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Eyes (cute!)
+    const eyeSpacing = r * 0.3;
+    const eyeY = drawY - r * 0.1;
+    const eyeR = r * 0.15;
+    const lookAngle = Math.atan2(Math.sin(t + this.eyeOffset), Math.cos(t * 0.7 + this.eyeOffset));
+    const lookDist = eyeR * 0.3;
+
+    for (let side = -1; side <= 1; side += 2) {
+      const ex = this.x + side * eyeSpacing;
+      // White
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, eyeR, 0, TAU);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      // Pupil
+      ctx.beginPath();
+      ctx.arc(ex + Math.cos(lookAngle) * lookDist, eyeY + Math.sin(lookAngle) * lookDist, eyeR * 0.5, 0, TAU);
+      ctx.fillStyle = '#222';
+      ctx.fill();
+    }
+
+    // Mouth - happy when activated or correct
+    const smile = this.happy > 0.1 ? 0.5 : (this.activation > 0.3 ? 0.3 : 0.1);
+    ctx.beginPath();
+    ctx.arc(this.x, drawY + r * 0.2, r * 0.25, 0, Math.PI * smile + Math.PI * 0.5);
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Party hat when very happy
+    if (this.happy > 0.5) {
+      ctx.beginPath();
+      ctx.moveTo(this.x - r * 0.3, drawY - r);
+      ctx.lineTo(this.x, drawY - r * 1.6);
+      ctx.lineTo(this.x + r * 0.3, drawY - r);
+      ctx.fillStyle = COLORS[Math.floor(t * 3) % COLORS.length] + '88';
+      ctx.fill();
+    }
+  }
+  fire() {
+    this.activation = 1;
+    // Send signals to connections
+    for (const target of this.connections) {
+      signals.push(new Signal(this, target));
+    }
+  }
+}
+
+class Signal {
+  constructor(from, to) {
+    this.from = from;
+    this.to = to;
+    this.progress = 0;
+    this.speed = 0.02 + Math.random() * 0.02;
+    this.color = from.color;
+  }
+  update() {
+    this.progress += this.speed;
+    if (this.progress >= 1) {
+      this.to.activation = Math.min(1, this.to.activation + 0.5);
+      // Chain reaction with probability
+      if (Math.random() < 0.3) {
+        this.to.fire();
+      }
+      return true; // done
+    }
+    return false;
+  }
+  draw() {
+    const x = this.from.x + (this.to.x - this.from.x) * this.progress;
+    const y = this.from.y + (this.to.y - this.from.y) * this.progress;
+    const r = 4 + Math.sin(this.progress * Math.PI) * 3;
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    const alpha = Math.sin(this.progress * Math.PI);
+    ctx.fillStyle = this.color + Math.round(alpha * 200).toString(16).padStart(2, '0');
+    ctx.fill();
+
+    // Sparkle trail
+    for (let i = 0; i < 3; i++) {
+      const tx = x + (Math.random() - 0.5) * 10;
+      const ty = y + (Math.random() - 0.5) * 10;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 1.5, 0, TAU);
+      ctx.fillStyle = this.color + '44';
+      ctx.fill();
+    }
+  }
+}
+
+class Confetto {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 8;
+    this.vy = -Math.random() * 8 - 2;
+    this.rotation = Math.random() * TAU;
+    this.rotSpeed = (Math.random() - 0.5) * 0.3;
+    this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    this.size = 3 + Math.random() * 4;
+    this.life = 1;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.15; // gravity
+    this.rotation += this.rotSpeed;
+    this.life -= 0.008;
+    return this.life > 0;
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.fillStyle = this.color + Math.round(this.life * 200).toString(16).padStart(2, '0');
+    ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size * 0.6);
+    ctx.restore();
+  }
+}
+
+// Initialize neurons
+for (let i = 0; i < NEURON_COUNT; i++) {
+  const layer = Math.floor(i / (NEURON_COUNT / 4));
+  const n = new Neuron(
+    100 + Math.random() * (W - 200),
+    100 + Math.random() * (H - 200),
+    layer
+  );
+  neurons.push(n);
+}
+
+// Create connections (each neuron connects to 2-4 nearby neurons)
+for (const n of neurons) {
+  const others = neurons.filter(o => o !== n)
+    .sort((a, b) => {
+      const da = (a.x - n.x) ** 2 + (a.y - n.y) ** 2;
+      const db = (b.x - n.x) ** 2 + (b.y - n.y) ** 2;
+      return da - db;
+    });
+  const count = 2 + Math.floor(Math.random() * 3);
+  n.connections = others.slice(0, count);
+}
+
+// Periodic "learning" events
+let nextEvent = 60;
+function triggerLearning() {
+  // Random neuron fires
+  const starter = neurons[Math.floor(Math.random() * neurons.length)];
+  starter.fire();
+
+  // "Guess" result
+  totalGuesses++;
+  if (Math.random() < 0.3 + accuracy * 0.005) {
+    correctCount++;
+    // Celebration!
+    for (const n of neurons) n.happy = 1;
+    // Confetti
+    for (let i = 0; i < 30; i++) {
+      confetti.push(new Confetto(W / 2 + (Math.random() - 0.5) * 200, H / 2));
+    }
+  }
+  accuracy = totalGuesses > 0 ? Math.round((correctCount / totalGuesses) * 100) : 0;
+  document.getElementById('acc').textContent = accuracy;
+  nextEvent = 80 + Math.random() * 120;
+}
+
+// Click to excite
+C.addEventListener('click', e => {
+  const rect = C.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top) * (H / rect.height);
+
+  // Find nearest neuron
+  let closest = null, minDist = Infinity;
+  for (const n of neurons) {
+    const d = Math.sqrt((n.x - mx) ** 2 + (n.y - my) ** 2);
+    if (d < minDist) { minDist = d; closest = n; }
+  }
+  if (closest && minDist < 60) {
+    closest.fire();
+    closest.happy = 1;
+    // Bonus confetti
+    for (let i = 0; i < 10; i++) {
+      confetti.push(new Confetto(closest.x, closest.y));
+    }
+  }
+});
+
+function drawConnections() {
+  for (const n of neurons) {
+    for (const target of n.connections) {
+      const alpha = 0.03 + Math.max(n.activation, target.activation) * 0.15;
+      ctx.beginPath();
+      ctx.moveTo(n.x, n.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.strokeStyle = `rgba(200,180,255,${alpha})`;
+      ctx.lineWidth = 0.5 + Math.max(n.activation, target.activation) * 1.5;
+      ctx.stroke();
+    }
+  }
+}
+
+function draw() {
+  t += 0.016;
+  ctx.fillStyle = 'rgba(10,8,24,0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Periodic learning
+  nextEvent--;
+  if (nextEvent <= 0) triggerLearning();
+
+  drawConnections();
+
+  // Update & draw signals
+  for (let i = signals.length - 1; i >= 0; i--) {
+    if (signals[i].update()) {
+      signals.splice(i, 1);
+    } else {
+      signals[i].draw();
+    }
+  }
+
+  // Update & draw neurons
+  for (const n of neurons) {
+    n.update();
+    n.draw();
+  }
+
+  // Update & draw confetti
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    if (!confetti[i].update()) {
+      confetti.splice(i, 1);
+    } else {
+      confetti[i].draw();
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

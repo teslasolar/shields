@@ -32,6 +32,15 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 .nav-dropdown .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 .nav-dropdown .cat-label{font-size:7px;letter-spacing:2px;padding:6px 14px 3px;opacity:.4}
 
+/* NESTED SUB-DROPDOWNS (people in CUSTOM) */
+.nav-sub{position:relative}
+.nav-sub-btn{display:flex;align-items:center;gap:8px;font-size:8px;letter-spacing:1.5px;padding:7px 14px;cursor:pointer;white-space:nowrap;transition:all .15s;width:100%;background:none;border:none;font-family:inherit}
+.nav-sub-btn:hover{background:rgba(0,170,255,.08)}
+.nav-sub-btn .sub-arrow{font-size:5px;opacity:.4;margin-left:auto;transition:transform .2s}
+.nav-sub:hover .sub-arrow{transform:rotate(90deg)}
+.nav-sub-items{display:none;padding:0 0 0 12px;border-left:1px solid rgba(0,170,255,.08);margin-left:18px}
+.nav-sub:hover .nav-sub-items{display:block}
+
 /* CONTENT AREA */
 #content{position:absolute;top:36px;left:0;right:0;bottom:0}
 #viewer{width:100%;height:100%;border:none;background:#060610}
@@ -316,14 +325,30 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div class="nav-group">
     <button class="nav-group-btn" style="color:#0c6">CUSTOM <span class="arrow">▼</span></button>
     <div class="nav-dropdown">
-      <div class="cat-label">MO</div>
-      <a href="#mo-geometry" data-id="mo-geometry"><span class="dot" style="background:#0a4"></span><span style="color:#0a4">MO · GEOMETRY</span></a>
-      <a href="#mo-calligraphy" data-id="mo-calligraphy"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">MO · CALLIGRAPHY</span></a>
-      <a href="#mo-crescent" data-id="mo-crescent"><span class="dot" style="background:#08c"></span><span style="color:#08c">MO · CRESCENT</span></a>
-      <div class="cat-label">ALEXB</div>
-      <a href="#alexb-backprop" data-id="alexb-backprop"><span class="dot" style="background:#f48"></span><span style="color:#f48">ALEXB · BACKPROP</span></a>
-      <a href="#alexb-attention" data-id="alexb-attention"><span class="dot" style="background:#4af"></span><span style="color:#4af">ALEXB · ATTENTION</span></a>
-      <a href="#alexb-gradient" data-id="alexb-gradient"><span class="dot" style="background:#8f4"></span><span style="color:#8f4">ALEXB · GRADIENT</span></a>
+      <div class="nav-sub">
+        <button class="nav-sub-btn" style="color:#0a4"><span class="dot" style="background:#0a4"></span> MO <span class="sub-arrow">▶</span></button>
+        <div class="nav-sub-items">
+          <a href="#mo-geometry" data-id="mo-geometry"><span class="dot" style="background:#0a4"></span><span style="color:#0a4">GEOMETRY</span></a>
+          <a href="#mo-calligraphy" data-id="mo-calligraphy"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">CALLIGRAPHY</span></a>
+          <a href="#mo-crescent" data-id="mo-crescent"><span class="dot" style="background:#08c"></span><span style="color:#08c">CRESCENT</span></a>
+        </div>
+      </div>
+      <div class="nav-sub">
+        <button class="nav-sub-btn" style="color:#f48"><span class="dot" style="background:#f48"></span> ALEXB <span class="sub-arrow">▶</span></button>
+        <div class="nav-sub-items">
+          <a href="#alexb-backprop" data-id="alexb-backprop"><span class="dot" style="background:#f48"></span><span style="color:#f48">BACKPROP</span></a>
+          <a href="#alexb-attention" data-id="alexb-attention"><span class="dot" style="background:#4af"></span><span style="color:#4af">ATTENTION</span></a>
+          <a href="#alexb-gradient" data-id="alexb-gradient"><span class="dot" style="background:#8f4"></span><span style="color:#8f4">GRADIENT</span></a>
+        </div>
+      </div>
+      <div class="nav-sub">
+        <button class="nav-sub-btn" style="color:#f4a"><span class="dot" style="background:#f4a"></span> LAURIES <span class="sub-arrow">▶</span></button>
+        <div class="nav-sub-items">
+          <a href="#laurie-neurons" data-id="laurie-neurons"><span class="dot" style="background:#f4a"></span><span style="color:#f4a">NEURON PARTY</span></a>
+          <a href="#laurie-dreamscape" data-id="laurie-dreamscape"><span class="dot" style="background:#a4f"></span><span style="color:#a4f">DREAMSCAPE</span></a>
+          <a href="#laurie-chatflow" data-id="laurie-chatflow"><span class="dot" style="background:#0ff"></span><span style="color:#0ff">CHATFLOW</span></a>
+        </div>
+      </div>
     </div>
   </div>
 </nav>
@@ -334,7 +359,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
   <div id="gallery">
     <div class="header">
       <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">133 SHIELDS · 20 CATEGORIES · 7 PRIMES · M₇ = 2⁷-1 = 127</div>
+      <div class="sub">136 SHIELDS · 20 CATEGORIES · 7 PRIMES · M₇ = 2⁷-1 = 127</div>
     </div>
 
     <div class="category">
@@ -521,7 +546,7 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <div class="cat-header">
         <span class="cat-label" style="color:#0c6">CUSTOM · PEOPLE</span>
         <div class="cat-line" style="background:#0c6"></div>
-        <span class="cat-count">6 SHIELDS · MO · ALEXB</span>
+        <span class="cat-count">9 SHIELDS · MO · ALEXB · LAURIES</span>
       </div>
       <div class="grid" id="grid-custom-people"></div>
     </div>
@@ -772,6 +797,9 @@ const CATEGORIES = {
       { id:'alexb-backprop', name:'ALEXB · BACKPROP',        desc:'AI lesson: watch a neural network learn in real-time. Forward pass lights up neurons, loss computes at output, then gradient fire flows backward through every layer. See exactly how weights update. The chain rule, visualized.', tag:'ALEXB · BACKPROP', tagColor:'#f48', colors:['#f48','#f26','#f04','#4af','#08f','#04c','#fff'] },
       { id:'alexb-attention', name:'ALEXB · ATTENTION',      desc:'AI lesson: how transformer self-attention actually works. Query, Key, Value matrices multiply and softmax into attention weights. Watch tokens attend to each other. The mechanism behind ChatGPT, laid bare.', tag:'ALEXB · ATTENTION', tagColor:'#4af', colors:['#4af','#28f','#06f','#f48','#f26','#f04','#fff'] },
       { id:'alexb-gradient', name:'ALEXB · GRADIENT DESCENT', desc:'AI lesson: a ball rolls down a 3D loss landscape finding the minimum. Toggle learning rate to see overshooting vs. slow convergence. SGD vs momentum vs Adam optimizers race side by side. Feel the math.', tag:'ALEXB · GRADIENT', tagColor:'#8f4', colors:['#8f4','#6f2','#4f0','#fc0','#fa0','#f80','#fff'] },
+      { id:'laurie-neurons', name:'LAURIE · NEURON PARTY',    desc:'Bouncy AI neurons throw activation signals at each other like a party! Neurons light up in chains, form teams, and learn to recognize smiley faces. Confetti when they get it right. Pure joy.', tag:'LAURIE · PARTY', tagColor:'#f4a', colors:['#f4a','#f28','#fc0','#0ff','#8f4','#a4f','#fff'] },
+      { id:'laurie-dreamscape', name:'LAURIE · DREAMSCAPE',   desc:'Watch AI dreams form from pure noise. Diffusion denoising in real-time — random static slowly crystallizes into flowers, stars, and spirals. Each dream is unique. Click to dream again.', tag:'LAURIE · DREAM', tagColor:'#a4f', colors:['#a4f','#c6f','#f4a','#fc0','#0ff','#84f','#fff'] },
+      { id:'laurie-chatflow', name:'LAURIE · CHATFLOW',       desc:'See how AI generates text token by token. Probability rainbows show which word comes next. Watch the beam search tree branch and prune. Type a prompt and watch the magic unfold letter by letter.', tag:'LAURIE · CHAT', tagColor:'#0ff', colors:['#0ff','#0ef','#0df','#f4a','#fc0','#a4f','#fff'] },
     ]
   }
 };
