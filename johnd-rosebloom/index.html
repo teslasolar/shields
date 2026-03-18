@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JOHND · ROSE BLOOM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#080008}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#f48;opacity:0.6;text-align:center;pointer-events:none;line-height:2}
+#rose-name{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:10px;letter-spacing:3px;color:#f4a;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="rose-name">r = cos(<span id="kval">3</span>θ) · <span id="petals">3</span> PETALS</div>
+<div id="info">JOHND · ROSE BLOOM · CLICK TO BLOOM A NEW ROSE<br>MATHEMATICAL ROSES · POLAR CURVES OF LOVE</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, cx, cy, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Rose parameters
+const ROSE_CONFIGS = [
+  { k: 2, label: '4 PETALS', petalCount: 4 },
+  { k: 3, label: '3 PETALS', petalCount: 3 },
+  { k: 4, label: '8 PETALS', petalCount: 8 },
+  { k: 5, label: '5 PETALS', petalCount: 5 },
+  { k: 7, label: '7 PETALS', petalCount: 7 },
+  { k: 2/3, label: '6-LOOP ROSE', petalCount: 6 },
+  { k: 3/2, label: '3-PETAL WIDE', petalCount: 3 },
+  { k: 5/3, label: '5-LOOP ROSE', petalCount: 5 },
+];
+let roseIndex = 1; // start with k=3
+let k = ROSE_CONFIGS[roseIndex].k;
+let bloomProgress = 0; // 0 to 1
+let blooming = true;
+
+// Dewdrop particles
+const dewdrops = [];
+class Dewdrop {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.r = 1 + Math.random() * 3;
+    this.life = 1;
+    this.shimmerPhase = Math.random() * TAU;
+    this.drift = (Math.random() - 0.5) * 0.3;
+  }
+  update() {
+    this.y += 0.2 + this.r * 0.1;
+    this.x += this.drift;
+    this.life -= 0.003;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    const shimmer = 0.3 + 0.3 * Math.sin(t * 4 + this.shimmerPhase);
+    const alpha = this.life * shimmer;
+
+    // Dewdrop = small circle with highlight
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, TAU);
+    ctx.fillStyle = `rgba(255,200,230,${alpha * 0.4})`;
+    ctx.fill();
+
+    // Highlight
+    ctx.beginPath();
+    ctx.arc(this.x - this.r * 0.3, this.y - this.r * 0.3, this.r * 0.3, 0, TAU);
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.6})`;
+    ctx.fill();
+  }
+}
+
+// Falling petals (background ambiance)
+const fallingPetals = [];
+class FallingPetal {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = -20;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = 0.5 + Math.random() * 1;
+    this.rotation = Math.random() * TAU;
+    this.rotSpeed = (Math.random() - 0.5) * 0.05;
+    this.size = 4 + Math.random() * 6;
+    this.hue = 330 + Math.random() * 30;
+  }
+  update() {
+    this.x += this.vx + Math.sin(t + this.y * 0.01) * 0.3;
+    this.y += this.vy;
+    this.rotation += this.rotSpeed;
+    return this.y < H + 20;
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.beginPath();
+    // Petal shape
+    ctx.ellipse(0, 0, this.size, this.size * 0.5, 0, 0, TAU);
+    ctx.fillStyle = `hsla(${this.hue},70%,70%,0.08)`;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function newRose() {
+  roseIndex = (roseIndex + 1) % ROSE_CONFIGS.length;
+  const config = ROSE_CONFIGS[roseIndex];
+  k = config.k;
+  bloomProgress = 0;
+  blooming = true;
+  document.getElementById('kval').textContent = k % 1 === 0 ? k : k.toFixed(2);
+  document.getElementById('petals').textContent = config.petalCount;
+  document.querySelector('#rose-name').textContent = `r = cos(${k % 1 === 0 ? k : k.toFixed(2)}θ) · ${config.label}`;
+}
+
+C.addEventListener('click', newRose);
+
+function drawRose() {
+  const maxR = Math.min(W, H) * 0.35;
+  const steps = 1000;
+  const drawSteps = Math.floor(steps * bloomProgress);
+
+  // Multiple layers with different offsets for depth
+  const layers = [
+    { offset: 0, color: '#ff3080', alpha: 0.5, width: 2.5 },
+    { offset: 0.02, color: '#ff60a0', alpha: 0.3, width: 1.5 },
+    { offset: 0.04, color: '#ff90c0', alpha: 0.15, width: 1 },
+    { offset: -0.02, color: '#ff2060', alpha: 0.2, width: 1 },
+  ];
+
+  for (const layer of layers) {
+    ctx.beginPath();
+    for (let i = 0; i <= drawSteps; i++) {
+      const theta = (i / steps) * TAU * (k % 1 === 0 ? 1 : 3) + layer.offset;
+      const r = Math.cos(k * theta) * maxR;
+      const x = cx + r * Math.cos(theta);
+      const y = cy + r * Math.sin(theta);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = layer.color + Math.round(layer.alpha * 255).toString(16).padStart(2, '0');
+    ctx.lineWidth = layer.width;
+    ctx.stroke();
+  }
+
+  // Fill with gradient when fully bloomed
+  if (bloomProgress > 0.95) {
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const theta = (i / steps) * TAU * (k % 1 === 0 ? 1 : 3);
+      const r = Math.cos(k * theta) * maxR;
+      const x = cx + r * Math.cos(theta);
+      const y = cy + r * Math.sin(theta);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
+    grad.addColorStop(0, 'rgba(255,100,160,0.06)');
+    grad.addColorStop(0.5, 'rgba(255,50,120,0.03)');
+    grad.addColorStop(1, 'rgba(200,0,80,0.01)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  // Spawn dewdrops along the curve tip
+  if (blooming && bloomProgress < 1) {
+    const theta = bloomProgress * TAU * (k % 1 === 0 ? 1 : 3);
+    const r = Math.cos(k * theta) * maxR;
+    const x = cx + r * Math.cos(theta);
+    const y = cy + r * Math.sin(theta);
+    if (Math.random() < 0.4) {
+      dewdrops.push(new Dewdrop(x, y));
+    }
+  }
+}
+
+// Golden center
+function drawCenter() {
+  const pulse = 1 + Math.sin(t * 2) * 0.1;
+  const r = 12 * pulse * bloomProgress;
+
+  // Warm glow
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 4);
+  glow.addColorStop(0, `rgba(255,200,50,${0.1 * bloomProgress})`);
+  glow.addColorStop(0.5, `rgba(255,150,80,${0.04 * bloomProgress})`);
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.fillRect(cx - r * 4, cy - r * 4, r * 8, r * 8);
+
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.fillStyle = `rgba(255,200,80,${0.4 * bloomProgress})`;
+  ctx.fill();
+
+  // Stamen dots
+  const stamenCount = 8;
+  for (let i = 0; i < stamenCount; i++) {
+    const a = (i / stamenCount) * TAU + t * 0.2;
+    const sr = r * 2 + Math.sin(t + i) * 3;
+    const sx = cx + Math.cos(a) * sr;
+    const sy = cy + Math.sin(a) * sr;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2, 0, TAU);
+    ctx.fillStyle = `rgba(255,220,100,${0.2 * bloomProgress})`;
+    ctx.fill();
+  }
+}
+
+function draw() {
+  t += 0.016;
+  ctx.fillStyle = 'rgba(8,0,8,0.06)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Bloom progress
+  if (blooming) {
+    bloomProgress = Math.min(1, bloomProgress + 0.003);
+    if (bloomProgress >= 1) blooming = false;
+  }
+
+  // Background falling petals
+  if (Math.random() < 0.05) fallingPetals.push(new FallingPetal());
+  for (let i = fallingPetals.length - 1; i >= 0; i--) {
+    if (!fallingPetals[i].update()) fallingPetals.splice(i, 1);
+    else fallingPetals[i].draw();
+  }
+
+  // Rose
+  drawRose();
+  drawCenter();
+
+  // Dewdrops
+  for (let i = dewdrops.length - 1; i >= 0; i--) {
+    dewdrops[i].update();
+    dewdrops[i].draw();
+    if (dewdrops[i].life <= 0) dewdrops.splice(i, 1);
+  }
+
+  // Decorative outer ring
+  const ringR = Math.min(W, H) * 0.42;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, 0, TAU);
+  ctx.strokeStyle = `rgba(255,80,160,${0.03 + bloomProgress * 0.02})`;
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Petal count indicators around the ring
+  const petalCount = ROSE_CONFIGS[roseIndex].petalCount;
+  for (let i = 0; i < petalCount; i++) {
+    const a = (i / petalCount) * TAU - Math.PI / 2;
+    const px = cx + Math.cos(a) * ringR;
+    const py = cy + Math.sin(a) * ringR;
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, TAU);
+    ctx.fillStyle = `rgba(255,100,180,${0.15 * bloomProgress})`;
+    ctx.fill();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

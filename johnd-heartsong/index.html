@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JOHND · HEARTSONG</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#080010}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#f4a;opacity:0.6;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">JOHND · HEARTSONG · 528 HZ · THE LOVE FREQUENCY</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, cx, cy, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Heartbeat rhythm
+const BPM = 72;
+const beatInterval = 60 / BPM;
+let lastBeat = 0;
+let beatPhase = 0; // 0-1
+
+// Ripples from heartbeats
+const ripples = [];
+class Ripple {
+  constructor() {
+    this.r = 0;
+    this.maxR = Math.min(W, H) * 0.5;
+    this.alpha = 0.5;
+  }
+  update() {
+    this.r += 2.5;
+    this.alpha = Math.max(0, 0.5 * (1 - this.r / this.maxR));
+    return this.r < this.maxR;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(cx, cy, this.r, 0, TAU);
+    ctx.strokeStyle = `rgba(255,80,160,${this.alpha})`;
+    ctx.lineWidth = 2 + (1 - this.r / this.maxR) * 3;
+    ctx.stroke();
+  }
+}
+
+// Cardioid curve: r = a(1 + cos θ)
+function drawCardioid(size, rotation, color, alpha, lineWidth) {
+  ctx.beginPath();
+  for (let i = 0; i <= 360; i++) {
+    const theta = (i / 360) * TAU + rotation;
+    const r = size * (1 + Math.cos(theta));
+    const x = cx + r * Math.cos(theta);
+    const y = cy + r * Math.sin(theta) * 0.9 - size * 0.3; // shift up
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+  ctx.lineWidth = lineWidth;
+  ctx.stroke();
+}
+
+// Heart shape via parametric
+function heartX(t) { return 16 * Math.pow(Math.sin(t), 3); }
+function heartY(t) { return -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)); }
+
+function drawHeart(scale, offsetY, color, alpha) {
+  ctx.beginPath();
+  for (let i = 0; i <= 100; i++) {
+    const a = (i / 100) * TAU;
+    const x = cx + heartX(a) * scale;
+    const y = cy + heartY(a) * scale + offsetY;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+// Sound wave rings (528 Hz visualization)
+function drawSoundWaves() {
+  const waveCount = 5;
+  for (let w = 0; w < waveCount; w++) {
+    const baseR = 80 + w * 40;
+    const waveFreq = 528 / (80 + w * 20); // mapped frequency
+    ctx.beginPath();
+    for (let i = 0; i <= 360; i++) {
+      const a = (i / 360) * TAU;
+      const wave = Math.sin(a * waveFreq + t * 3) * (8 + beatPhase * 5);
+      const r = baseR + wave;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r - 10;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    const hue = 330 + w * 8;
+    const alpha = 0.08 + beatPhase * 0.06;
+    ctx.strokeStyle = `hsla(${hue},80%,65%,${alpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+// Musical note particles
+const notes = [];
+const NOTE_SYMBOLS = ['\u266A', '\u266B', '\u2669', '\u266C'];
+class NoteParticle {
+  constructor() {
+    const angle = Math.random() * TAU;
+    const r = 60 + Math.random() * 40;
+    this.x = cx + Math.cos(angle) * r;
+    this.y = cy + Math.sin(angle) * r - 10;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = -Math.random() * 2 - 0.5;
+    this.life = 1;
+    this.symbol = NOTE_SYMBOLS[Math.floor(Math.random() * NOTE_SYMBOLS.length)];
+    this.size = 10 + Math.random() * 10;
+    this.rotation = (Math.random() - 0.5) * 0.5;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy -= 0.01; // float up
+    this.vx += (Math.random() - 0.5) * 0.1;
+    this.life -= 0.005;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(Math.sin(t * 2 + this.rotation * 10) * 0.2);
+    ctx.font = `${this.size}px serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `hsla(${330 + Math.random() * 30},80%,70%,${this.life * 0.5})`;
+    ctx.fillText(this.symbol, 0, 0);
+    ctx.restore();
+  }
+}
+
+// EKG / heartbeat line
+function drawEKG() {
+  const ekgW = 300;
+  const ekgH = 40;
+  const ekgX = cx - ekgW / 2;
+  const ekgY = cy + 120;
+
+  ctx.beginPath();
+  for (let i = 0; i < ekgW; i++) {
+    const progress = (i / ekgW + t * 0.3) % 1;
+    let y = 0;
+
+    // QRS complex shape
+    const p = progress % 0.25 * 4; // normalize to 0-1 within each beat
+    if (p > 0.35 && p < 0.4) y = -ekgH * 0.3; // P wave
+    else if (p > 0.45 && p < 0.47) y = -ekgH * 0.2; // Q
+    else if (p > 0.47 && p < 0.52) y = ekgH; // R peak
+    else if (p > 0.52 && p < 0.55) y = -ekgH * 0.3; // S
+    else if (p > 0.6 && p < 0.7) y = ekgH * 0.2; // T wave
+    else y = 0;
+
+    const x = ekgX + i;
+    const yy = ekgY + y * Math.sin(p * Math.PI * 2) * 0.5;
+    if (i === 0) ctx.moveTo(x, ekgY - y);
+    else ctx.lineTo(x, ekgY - y);
+  }
+  ctx.strokeStyle = 'rgba(255,80,160,0.25)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // "528 Hz" label
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,160,200,0.3)';
+  ctx.fillText('528 Hz · LOVE FREQUENCY', cx, ekgY + 25);
+}
+
+function draw() {
+  t += 0.016;
+  ctx.fillStyle = 'rgba(8,0,16,0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Heartbeat timing
+  const beatTime = t % beatInterval;
+  beatPhase = Math.pow(Math.max(0, 1 - beatTime / 0.15), 2); // sharp spike, fast decay
+
+  // Trigger new beat
+  if (Math.floor(t / beatInterval) !== Math.floor(lastBeat / beatInterval)) {
+    ripples.push(new Ripple());
+    // Spawn notes
+    for (let i = 0; i < 3; i++) notes.push(new NoteParticle());
+  }
+  lastBeat = t;
+
+  // Background warmth
+  const warmth = ctx.createRadialGradient(cx, cy - 10, 0, cx, cy, Math.min(W, H) * 0.5);
+  warmth.addColorStop(0, `rgba(40,0,30,${0.02 + beatPhase * 0.03})`);
+  warmth.addColorStop(1, 'transparent');
+  ctx.fillStyle = warmth;
+  ctx.fillRect(0, 0, W, H);
+
+  drawSoundWaves();
+
+  // Draw cardioids (multiple sizes, pulsing with beat)
+  const pulse = 1 + beatPhase * 0.15;
+  drawCardioid(35 * pulse, t * 0.1, '#ff50a0', 0.1 + beatPhase * 0.1, 1.5);
+  drawCardioid(50 * pulse, -t * 0.08, '#ff80c0', 0.06 + beatPhase * 0.06, 1);
+  drawCardioid(65 * pulse, t * 0.05, '#ffa0d0', 0.04 + beatPhase * 0.04, 0.8);
+
+  // Parametric heart (pulsing)
+  const heartScale = (4 + beatPhase * 1.5) * Math.min(W, H) / 800;
+  drawHeart(heartScale, -10, '#ff3080', 0.2 + beatPhase * 0.3);
+  drawHeart(heartScale * 0.7, -10, '#ff60a0', 0.1 + beatPhase * 0.15);
+
+  // Inner glow on beat
+  if (beatPhase > 0.1) {
+    const beatGlow = ctx.createRadialGradient(cx, cy - 10, 0, cx, cy - 10, 60 * pulse);
+    beatGlow.addColorStop(0, `rgba(255,80,160,${beatPhase * 0.2})`);
+    beatGlow.addColorStop(0.5, `rgba(255,120,180,${beatPhase * 0.05})`);
+    beatGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = beatGlow;
+    ctx.fillRect(cx - 80, cy - 90, 160, 160);
+  }
+
+  drawEKG();
+
+  // Ripples
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    if (!ripples[i].update()) ripples.splice(i, 1);
+    else ripples[i].draw();
+  }
+
+  // Notes
+  for (let i = notes.length - 1; i >= 0; i--) {
+    notes[i].update();
+    notes[i].draw();
+    if (notes[i].life <= 0) notes.splice(i, 1);
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
