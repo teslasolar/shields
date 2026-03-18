@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GARY · ENTROPY ENGINE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#080804}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#f90;opacity:0.6;text-align:center;pointer-events:none;line-height:2}
+#stats{position:fixed;top:16px;left:16px;font-family:'Courier New',monospace;font-size:9px;letter-spacing:2px;color:#fc0;line-height:2.2}
+#controls{position:fixed;top:16px;right:16px;font-family:'Courier New',monospace;font-size:8px}
+#controls button{background:rgba(255,153,0,0.1);border:1px solid rgba(255,153,0,0.3);color:#f90;font-family:inherit;font-size:8px;letter-spacing:1px;padding:5px 12px;cursor:pointer;border-radius:4px;margin:2px;display:block;width:100%}
+#controls button:hover{background:rgba(255,153,0,0.2)}
+.active-mode{background:rgba(255,153,0,0.25)!important;border-color:#f90!important}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  H(SHANNON) = <span id="shannon">0.000</span> bits<br>
+  H(RÉNYI α=2) = <span id="renyi">0.000</span><br>
+  KURTOSIS κ = <span id="kurtosis">0.000</span><br>
+  PARTICLES: <span id="pcount">0</span><br>
+  TEMPERATURE: <span id="temp">1.00</span>
+</div>
+<div id="controls">
+  <button id="btn-thermo" class="active-mode" onclick="setMode('thermo')">THERMODYNAMIC</button>
+  <button id="btn-info" onclick="setMode('info')">INFORMATION</button>
+  <button id="btn-renyi" onclick="setMode('renyi')">RÉNYI</button>
+  <button onclick="resetSystem()">RESET ORDER</button>
+  <button onclick="addChaos()">ADD CHAOS</button>
+</div>
+<div id="info">GARY · ENTROPY ENGINE · κ=1.93 BASELINE<br>WATCH ORDER COLLAPSE INTO CHAOS AND RE-EMERGE</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let mode = 'thermo';
+const GRID = 32;
+const N = 400;
+let temperature = 1.0;
+let particles = [];
+let entropyHistory = [];
+const MAX_HISTORY = 300;
+
+// Histogram bins for entropy calculation
+const BINS = 16;
+
+class Particle {
+  constructor(x, y, ordered) {
+    this.x = x;
+    this.y = y;
+    if (ordered) {
+      this.vx = 0;
+      this.vy = 0;
+    } else {
+      this.vx = (Math.random() - 0.5) * 4;
+      this.vy = (Math.random() - 0.5) * 4;
+    }
+    this.energy = 0;
+    this.bin = 0;
+  }
+  update() {
+    // Add thermal noise proportional to temperature
+    this.vx += (Math.random() - 0.5) * temperature * 0.3;
+    this.vy += (Math.random() - 0.5) * temperature * 0.3;
+
+    // Damping
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Bounce
+    const margin = 80;
+    if (this.x < margin) { this.x = margin; this.vx = Math.abs(this.vx); }
+    if (this.x > W - margin) { this.x = W - margin; this.vx = -Math.abs(this.vx); }
+    if (this.y < margin) { this.y = margin; this.vy = Math.abs(this.vy); }
+    if (this.y > H - margin) { this.y = H - margin; this.vy = -Math.abs(this.vy); }
+
+    this.energy = 0.5 * (this.vx * this.vx + this.vy * this.vy);
+
+    // Spatial bin for entropy
+    const bx = Math.floor(((this.x - margin) / (W - 2 * margin)) * BINS);
+    const by = Math.floor(((this.y - margin) / (H - 2 * margin)) * BINS);
+    this.bin = Math.max(0, Math.min(BINS * BINS - 1, by * BINS + bx));
+  }
+}
+
+function initOrdered() {
+  particles = [];
+  const margin = 80;
+  const cols = Math.ceil(Math.sqrt(N * (W - 2 * margin) / (H - 2 * margin)));
+  const rows = Math.ceil(N / cols);
+  for (let i = 0; i < N; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = margin + (col + 0.5) / cols * (W - 2 * margin);
+    const y = margin + (row + 0.5) / rows * (H - 2 * margin);
+    particles.push(new Particle(x, y, true));
+  }
+  temperature = 0.1;
+}
+
+function initChaotic() {
+  particles = [];
+  const margin = 80;
+  for (let i = 0; i < N; i++) {
+    particles.push(new Particle(
+      margin + Math.random() * (W - 2 * margin),
+      margin + Math.random() * (H - 2 * margin),
+      false
+    ));
+  }
+  temperature = 2.0;
+}
+
+function resetSystem() { initOrdered(); entropyHistory = []; }
+function addChaos() { temperature = Math.min(5, temperature + 0.8); }
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active-mode'));
+  document.getElementById('btn-' + m)?.classList.add('active-mode');
+}
+
+// Shannon entropy of bin distribution
+function shannonEntropy() {
+  const counts = new Array(BINS * BINS).fill(0);
+  for (const p of particles) counts[p.bin]++;
+  let H = 0;
+  for (const c of counts) {
+    if (c === 0) continue;
+    const p = c / particles.length;
+    H -= p * Math.log2(p);
+  }
+  return H;
+}
+
+// Rényi entropy (α=2)
+function renyiEntropy() {
+  const counts = new Array(BINS * BINS).fill(0);
+  for (const p of particles) counts[p.bin]++;
+  let sum = 0;
+  for (const c of counts) {
+    const p = c / particles.length;
+    sum += p * p;
+  }
+  return -Math.log2(sum);
+}
+
+// Kurtosis of velocity distribution
+function kurtosis() {
+  const speeds = particles.map(p => Math.sqrt(p.vx * p.vx + p.vy * p.vy));
+  const n = speeds.length;
+  if (n < 4) return 0;
+  const mean = speeds.reduce((a, b) => a + b, 0) / n;
+  const m2 = speeds.reduce((a, s) => a + (s - mean) ** 2, 0) / n;
+  const m4 = speeds.reduce((a, s) => a + (s - mean) ** 4, 0) / n;
+  if (m2 === 0) return 0;
+  return m4 / (m2 * m2);
+}
+
+function drawParticles() {
+  const maxEnergy = Math.max(1, ...particles.map(p => p.energy));
+
+  for (const p of particles) {
+    const energyNorm = Math.min(1, p.energy / maxEnergy);
+
+    let r, g, b;
+    if (mode === 'thermo') {
+      // Blue (cold) → orange (hot)
+      r = Math.round(30 + energyNorm * 225);
+      g = Math.round(50 + energyNorm * 100);
+      b = Math.round(200 - energyNorm * 180);
+    } else if (mode === 'info') {
+      // Color by spatial bin density
+      const counts = new Array(BINS * BINS).fill(0);
+      for (const q of particles) counts[q.bin]++;
+      const density = counts[p.bin] / particles.length;
+      r = Math.round(255 * density * BINS);
+      g = Math.round(200 * (1 - density * BINS));
+      b = Math.round(50);
+    } else {
+      // Rényi: color by speed rank
+      r = Math.round(energyNorm * 100 + 155);
+      g = Math.round((1 - energyNorm) * 200 + 55);
+      b = Math.round(energyNorm * 50);
+    }
+
+    const size = 2 + energyNorm * 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size, 0, TAU);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.7)`;
+    ctx.fill();
+
+    // Velocity trail
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x - p.vx * 3, p.y - p.vy * 3);
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.15)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawEntropyGraph() {
+  const graphW = 280;
+  const graphH = 80;
+  const ox = W - graphW - 20;
+  const oy = H - graphH - 60;
+
+  ctx.fillStyle = 'rgba(10,10,4,0.6)';
+  ctx.fillRect(ox, oy, graphW, graphH);
+  ctx.strokeStyle = 'rgba(255,153,0,0.2)';
+  ctx.strokeRect(ox, oy, graphW, graphH);
+
+  ctx.font = '7px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,153,0,0.4)';
+  ctx.fillText('ENTROPY OVER TIME', ox + 4, oy - 4);
+
+  // Max entropy line (uniform = log2(BINS*BINS))
+  const maxH = Math.log2(BINS * BINS);
+  const maxY = oy;
+  ctx.setLineDash([2, 3]);
+  ctx.strokeStyle = 'rgba(255,255,0,0.15)';
+  ctx.beginPath();
+  ctx.moveTo(ox, maxY);
+  ctx.lineTo(ox + graphW, maxY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,255,0,0.2)';
+  ctx.fillText('H_max=' + maxH.toFixed(1), ox + graphW - 55, maxY + 10);
+
+  // κ=1.93 reference line
+  const kRef = 1.93;
+  const kRefY = oy + graphH - (kRef / 5) * graphH;
+  ctx.setLineDash([2, 3]);
+  ctx.strokeStyle = 'rgba(0,255,200,0.15)';
+  ctx.beginPath();
+  ctx.moveTo(ox, kRefY);
+  ctx.lineTo(ox + graphW, kRefY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(0,255,200,0.2)';
+  ctx.fillText('κ=1.93', ox + graphW - 40, kRefY - 3);
+
+  if (entropyHistory.length < 2) return;
+  const maxVal = Math.max(maxH, ...entropyHistory.map(e => e.h));
+
+  // Shannon line
+  ctx.beginPath();
+  for (let i = 0; i < entropyHistory.length; i++) {
+    const x = ox + (i / MAX_HISTORY) * graphW;
+    const y = oy + graphH - (entropyHistory[i].h / maxVal) * graphH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(255,153,0,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Kurtosis line (scaled)
+  ctx.beginPath();
+  for (let i = 0; i < entropyHistory.length; i++) {
+    const x = ox + (i / MAX_HISTORY) * graphW;
+    const y = oy + graphH - (entropyHistory[i].k / 5) * graphH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(0,230,180,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// Spatial bin grid overlay
+function drawBinGrid() {
+  const margin = 80;
+  const w = W - 2 * margin;
+  const h = H - 2 * margin;
+  ctx.strokeStyle = 'rgba(255,153,0,0.04)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= BINS; i++) {
+    ctx.beginPath();
+    ctx.moveTo(margin + (i / BINS) * w, margin);
+    ctx.lineTo(margin + (i / BINS) * w, margin + h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(margin, margin + (i / BINS) * h);
+    ctx.lineTo(margin + w, margin + (i / BINS) * h);
+    ctx.stroke();
+  }
+}
+
+// Boltzmann speed distribution histogram
+function drawSpeedHistogram() {
+  const histW = 140;
+  const histH = 60;
+  const ox = 16;
+  const oy = H - histH - 60;
+
+  const speeds = particles.map(p => Math.sqrt(p.vx * p.vx + p.vy * p.vy));
+  const maxSpeed = Math.max(1, ...speeds);
+  const histBins = 20;
+  const counts = new Array(histBins).fill(0);
+  for (const s of speeds) {
+    const bin = Math.min(histBins - 1, Math.floor((s / maxSpeed) * histBins));
+    counts[bin]++;
+  }
+  const maxCount = Math.max(1, ...counts);
+
+  ctx.fillStyle = 'rgba(10,10,4,0.6)';
+  ctx.fillRect(ox, oy, histW, histH);
+
+  ctx.font = '7px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,153,0,0.4)';
+  ctx.fillText('SPEED DISTRIBUTION', ox + 4, oy - 4);
+
+  const barW = histW / histBins;
+  for (let i = 0; i < histBins; i++) {
+    const barH = (counts[i] / maxCount) * histH;
+    const energy = i / histBins;
+    ctx.fillStyle = `rgba(${Math.round(50 + energy * 205)},${Math.round(150 - energy * 100)},${Math.round(200 - energy * 180)},0.5)`;
+    ctx.fillRect(ox + i * barW, oy + histH - barH, barW - 1, barH);
+  }
+}
+
+function draw() {
+  t += 0.016;
+
+  ctx.fillStyle = 'rgba(8,8,4,0.2)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Slowly increase temperature (entropy rises naturally)
+  temperature = Math.max(0.05, temperature * 0.9995 + 0.001);
+
+  // Update particles
+  for (const p of particles) p.update();
+
+  // Calculate stats
+  const H = shannonEntropy();
+  const Hrenyi = renyiEntropy();
+  const K = kurtosis();
+
+  document.getElementById('shannon').textContent = H.toFixed(3);
+  document.getElementById('renyi').textContent = Hrenyi.toFixed(3);
+  document.getElementById('kurtosis').textContent = K.toFixed(3);
+  document.getElementById('pcount').textContent = particles.length;
+  document.getElementById('temp').textContent = temperature.toFixed(2);
+
+  // Highlight when kurtosis near 1.93
+  const kEl = document.getElementById('kurtosis');
+  if (Math.abs(K - 1.93) < 0.1) {
+    kEl.style.color = '#0f8';
+    kEl.textContent = K.toFixed(3) + ' ★';
+  } else {
+    kEl.style.color = '#fc0';
+  }
+
+  entropyHistory.push({ h: H, k: K });
+  if (entropyHistory.length > MAX_HISTORY) entropyHistory.shift();
+
+  drawBinGrid();
+  drawParticles();
+  drawEntropyGraph();
+  drawSpeedHistogram();
+
+  requestAnimationFrame(draw);
+}
+
+initOrdered();
+draw();
+</script>
+</body>
+</html>

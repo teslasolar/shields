@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GARY · MOTOR EFFICIENCY</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#040808}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;color:#0e8;opacity:0.6;text-align:center;pointer-events:none;line-height:2}
+#stats{position:fixed;top:16px;right:16px;font-family:'Courier New',monospace;font-size:9px;letter-spacing:2px;color:#0e8;line-height:2.2;text-align:right}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="stats">
+  RPM: <span id="rpm">0</span><br>
+  TORQUE: <span id="torque">0</span> Nm<br>
+  POWER IN: <span id="pin">0</span> W<br>
+  POWER OUT: <span id="pout">0</span> W<br>
+  EFFICIENCY: <span id="eff">0</span>%<br>
+  WASTE HEAT: <span id="waste">0</span> W
+</div>
+<div id="info">GARY · MOTOR EFFICIENCY · DRAG TO FIND THE SWEET SPOT<br>SANKEY FLOW: INPUT → USEFUL WORK vs LOSSES</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Motor parameters
+let rpm = 1500;
+let torqueLoad = 5; // Nm
+const MAX_RPM = 5000;
+const MAX_TORQUE = 15;
+
+// Dragging
+let dragging = false;
+C.addEventListener('mousedown', () => dragging = true);
+C.addEventListener('mouseup', () => dragging = false);
+C.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const rect = C.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) / rect.width;
+  const my = (e.clientY - rect.top) / rect.height;
+  rpm = Math.max(100, mx * MAX_RPM);
+  torqueLoad = Math.max(0.5, (1 - my) * MAX_TORQUE);
+});
+
+// Motor efficiency model
+function motorModel(rpm, torque) {
+  const omega = rpm * TAU / 60;
+  const mechPower = torque * omega; // useful output
+
+  // Losses (simplified)
+  const copperLoss = 0.8 * torque * torque; // I²R proportional to torque²
+  const ironLoss = 0.002 * rpm * rpm * 0.001; // eddy currents ∝ rpm²
+  const frictionLoss = 0.1 * rpm * 0.05; // bearing friction ∝ rpm
+  const windageLoss = 0.00001 * rpm * rpm; // air drag ∝ rpm²
+  const strayLoss = mechPower * 0.02; // 2% stray
+
+  const totalLoss = copperLoss + ironLoss + frictionLoss + windageLoss + strayLoss;
+  const inputPower = mechPower + totalLoss;
+  const efficiency = inputPower > 0 ? (mechPower / inputPower) * 100 : 0;
+
+  return {
+    mechPower, inputPower, efficiency,
+    copperLoss, ironLoss, frictionLoss, windageLoss, strayLoss,
+    totalLoss, omega
+  };
+}
+
+// Draw spinning rotor
+function drawRotor(cx, cy, r) {
+  const rotorAngle = t * rpm / 60 * TAU;
+  const slots = 12;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotorAngle);
+
+  // Stator ring
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.strokeStyle = 'rgba(0,230,130,0.15)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Rotor slots
+  for (let i = 0; i < slots; i++) {
+    const a = (i / slots) * TAU;
+    const innerR = r * 0.3;
+    const outerR = r * 0.85;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
+    ctx.lineTo(Math.cos(a) * outerR, Math.sin(a) * outerR);
+
+    const model = motorModel(rpm, torqueLoad);
+    const heatColor = model.efficiency > 80 ? '0,230,130' : model.efficiency > 60 ? '255,200,0' : '255,80,0';
+    ctx.strokeStyle = `rgba(${heatColor},0.3)`;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+
+  // Center shaft
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.15, 0, TAU);
+  ctx.fillStyle = 'rgba(0,230,130,0.2)';
+  ctx.fill();
+
+  ctx.restore();
+
+  // Speed blur arcs
+  const blurAlpha = Math.min(0.2, rpm / MAX_RPM * 0.3);
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    const startA = rotorAngle + i * TAU / 3;
+    ctx.arc(cx, cy, r * (0.5 + i * 0.15), startA, startA + rpm / MAX_RPM * 2);
+    ctx.strokeStyle = `rgba(0,230,130,${blurAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+// Sankey diagram: input → branches of losses + useful work
+function drawSankey(model) {
+  const ox = W * 0.55;
+  const oy = H * 0.15;
+  const sankeyW = W * 0.35;
+  const sankeyH = H * 0.55;
+
+  const total = model.inputPower || 1;
+  const flows = [
+    { label: 'USEFUL WORK', value: model.mechPower, color: '#0e8' },
+    { label: 'COPPER (I²R)', value: model.copperLoss, color: '#f80' },
+    { label: 'IRON (EDDY)', value: model.ironLoss, color: '#f60' },
+    { label: 'FRICTION', value: model.frictionLoss, color: '#f40' },
+    { label: 'WINDAGE', value: model.windageLoss, color: '#d20' },
+    { label: 'STRAY', value: model.strayLoss, color: '#a00' },
+  ];
+
+  // Input bar
+  const barW = 30;
+  ctx.fillStyle = 'rgba(0,230,130,0.15)';
+  ctx.fillRect(ox, oy, barW, sankeyH);
+  ctx.strokeStyle = 'rgba(0,230,130,0.3)';
+  ctx.strokeRect(ox, oy, barW, sankeyH);
+
+  ctx.font = '8px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#0e8';
+  ctx.fillText('INPUT', ox + barW / 2, oy - 8);
+  ctx.fillText(total.toFixed(0) + 'W', ox + barW / 2, oy - 20);
+
+  // Output branches
+  let y = oy;
+  const outX = ox + sankeyW;
+
+  for (const flow of flows) {
+    const h = Math.max(2, (flow.value / total) * sankeyH);
+
+    // Flow band
+    ctx.beginPath();
+    ctx.moveTo(ox + barW, y);
+    ctx.bezierCurveTo(ox + sankeyW * 0.4, y, ox + sankeyW * 0.6, y, outX, y);
+    ctx.lineTo(outX, y + h);
+    ctx.bezierCurveTo(ox + sankeyW * 0.6, y + h, ox + sankeyW * 0.4, y + h, ox + barW, y + h);
+    ctx.closePath();
+
+    const alpha = flow.label === 'USEFUL WORK' ? 0.25 : 0.12;
+    ctx.fillStyle = flow.color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+    ctx.fill();
+    ctx.strokeStyle = flow.color + '44';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Animated flow particles
+    const particleCount = Math.ceil(flow.value / total * 8);
+    for (let p = 0; p < particleCount; p++) {
+      const progress = ((t * 0.5 + p * 0.13 + flows.indexOf(flow) * 0.2) % 1);
+      const px = ox + barW + progress * (sankeyW - barW);
+      const py = y + h * 0.5 + Math.sin(progress * Math.PI * 2 + t) * h * 0.3;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.5, 0, TAU);
+      ctx.fillStyle = flow.color + '88';
+      ctx.fill();
+    }
+
+    // Label
+    if (h > 6) {
+      ctx.font = '7px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = flow.color + 'cc';
+      ctx.fillText(`${flow.label}: ${flow.value.toFixed(1)}W (${(flow.value/total*100).toFixed(1)}%)`, outX + 8, y + h / 2 + 3);
+    }
+
+    y += h;
+  }
+}
+
+// Efficiency map (torque vs RPM heatmap)
+function drawEfficiencyMap() {
+  const mapW = 180;
+  const mapH = 120;
+  const ox = 16;
+  const oy = H - mapH - 60;
+  const step = 6;
+
+  ctx.font = '7px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(0,230,130,0.4)';
+  ctx.fillText('EFFICIENCY MAP (RPM × TORQUE)', ox, oy - 8);
+
+  for (let sy = 0; sy < mapH; sy += step) {
+    for (let sx = 0; sx < mapW; sx += step) {
+      const r = (sx / mapW) * MAX_RPM + 100;
+      const tq = (1 - sy / mapH) * MAX_TORQUE + 0.5;
+      const m = motorModel(r, tq);
+      const eff = Math.min(100, Math.max(0, m.efficiency));
+
+      let red, green, blue;
+      if (eff > 80) { red = 0; green = Math.round(150 + eff); blue = Math.round(80 + eff * 0.5); }
+      else if (eff > 50) { red = Math.round(255 * (1 - eff / 100)); green = Math.round(200 * eff / 100); blue = 0; }
+      else { red = Math.round(200); green = Math.round(50); blue = 0; }
+
+      ctx.fillStyle = `rgba(${red},${green},${blue},0.25)`;
+      ctx.fillRect(ox + sx, oy + sy, step, step);
+    }
+  }
+
+  // Current operating point
+  const dotX = ox + (rpm / MAX_RPM) * mapW;
+  const dotY = oy + (1 - torqueLoad / MAX_TORQUE) * mapH;
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, 5, 0, TAU);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, 2, 0, TAU);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+
+  // Carnot limit line
+  ctx.font = '6px Courier New';
+  ctx.fillStyle = 'rgba(255,200,0,0.3)';
+  ctx.fillText('CARNOT LIMIT', ox + mapW - 55, oy + 10);
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(0,230,130,0.3)';
+  ctx.fillText('0 RPM', ox, oy + mapH + 10);
+  ctx.textAlign = 'right';
+  ctx.fillText(MAX_RPM + ' RPM', ox + mapW, oy + mapH + 10);
+}
+
+// Waste heat glow around the rotor
+function drawWasteHeat(cx, cy, r, model) {
+  const wasteRatio = model.totalLoss / (model.inputPower || 1);
+  const heatR = r * 1.5 + wasteRatio * 30;
+  const glow = ctx.createRadialGradient(cx, cy, r, cx, cy, heatR);
+  glow.addColorStop(0, `rgba(255,100,0,${wasteRatio * 0.15})`);
+  glow.addColorStop(0.5, `rgba(255,50,0,${wasteRatio * 0.05})`);
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.fillRect(cx - heatR, cy - heatR, heatR * 2, heatR * 2);
+
+  // Heat shimmer particles
+  if (wasteRatio > 0.1) {
+    for (let i = 0; i < Math.floor(wasteRatio * 15); i++) {
+      const a = Math.random() * TAU;
+      const d = r + Math.random() * 30;
+      const px = cx + Math.cos(a) * d;
+      const py = cy + Math.sin(a) * d - Math.random() * 10;
+      ctx.beginPath();
+      ctx.arc(px, py, 1, 0, TAU);
+      ctx.fillStyle = `rgba(255,${Math.round(100 + Math.random() * 100)},0,${0.1 + Math.random() * 0.1})`;
+      ctx.fill();
+    }
+  }
+}
+
+function draw() {
+  t += 0.016;
+  ctx.fillStyle = 'rgba(4,8,8,0.2)';
+  ctx.fillRect(0, 0, W, H);
+
+  const model = motorModel(rpm, torqueLoad);
+
+  // Update stats
+  document.getElementById('rpm').textContent = Math.round(rpm);
+  document.getElementById('torque').textContent = torqueLoad.toFixed(1);
+  document.getElementById('pin').textContent = model.inputPower.toFixed(0);
+  document.getElementById('pout').textContent = model.mechPower.toFixed(0);
+  document.getElementById('eff').textContent = model.efficiency.toFixed(1);
+  document.getElementById('waste').textContent = model.totalLoss.toFixed(0);
+
+  const effEl = document.getElementById('eff');
+  effEl.style.color = model.efficiency > 80 ? '#0f8' : model.efficiency > 60 ? '#fc0' : '#f44';
+
+  // Rotor
+  const rotorCX = W * 0.22;
+  const rotorCY = H * 0.42;
+  const rotorR = Math.min(W, H) * 0.15;
+
+  drawWasteHeat(rotorCX, rotorCY, rotorR, model);
+  drawRotor(rotorCX, rotorCY, rotorR);
+
+  drawSankey(model);
+  drawEfficiencyMap();
+
+  // Instructions
+  ctx.font = '8px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,230,130,0.25)';
+  ctx.fillText('DRAG: X = RPM, Y = TORQUE', W / 2, H - 45);
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
