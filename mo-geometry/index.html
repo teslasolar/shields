@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MO · ISLAMIC GEOMETRY</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#041a0a}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:9px;letter-spacing:3px;color:#0c6;opacity:0.6;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">MO · ISLAMIC GEOMETRY · BISMILLAH</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, cx, cy, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Islamic star polygon: draw a {n/k} star
+function drawStar(x, y, r, n, k, rot) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = rot + (i * TAU) / n - Math.PI / 2;
+    pts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+  }
+  // Connect every k-th point
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const from = pts[i];
+    const to = pts[(i + k) % n];
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+  }
+  ctx.stroke();
+}
+
+// Draw interlocking Islamic pattern rosette
+function drawRosette(x, y, r, fold, rot) {
+  const n = fold * 2;
+  for (let k = 1; k <= Math.floor(n / 2); k++) {
+    if (k === n / 2) continue;
+    const alpha = 0.15 + 0.1 * Math.sin(t * 0.5 + k);
+    ctx.strokeStyle = k % 2 === 0
+      ? `rgba(252,200,0,${alpha})`    // gold
+      : `rgba(0,204,102,${alpha})`;    // emerald
+    ctx.lineWidth = 0.8;
+    drawStar(x, y, r, n, k, rot);
+  }
+}
+
+// Tessellate arabesque circles
+function drawArabesque(x, y, r, depth) {
+  if (depth <= 0 || r < 4) return;
+  const alpha = 0.08 + depth * 0.06;
+  ctx.strokeStyle = `rgba(0,170,102,${alpha})`;
+  ctx.lineWidth = 0.5 + depth * 0.3;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.stroke();
+
+  // Inner star
+  const fold = depth % 2 === 0 ? 8 : 12;
+  drawRosette(x, y, r * 0.85, fold, t * 0.1 * depth);
+
+  if (depth > 1) {
+    // Recursive sub-patterns at cardinal + diagonal points
+    const sub = 6;
+    for (let i = 0; i < sub; i++) {
+      const a = (i * TAU) / sub + t * 0.02;
+      const nx = x + Math.cos(a) * r * 0.95;
+      const ny = y + Math.sin(a) * r * 0.95;
+      drawArabesque(nx, ny, r * 0.32, depth - 1);
+    }
+  }
+}
+
+// Girih-style line patterns
+function drawGirih(x, y, size, rot) {
+  const n = 10; // decagonal
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  for (let i = 0; i < n; i++) {
+    const a1 = (i * TAU) / n;
+    const a2 = ((i + 3) * TAU) / n;
+    const r = size;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a1) * r, Math.sin(a1) * r);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(Math.cos(a2) * r, Math.sin(a2) * r);
+    ctx.strokeStyle = `rgba(252,200,0,${0.1 + 0.05 * Math.sin(t + i)})`;
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Fill background with tiled Islamic pattern
+function drawTiling() {
+  const spacing = 120 + 20 * Math.sin(t * 0.3);
+  const cols = Math.ceil(W / spacing) + 2;
+  const rows = Math.ceil(H / spacing) + 2;
+  const ox = (t * 5) % spacing;
+  const oy = (t * 3) % spacing;
+
+  for (let row = -1; row < rows; row++) {
+    for (let col = -1; col < cols; col++) {
+      const x = col * spacing - ox + (row % 2) * spacing * 0.5;
+      const y = row * spacing - oy;
+      drawGirih(x, y, spacing * 0.35, t * 0.05 + row * 0.1);
+    }
+  }
+}
+
+function draw() {
+  t += 0.008;
+
+  // Fade trail
+  ctx.fillStyle = 'rgba(4,26,10,0.12)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background girih tiling
+  drawTiling();
+
+  // Central rosette - large
+  drawArabesque(cx, cy, Math.min(W, H) * 0.38, 3);
+
+  // Outer ring of 8-fold stars
+  const outerR = Math.min(W, H) * 0.42;
+  for (let i = 0; i < 8; i++) {
+    const a = (i * TAU) / 8 + t * 0.15;
+    const x = cx + Math.cos(a) * outerR;
+    const y = cy + Math.sin(a) * outerR;
+    drawRosette(x, y, 40 + 10 * Math.sin(t + i), 6, a);
+  }
+
+  // Central glow
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120);
+  grad.addColorStop(0, 'rgba(252,200,0,0.04)');
+  grad.addColorStop(0.5, 'rgba(0,170,102,0.02)');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(cx - 120, cy - 120, 240, 240);
+
+  // Bismillah center dot
+  const pulse = 3 + Math.sin(t * 2) * 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pulse, 0, TAU);
+  ctx.fillStyle = `rgba(252,200,0,${0.3 + 0.2 * Math.sin(t * 2)})`;
+  ctx.fill();
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

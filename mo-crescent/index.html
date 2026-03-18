@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MO · CRESCENT LIGHT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#020818}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:9px;letter-spacing:3px;color:#08c;opacity:0.6;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">MO · CRESCENT LIGHT · SEVEN HEAVENS</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, cx, cy, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Stars in the night sky
+const stars = [];
+for (let i = 0; i < 300; i++) {
+  stars.push({
+    x: Math.random() * 2000 - 500,
+    y: Math.random() * 1200 - 200,
+    r: Math.random() * 1.5 + 0.3,
+    twinkle: Math.random() * TAU,
+    speed: 0.02 + Math.random() * 0.04
+  });
+}
+
+function drawStars() {
+  for (const s of stars) {
+    const alpha = 0.3 + 0.3 * Math.sin(t * s.speed * 10 + s.twinkle);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, TAU);
+    ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+    ctx.fill();
+  }
+}
+
+// Draw crescent moon
+function drawCrescent(x, y, r, phase) {
+  // Outer circle (lit side)
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  const moonGrad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
+  moonGrad.addColorStop(0, 'rgba(255,252,230,0.15)');
+  moonGrad.addColorStop(0.7, 'rgba(200,200,180,0.08)');
+  moonGrad.addColorStop(1, 'rgba(150,150,130,0.03)');
+  ctx.fillStyle = moonGrad;
+  ctx.fill();
+
+  // Cut out inner circle to make crescent
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  const offset = r * (0.5 + 0.15 * Math.sin(phase));
+  ctx.beginPath();
+  ctx.arc(x + offset, y - r * 0.1, r * 0.85, 0, TAU);
+  ctx.fillStyle = 'rgba(0,0,0,1)';
+  ctx.fill();
+  ctx.restore();
+
+  // Crescent glow
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.3, 0, TAU);
+  const glow = ctx.createRadialGradient(x, y, r * 0.5, x, y, r * 1.3);
+  glow.addColorStop(0, 'rgba(200,220,255,0.03)');
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.fill();
+}
+
+// Seven celestial rings (seven heavens)
+function drawSevenHeavens() {
+  const colors = ['#08c', '#0af', '#0cf', '#0ef', '#fc0', '#fe0', '#fff'];
+  const names = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'];
+  const baseR = Math.min(W, H) * 0.12;
+
+  for (let i = 0; i < 7; i++) {
+    const r = baseR + i * (Math.min(W, H) * 0.045);
+    const alpha = 0.04 + 0.03 * Math.sin(t * 0.8 + i * 0.7);
+    const rot = t * (0.02 + i * 0.005) * (i % 2 === 0 ? 1 : -1);
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.strokeStyle = colors[i] + Math.round(alpha * 255).toString(16).padStart(2, '0');
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Orbiting points on each ring (like celestial bodies)
+    const nBodies = 3 + i;
+    for (let j = 0; j < nBodies; j++) {
+      const a = rot + (j * TAU) / nBodies;
+      const bx = cx + Math.cos(a) * r;
+      const by = cy + Math.sin(a) * r;
+      const bSize = 1.5 + (6 - i) * 0.3;
+      const bAlpha = 0.15 + 0.1 * Math.sin(t * 2 + j + i);
+
+      ctx.beginPath();
+      ctx.arc(bx, by, bSize, 0, TAU);
+      ctx.fillStyle = colors[i] + Math.round(bAlpha * 255).toString(16).padStart(2, '0');
+      ctx.fill();
+    }
+  }
+}
+
+// Dhikr pulse - rhythmic breathing/pulsing light from center
+function drawDhikrPulse() {
+  // Slow, meditative pulse
+  const breathCycle = Math.sin(t * 0.5) * 0.5 + 0.5; // 0-1
+  const pulseR = 30 + breathCycle * 50;
+
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, pulseR);
+  grad.addColorStop(0, `rgba(252,200,0,${0.06 * breathCycle})`);
+  grad.addColorStop(0.5, `rgba(0,136,204,${0.03 * breathCycle})`);
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(cx - pulseR, cy - pulseR, pulseR * 2, pulseR * 2);
+
+  // Center star
+  const starAlpha = 0.2 + 0.15 * breathCycle;
+  drawStarShape(cx, cy, 8 + breathCycle * 4, 5, `rgba(252,200,0,${starAlpha})`);
+}
+
+// 5-pointed star shape
+function drawStarShape(x, y, r, points, color) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = (i * TAU) / (points * 2) - Math.PI / 2 + t * 0.2;
+    const rad = i % 2 === 0 ? r : r * 0.4;
+    const px = x + Math.cos(a) * rad;
+    const py = y + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+// Scattered decorative 5-pointed stars
+function drawDecoStars() {
+  const positions = [
+    { x: cx - 80, y: cy - 100, r: 6 },
+    { x: cx + 90, y: cy - 85, r: 5 },
+    { x: cx + 60, y: cy + 110, r: 4 },
+    { x: cx - 70, y: cy + 95, r: 5 },
+    { x: cx, y: cy - 130, r: 7 },
+  ];
+  for (let i = 0; i < positions.length; i++) {
+    const p = positions[i];
+    const alpha = 0.1 + 0.08 * Math.sin(t * 1.5 + i * 1.2);
+    drawStarShape(p.x, p.y, p.r + Math.sin(t + i) * 2, 5, `rgba(252,200,0,${alpha})`);
+  }
+}
+
+// Horizon glow (like dawn/dusk)
+function drawHorizon() {
+  const grad = ctx.createLinearGradient(0, H, 0, H * 0.6);
+  grad.addColorStop(0, 'rgba(0,40,80,0.08)');
+  grad.addColorStop(0.5, 'rgba(0,60,120,0.03)');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function draw() {
+  t += 0.008;
+
+  // Clear with slight trail
+  ctx.fillStyle = 'rgba(2,8,24,0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  drawHorizon();
+  drawStars();
+
+  // Crescent moon (upper area)
+  const moonR = Math.min(W, H) * 0.08;
+  drawCrescent(cx + moonR * 0.3, cy - Math.min(W, H) * 0.25, moonR, t * 0.3);
+
+  drawSevenHeavens();
+  drawDhikrPulse();
+  drawDecoStars();
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</title>
+<title>130D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
@@ -310,6 +310,18 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
       <a href="#shield-forge" data-id="shield-forge"><span class="dot" style="background:#f44"></span><span style="color:#f44">SHIELD FORGE</span></a>
     </div>
   </div>
+
+  <span class="sep">|</span>
+
+  <div class="nav-group">
+    <button class="nav-group-btn" style="color:#0c6">CUSTOM <span class="arrow">▼</span></button>
+    <div class="nav-dropdown">
+      <div class="cat-label">PEOPLE</div>
+      <a href="#mo-geometry" data-id="mo-geometry"><span class="dot" style="background:#0a4"></span><span style="color:#0a4">MO · GEOMETRY</span></a>
+      <a href="#mo-calligraphy" data-id="mo-calligraphy"><span class="dot" style="background:#fc0"></span><span style="color:#fc0">MO · CALLIGRAPHY</span></a>
+      <a href="#mo-crescent" data-id="mo-crescent"><span class="dot" style="background:#08c"></span><span style="color:#08c">MO · CRESCENT</span></a>
+    </div>
+  </div>
 </nav>
 
 <div id="content">
@@ -317,8 +329,8 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
 
   <div id="gallery">
     <div class="header">
-      <h1>127D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
-      <div class="sub">127 SHIELDS · 19 CATEGORIES · 7 PRIMES · M₇ = 2⁷-1 = 127</div>
+      <h1>130D SHIELD VARIANTS · A.S.S.-OS · M₇ = 2⁷-1</h1>
+      <div class="sub">130 SHIELDS · 20 CATEGORIES · 7 PRIMES · M₇ = 2⁷-1 = 127</div>
     </div>
 
     <div class="category">
@@ -499,6 +511,15 @@ body{background:#060610;font-family:'Courier New',monospace;color:#aac}
         <span class="cat-count">5 SHIELDS</span>
       </div>
       <div class="grid" id="grid-webllm-sim"></div>
+    </div>
+
+    <div class="category">
+      <div class="cat-header">
+        <span class="cat-label" style="color:#0c6">CUSTOM · PEOPLE</span>
+        <div class="cat-line" style="background:#0c6"></div>
+        <span class="cat-count">3 SHIELDS · MO</span>
+      </div>
+      <div class="grid" id="grid-custom-people"></div>
     </div>
 
     <div class="footer">
@@ -736,6 +757,14 @@ const CATEGORIES = {
       { id:'neural-automata',    name:'NEURAL AUTOMATA',    desc:'Continuous cellular automata with neural-network update rules. Emergent life-like patterns from learned dynamics.', tag:'NEURAL', tagColor:'#0f8', colors:['#0f8','#0e8','#0d8','#0c8','#0b8','#0a8','#fff'], src:'webllm/neural-automata.html' },
       { id:'particle-life',     name:'PARTICLE LIFE',      desc:'Artificial chemistry simulation. Particles with attraction/repulsion matrices self-organize into lifelike structures.', tag:'A-LIFE', tagColor:'#fc0', colors:['#fc0','#fa0','#f80','#f60','#f40','#f20','#fff'], src:'webllm/particle-life.html' },
       { id:'shield-forge',      name:'SHIELD FORGE',       desc:'Interactive shield construction tool. Forge custom shield configurations by combining prime dimensions and geometries.', tag:'FORGE', tagColor:'#f44', colors:['#f44','#f22','#f00','#d00','#b00','#900','#fff'], src:'webllm/shield-forge.html' },
+    ]
+  },
+  customPeople: {
+    grid: 'grid-custom-people',
+    variants: [
+      { id:'mo-geometry',    name:'MO · ISLAMIC GEOMETRY',  desc:'Sacred Islamic geometric patterns. Interlocking stars, arabesques, and tessellations inspired by mosque art. 8-fold and 12-fold symmetry with gold and emerald palette. Bismillah.', tag:'MO · GEOMETRY', tagColor:'#0a4', colors:['#0a4','#0c6','#fc0','#fff','#08c','#064','#0e8'] },
+      { id:'mo-calligraphy', name:'MO · DIVINE FLOW',       desc:'Flowing curves inspired by Arabic calligraphic traditions. Golden ink traces sacred spirals on deep emerald. Thuluth-style flourishes bloom into infinite gardens of light.', tag:'MO · CALLIGRAPHY', tagColor:'#fc0', colors:['#fc0','#fa0','#0a4','#0c6','#fff','#f80','#fe0'] },
+      { id:'mo-crescent',    name:'MO · CRESCENT LIGHT',    desc:'Crescent moon and stars over a peaceful night sky. Seven celestial rings honor the seven heavens. Stars pulse with dhikr rhythm. Tranquil azure and silver radiance.', tag:'MO · CRESCENT', tagColor:'#08c', colors:['#08c','#0af','#06a','#048','#fff','#fc0','#0cf'] },
     ]
   }
 };

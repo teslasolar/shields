@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MO · DIVINE FLOW</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#041a0a}
+canvas{display:block;width:100%;height:100%}
+#info{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:9px;letter-spacing:3px;color:#fc0;opacity:0.6;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">MO · DIVINE FLOW · GOLDEN INK ON EMERALD</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const TAU = Math.PI * 2;
+let W, H, cx, cy, t = 0;
+
+function resize() {
+  W = C.width = window.innerWidth;
+  H = C.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Calligraphic stroke particles
+const strokes = [];
+const MAX_STROKES = 7;
+
+class CalliStroke {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.age = 0;
+    this.maxAge = 400 + Math.random() * 600;
+    this.points = [];
+    // Start from center area
+    this.x = cx + (Math.random() - 0.5) * W * 0.4;
+    this.y = cy + (Math.random() - 0.5) * H * 0.4;
+    this.angle = Math.random() * TAU;
+    this.speed = 1 + Math.random() * 2;
+    this.curl = (Math.random() - 0.5) * 0.08;
+    this.thickness = 1 + Math.random() * 4;
+    this.gold = Math.random() > 0.4; // 60% gold, 40% emerald
+    this.flourish = Math.random() > 0.6; // 40% have flourishes
+  }
+  update() {
+    this.age++;
+    if (this.age > this.maxAge) {
+      this.reset();
+      return;
+    }
+    // Calligraphic curve - varies angle smoothly with occasional sharp turns
+    const noiseAngle = Math.sin(this.age * 0.02 + this.x * 0.005) * 0.3
+      + Math.cos(this.age * 0.015 + this.y * 0.005) * 0.2;
+    this.angle += this.curl + noiseAngle * 0.05;
+
+    // Thuluth-style: occasional swooping curves
+    if (this.flourish && this.age % 80 < 20) {
+      this.angle += Math.sin(this.age * 0.1) * 0.15;
+    }
+
+    this.x += Math.cos(this.angle) * this.speed;
+    this.y += Math.sin(this.angle) * this.speed;
+    this.points.push({ x: this.x, y: this.y, age: this.age });
+
+    // Keep recent points only
+    if (this.points.length > 200) this.points.shift();
+  }
+  draw() {
+    if (this.points.length < 2) return;
+    const progress = this.age / this.maxAge;
+    const fadeIn = Math.min(1, this.age / 30);
+    const fadeOut = Math.max(0, 1 - (progress - 0.8) / 0.2);
+    const alpha = fadeIn * fadeOut;
+
+    for (let i = 1; i < this.points.length; i++) {
+      const p0 = this.points[i - 1];
+      const p1 = this.points[i];
+      const localAge = (this.points.length - i) / this.points.length;
+      const a = alpha * (1 - localAge * 0.7) * 0.6;
+
+      // Calligraphic thickness variation based on angle
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const angle = Math.atan2(dy, dx);
+      const thickVar = this.thickness * (0.3 + 0.7 * Math.abs(Math.sin(angle)));
+
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+
+      if (this.gold) {
+        ctx.strokeStyle = `rgba(252,200,0,${a})`;
+      } else {
+        ctx.strokeStyle = `rgba(0,204,102,${a})`;
+      }
+      ctx.lineWidth = thickVar * (1 - localAge * 0.5);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // Glowing tip
+    if (this.points.length > 0 && alpha > 0.3) {
+      const tip = this.points[this.points.length - 1];
+      const glow = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 15);
+      const color = this.gold ? '252,200,0' : '0,204,102';
+      glow.addColorStop(0, `rgba(${color},${alpha * 0.3})`);
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.fillRect(tip.x - 15, tip.y - 15, 30, 30);
+    }
+  }
+}
+
+for (let i = 0; i < MAX_STROKES; i++) {
+  const s = new CalliStroke();
+  s.age = Math.random() * 200; // stagger
+  strokes.push(s);
+}
+
+// Decorative dots (like diacritical marks)
+function drawDots() {
+  for (let i = 0; i < 30; i++) {
+    const a = t * 0.3 + i * 0.7;
+    const r = 80 + i * 12 + Math.sin(t + i * 0.5) * 20;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    const size = 1.5 + Math.sin(t * 2 + i) * 0.8;
+    const alpha = 0.15 + 0.1 * Math.sin(t + i);
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, TAU);
+    ctx.fillStyle = i % 3 === 0
+      ? `rgba(252,200,0,${alpha})`
+      : `rgba(0,170,102,${alpha * 0.7})`;
+    ctx.fill();
+  }
+}
+
+// Central medallion (like a carpet/book illumination)
+function drawMedallion() {
+  const r = 60 + Math.sin(t * 0.5) * 5;
+  const petals = 12;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(t * 0.1);
+  for (let i = 0; i < petals; i++) {
+    const a = (i * TAU) / petals;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.5, r * 0.12, r * 0.5, 0, 0, TAU);
+    ctx.strokeStyle = `rgba(252,200,0,${0.08 + 0.04 * Math.sin(t + i)})`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Inner circle
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.25, 0, TAU);
+  ctx.strokeStyle = 'rgba(0,204,102,0.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Outer circle
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.strokeStyle = 'rgba(252,200,0,0.06)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Garden border flourishes
+function drawGardenBorder() {
+  const border = 40;
+  const segments = 20;
+
+  // Top and bottom vine
+  for (let side = 0; side < 2; side++) {
+    const baseY = side === 0 ? border : H - border;
+    for (let i = 0; i < segments; i++) {
+      const x = (i / segments) * W;
+      const y = baseY + Math.sin(x * 0.02 + t) * 15;
+      const alpha = 0.06 + 0.03 * Math.sin(t + i);
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, TAU);
+      ctx.fillStyle = `rgba(0,170,102,${alpha})`;
+      ctx.fill();
+    }
+  }
+}
+
+function draw() {
+  t += 0.01;
+
+  // Slow fade for ink trail effect
+  ctx.fillStyle = 'rgba(4,26,10,0.04)';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGardenBorder();
+  drawMedallion();
+  drawDots();
+
+  for (const s of strokes) {
+    s.update();
+    s.draw();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
